@@ -1,0 +1,1349 @@
+if (!window.__GVZ_CONTENT_LOADED__) {
+window.__GVZ_CONTENT_LOADED__ = true;
+let siteRules = { enabled: false, mappings: [] };
+let map = new Map();
+let siteProfile = { enabled: false, mappings: [] };
+let siteMap = new Map();
+let blockedHosts = [];
+let lastPointer = { x: null, y: null };
+let soundDisplaySettings = { color: "#ffffff", fontSize: 48 };
+let subtitleSettings = {
+  enabled: false,
+  defaultLang: "",
+  fontSize: 22,
+  color: "#ffffff",
+  bgColor: "#000000",
+  bgOpacity: 0.6,
+  fontFamily: "system-ui, -apple-system, sans-serif",
+  position: "bottom"
+};
+let subtitleStyleEl = null;
+let subtitleTrackObserver = null;
+
+let lastFsAt = 0;
+let lastMouse2At = 0;
+let suppressContextMenuUntil = 0;
+
+function nowMs() { return Date.now(); }
+
+const ZONE_LABELS = ["A1", "A2", "A3", "B1", "B2", "B3", "C1", "C2", "C3"];
+function zoneLabel(zone) {
+  return ZONE_LABELS[Number(zone) - 1] || String(zone);
+}
+
+function normalizeHost(host) {
+  return (host || "").replace(/^www\./i, "").replace(/^m\./i, "");
+}
+
+function buildMap() {
+  map = new Map();
+  for (const m of (siteRules.mappings || [])) {
+    if (m?.from && m?.to) map.set(m.from, m.to);
+  }
+}
+
+function buildSiteMap() {
+  siteMap = new Map();
+  if (!siteProfile?.enabled) return;
+  for (const m of (siteProfile.mappings || [])) {
+    if (m?.from && m?.to) siteMap.set(m.from, m.to);
+  }
+}
+
+function lookupRemap(sig) {
+  // Per-site profile wins; otherwise fall back to global rules
+  if (siteMap.has(sig)) return siteMap.get(sig);
+  return map.get(sig);
+}
+
+function remappingEnabled() {
+  return !!(siteRules?.enabled || siteProfile?.enabled);
+}
+
+async function loadSiteProfile() {
+  const host = baseDomain(location.host);
+  const data = await chrome.storage.sync.get({ siteProfiles: {} });
+  const profiles = data.siteProfiles || {};
+  const profile = profiles[host];
+  siteProfile = {
+    enabled: !!profile?.enabled,
+    mappings: Array.isArray(profile?.mappings) ? profile.mappings : []
+  };
+  buildSiteMap();
+}
+
+// ✅ تضمن وجود إعدادات Zones حتى لو المستخدم ما فتح options.html
+async function ensureZonesDefaults() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const settings = data.settings || {};
+  let changed = false;
+  const isTopFrame = window.top === window;
+
+  if (!settings.zones) {
+    settings.zones = {
+      enabled: true,
+      fullscreenOnly: false,
+      autoHideMs: 900,
+      wheel: {
+        preset: "grid3x3",
+        map: {}
+      }
+    };
+    changed = true;
+  }
+
+  // default enabled
+  const enabled = settings.zones.enabled !== false;
+  if (settings.zones.enabled !== enabled) {
+    settings.zones.enabled = enabled;
+    changed = true;
+  }
+
+  const fullscreenOnly = settings.zones.fullscreenOnly === true;
+  if (settings.zones.fullscreenOnly !== fullscreenOnly) {
+    settings.zones.fullscreenOnly = fullscreenOnly;
+    changed = true;
+  }
+
+  if (!settings.zones.wheel) {
+    settings.zones.wheel = { preset: "grid3x3", map: {} };
+    changed = true;
+  }
+  if (!settings.zones.wheel.map) {
+    settings.zones.wheel.map = {};
+    changed = true;
+  }
+
+  const wheelMap = settings.zones.wheel.map;
+
+  // Defaults (تقدر تغيرها من options)
+  if (!wheelMap["6"]) {
+    wheelMap["6"] = { up: "ACTION:SEEK:+5", down: "ACTION:SEEK:-5" };
+    changed = true;
+  }
+  if (!wheelMap["7"]) {
+    wheelMap["7"] = { up: "ACTION:SEEK:+1", down: "ACTION:SEEK:-1" };
+    changed = true;
+  }
+  if (!wheelMap["4"]) {
+    wheelMap["4"] = { up: "ACTION:VOLUME:+4", down: "ACTION:VOLUME:-4" };
+    changed = true;
+  }
+
+  if (changed && isTopFrame) {
+    await chrome.storage.sync.set({ settings });
+  }
+
+  return settings.zones;
+}
+
+async function loadBlockedHosts() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const settings = data.settings || {};
+  blockedHosts = Array.isArray(settings.blockedHosts) ? settings.blockedHosts : [];
+}
+
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+  if (!m) return "0,0,0";
+  const n = parseInt(m[1], 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+}
+
+async function loadSubtitleSettings() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const s = data.settings || {};
+  const sub = s.subtitles || {};
+  subtitleSettings = {
+    enabled: !!sub.enabled,
+    defaultLang: String(sub.defaultLang || "").toLowerCase(),
+    fontSize: Number(sub.fontSize || 22),
+    color: sub.color || "#ffffff",
+    bgColor: sub.bgColor || "#000000",
+    bgOpacity: Number(sub.bgOpacity ?? 0.6),
+    fontFamily: sub.fontFamily || "system-ui, -apple-system, sans-serif",
+    position: sub.position || "bottom"
+  };
+  applySubtitleStyles();
+  applySubtitleTrack();
+}
+
+function applySubtitleStyles() {
+  // Remove existing style tag, then optionally inject new one
+  if (subtitleStyleEl) {
+    subtitleStyleEl.remove();
+    subtitleStyleEl = null;
+  }
+  if (!subtitleSettings.enabled) return;
+
+  const { fontSize, color, bgColor, bgOpacity, fontFamily, position } = subtitleSettings;
+  const bgRgba = `rgba(${hexToRgb(bgColor)},${Math.max(0, Math.min(1, bgOpacity))})`;
+  const posCss =
+    position === "top" ? "top:8%;bottom:auto;" :
+    position === "middle" ? "top:50%;bottom:auto;transform:translateY(-50%);" :
+    "bottom:8%;top:auto;";
+
+  const css = `
+    /* Native HTML5 cues (works on most generic <video><track> setups) */
+    html video::cue {
+      font-size:${fontSize}px !important;
+      color:${color} !important;
+      background-color:${bgRgba} !important;
+      background:${bgRgba} !important;
+      font-family:${fontFamily} !important;
+      line-height:1.35 !important;
+      padding:2px 6px !important;
+      text-shadow:none !important;
+    }
+
+    /* YouTube — high specificity via html prefix + match every descendant of caption containers */
+    html .ytp-caption-segment,
+    html .captions-text .ytp-caption-segment,
+    html .ytp-caption-window-container .ytp-caption-segment,
+    html .ytp-caption-window-container span,
+    html .caption-visual-line *,
+    html .captions-text * {
+      font-size:${fontSize}px !important;
+      color:${color} !important;
+      background-color:${bgRgba} !important;
+      background:${bgRgba} !important;
+      background-image:none !important;
+      font-family:${fontFamily} !important;
+      padding:2px 8px !important;
+      text-shadow:none !important;
+      fill:${color} !important;
+    }
+    html .ytp-caption-window-container,
+    html .caption-window {
+      ${posCss}
+      left:50% !important; right:auto !important;
+      transform:translateX(-50%)${position === "middle" ? " translateY(-50%)" : ""} !important;
+      max-width:90% !important;
+      z-index:60 !important;
+    }
+    html .ytp-caption-segment {
+      z-index:61 !important;
+      position:relative !important;
+    }
+
+    /* Netflix */
+    html .player-timedtext-text-container,
+    html .player-timedtext-text-container span,
+    html .player-timedtext .player-timedtext-text-container * {
+      font-size:${fontSize}px !important;
+      color:${color} !important;
+      background-color:${bgRgba} !important;
+      background:${bgRgba} !important;
+      font-family:${fontFamily} !important;
+      text-shadow:none !important;
+    }
+    html .player-timedtext {
+      ${posCss}
+      z-index:60 !important;
+    }
+
+    /* JW Player / generic */
+    html .jw-text-track-cue,
+    html .jw-text-track-display,
+    html .jw-text-track-display * {
+      font-size:${fontSize}px !important;
+      color:${color} !important;
+      background-color:${bgRgba} !important;
+      background:${bgRgba} !important;
+      font-family:${fontFamily} !important;
+    }
+  `;
+
+  subtitleStyleEl = document.createElement("style");
+  subtitleStyleEl.id = "vz_subtitles_css";
+  subtitleStyleEl.textContent = css;
+  document.documentElement.appendChild(subtitleStyleEl);
+}
+
+function applySubtitleTrack() {
+  const lang = subtitleSettings.defaultLang;
+  if (!subtitleSettings.enabled || !lang) return;
+
+  for (const video of document.querySelectorAll("video")) {
+    enableMatchingTextTrack(video, lang);
+  }
+
+  if (isYouTubeHost()) {
+    // Drive YouTube's CC + auto-translate menu via simulated clicks
+    youtubeSetCaptionLanguage(lang);
+  } else {
+    tryEnableYouTubeCC(); // no-op outside YouTube
+  }
+}
+
+function tryEnableYouTubeCC() {
+  if (!isYouTubeHost()) return;
+  const btn = document.querySelector(".ytp-subtitles-button");
+  if (!btn) return;
+  if (btn.getAttribute("aria-pressed") === "true") return;
+  try { btn.click(); } catch {}
+}
+
+function isYouTubeHost() {
+  return /(^|\.)youtube\.com$/.test(location.hostname);
+}
+
+// Common language names by ISO code, lowercased — used to match menuitem text
+const YT_LANG_NAMES = {
+  ar: ["arabic", "العربية", "عربي"],
+  en: ["english", "الإنجليزية"],
+  es: ["spanish", "español", "الإسبانية"],
+  fr: ["french", "français", "الفرنسية"],
+  de: ["german", "deutsch", "الألمانية"],
+  it: ["italian", "italiano", "الإيطالية"],
+  ja: ["japanese", "日本語", "اليابانية"],
+  ko: ["korean", "한국어", "الكورية"],
+  zh: ["chinese", "中文", "الصينية"],
+  ru: ["russian", "русский", "الروسية"],
+  tr: ["turkish", "türkçe", "التركية"],
+  pt: ["portuguese", "português", "البرتغالية"],
+  hi: ["hindi", "हिन्दी", "الهندية"],
+  ur: ["urdu", "اردو"],
+  fa: ["persian", "farsi", "فارسی", "الفارسية"],
+  nl: ["dutch", "nederlands"],
+  pl: ["polish", "polski"],
+  sv: ["swedish", "svenska"],
+  id: ["indonesian", "bahasa indonesia"]
+};
+
+// Labels for the "Subtitles/CC" menuitem (localized variants)
+const YT_SUBTITLE_LABELS = [
+  "subtitles/cc", "subtitles", "captions", "cc",
+  "ترجمة", "الترجمة", "الترجمات",
+  "sous-titres", "untertitel", "subtítulos", "legendas",
+  "字幕", "altyazılar", "subtitulos", "phụ đề"
+];
+
+let ytCaptionAttemptKey = null;
+
+function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+function waitForCondition(check, timeout = 1500) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const tick = () => {
+      let v;
+      try { v = typeof check === "function" ? check() : document.querySelector(check); } catch { v = null; }
+      if (v) return resolve(v);
+      if (Date.now() - start > timeout) return resolve(null);
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
+}
+
+function findVisibleYTMenuItem(predicate) {
+  const items = document.querySelectorAll(".ytp-popup.ytp-settings-menu .ytp-menuitem");
+  for (const item of items) {
+    const r = item.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    const label = (item.querySelector(".ytp-menuitem-label")?.textContent || "").trim().toLowerCase();
+    if (predicate(label, item)) return item;
+  }
+  return null;
+}
+
+function closeYTSettingsIfOpen() {
+  const popup = document.querySelector(".ytp-popup.ytp-settings-menu");
+  if (popup?.offsetHeight > 0) {
+    document.querySelector(".ytp-settings-button")?.click();
+  }
+}
+
+async function youtubeSetCaptionLanguage(langCode) {
+  if (!langCode || !isYouTubeHost()) return false;
+
+  const targetNames = (YT_LANG_NAMES[langCode] || [langCode]).map((s) => s.toLowerCase());
+  const key = `${location.pathname}${location.search}|${langCode}`;
+  if (ytCaptionAttemptKey === key) return false; // don't loop on same video
+  ytCaptionAttemptKey = key;
+
+  try {
+    // 1. Enable CC button if not already on
+    const ccBtn = await waitForCondition(".ytp-subtitles-button", 4000);
+    if (!ccBtn) return false;
+    if (ccBtn.getAttribute("aria-pressed") !== "true") {
+      ccBtn.click();
+      await delay(250);
+    }
+
+    // 2. Open the settings (gear) menu — close it first if it's already open
+    const gear = document.querySelector(".ytp-settings-button");
+    if (!gear) return false;
+    const existing = document.querySelector(".ytp-popup.ytp-settings-menu");
+    if (existing?.offsetHeight > 0) {
+      gear.click();
+      await delay(180);
+    }
+    gear.click();
+    const opened = await waitForCondition(".ytp-popup.ytp-settings-menu .ytp-menuitem", 1500);
+    if (!opened) return false;
+
+    // 3. Click the "Subtitles/CC" menuitem
+    const subItem = findVisibleYTMenuItem((label) =>
+      YT_SUBTITLE_LABELS.some((l) => label.includes(l))
+    );
+    if (!subItem) { closeYTSettingsIfOpen(); return false; }
+    subItem.click();
+    await delay(300);
+
+    // 4. In the captions panel: try direct language match first
+    const direct = findVisibleYTMenuItem((label) =>
+      targetNames.some((n) => label.includes(n))
+    );
+    if (direct) {
+      // Avoid re-clicking the same item if it's already checked
+      if (direct.getAttribute("aria-checked") !== "true") {
+        direct.click();
+      } else {
+        closeYTSettingsIfOpen();
+      }
+      return true;
+    }
+
+    // 5. Open "Auto-translate" submenu — it's the menuitem with aria-haspopup
+    const autoItem = findVisibleYTMenuItem((_label, item) =>
+      item.getAttribute("aria-haspopup") === "true"
+    );
+    if (!autoItem) { closeYTSettingsIfOpen(); return false; }
+    autoItem.click();
+    await delay(300);
+
+    // 6. Find the target language in the language list
+    const targetItem = findVisibleYTMenuItem((label) =>
+      targetNames.some((n) => label.includes(n))
+    );
+    if (!targetItem) { closeYTSettingsIfOpen(); return false; }
+    targetItem.click();
+    return true;
+  } catch {
+    closeYTSettingsIfOpen();
+    return false;
+  }
+}
+
+function enableMatchingTextTrack(video, lang) {
+  if (!video?.textTracks) return;
+  const target = lang.toLowerCase();
+  let foundMatch = false;
+  for (const track of video.textTracks) {
+    const tLang = (track.language || "").toLowerCase();
+    const tLabel = (track.label || "").toLowerCase();
+    if (tLang.startsWith(target) || tLabel.includes(target)) {
+      track.mode = "showing";
+      foundMatch = true;
+    } else if (track.mode === "showing") {
+      // Leave other showing tracks alone unless user matched a different one
+    }
+  }
+  return foundMatch;
+}
+
+function startSubtitleTrackObserver() {
+  if (subtitleTrackObserver) return;
+  subtitleTrackObserver = new MutationObserver((mutations) => {
+    if (!subtitleSettings.enabled || !subtitleSettings.defaultLang) return;
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (node?.nodeType !== 1) continue;
+        if (node.tagName === "VIDEO") {
+          enableMatchingTextTrack(node, subtitleSettings.defaultLang);
+        } else if (node.querySelectorAll) {
+          for (const v of node.querySelectorAll("video")) {
+            enableMatchingTextTrack(v, subtitleSettings.defaultLang);
+          }
+        }
+      }
+    }
+  });
+  subtitleTrackObserver.observe(document.documentElement, { childList: true, subtree: true });
+
+  // SPA navigation on YouTube: each new video is a new attempt
+  document.addEventListener("yt-navigate-finish", () => {
+    ytCaptionAttemptKey = null;
+    if (subtitleSettings.enabled && subtitleSettings.defaultLang) {
+      setTimeout(() => applySubtitleTrack(), 1500);
+    }
+  }, true);
+
+  // Native loadedmetadata fires when a new video loads — re-apply after a short delay
+  document.addEventListener("loadedmetadata", (e) => {
+    if (e.target?.tagName !== "VIDEO") return;
+    if (!subtitleSettings.enabled || !subtitleSettings.defaultLang) return;
+    setTimeout(() => applySubtitleTrack(), 500);
+  }, true);
+}
+
+async function loadSoundDisplaySettings() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const settings = data.settings || {};
+  const sound = settings.soundDisplay || soundDisplaySettings;
+  soundDisplaySettings = {
+    color: sound.color || "#ffffff",
+    fontSize: Number(sound.fontSize || 48)
+  };
+
+  if (vzOverlay) {
+    vzOverlay.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
+    vzOverlay.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
+  }
+  if (vzVolumeBadge) {
+    vzVolumeBadge.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
+    vzVolumeBadge.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
+  }
+}
+
+function isBlockedHost() {
+  return blockedHosts.includes(baseDomain(location.host));
+}
+
+
+
+
+// -------------------- Global Video Zones (3x3 + Wheel) --------------------
+let zoneSettings = { enabled: true, wheel: { map: {} } };
+
+
+
+
+
+
+
+
+async function loadZoneSettings() {
+  const zones = await ensureZonesDefaults(); //  يضمن وجود الإعدادات حتى بدون فتح options
+  zoneSettings = zones || zoneSettings;
+
+  zoneSettings.enabled = zoneSettings.enabled !== false; // default true
+  zoneSettings.fullscreenOnly = zoneSettings.fullscreenOnly === true;
+  zoneSettings.wheel ||= { map: {} };
+  zoneSettings.wheel.map ||= {};
+  zoneSettings.click ||= { map: {} };
+  zoneSettings.click.map ||= {};
+  zoneSettings.key ||= { map: {} };
+  zoneSettings.key.map ||= {};
+}
+
+function zonesActive() {
+  if (!remappingEnabled()) return false;
+  if (isBlockedHost()) return false;
+  if (!zoneSettings?.enabled) return false;
+  if (zoneSettings?.fullscreenOnly && !document.fullscreenElement) return false;
+  return true;
+}
+
+function getZoneAtEvent(e) {
+  const video = getVideoUnderPointer(e);
+  if (!video) return null;
+  ensureVideoOverlay(video);
+  const rect = video.getBoundingClientRect();
+  const zone = getZoneNumber(rect, e.clientX, e.clientY);
+  return zone ? { video, zone } : null;
+}
+
+function findVideoAtPoint(x, y) {
+  if (typeof x !== "number" || typeof y !== "number") return null;
+
+  const stack = typeof document.elementsFromPoint === "function"
+    ? document.elementsFromPoint(x, y)
+    : [document.elementFromPoint(x, y)].filter(Boolean);
+
+  for (const el of stack) {
+    if (!el) continue;
+    if (el.tagName === "VIDEO") return el;
+
+    const closestVideo = el.closest?.("video");
+    if (closestVideo) return closestVideo;
+
+    const descendantVideos = el.querySelectorAll?.("video");
+    if (!descendantVideos?.length) continue;
+
+    for (const video of descendantVideos) {
+      const rect = video.getBoundingClientRect?.();
+      if (!rect) continue;
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+        return video;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getVideoUnderPointer(e) {
+  if (typeof e.clientX === "number" && typeof e.clientY === "number") {
+    const v = findVideoAtPoint(e.clientX, e.clientY);
+    if (v) return v;
+  }
+  return null;
+}
+
+// Zones numbered 1..9 from top-left to bottom-right
+function getZoneNumber(rect, x, y) {
+  const relX = x - rect.left;
+  const relY = y - rect.top;
+  if (relX < 0 || relY < 0 || relX > rect.width || relY > rect.height) return null;
+  const col = Math.min(2, Math.floor((relX / rect.width) * 3));  // 0..2
+  const row = Math.min(2, Math.floor((relY / rect.height) * 3)); // 0..2
+  return row * 3 + col + 1;
+}
+
+function updatePointerFromEvent(e) {
+  if (typeof e.clientX === "number" && typeof e.clientY === "number") {
+    lastPointer = { x: e.clientX, y: e.clientY };
+  }
+}
+
+function getVideoFromPointerPosition() {
+  if (typeof lastPointer.x !== "number" || typeof lastPointer.y !== "number") return null;
+  return findVideoAtPoint(lastPointer.x, lastPointer.y);
+}
+
+function normalizeMappedActions(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  return value ? [value] : [];
+}
+
+window.addEventListener("mousemove", updatePointerFromEvent, true);
+
+window.addEventListener("wheel", (e) => {
+  updatePointerFromEvent(e);
+  if (!zonesActive()) return;
+
+  const hit = getZoneAtEvent(e);
+  if (!hit) return;
+
+  const entry = zoneSettings?.wheel?.map?.[String(hit.zone)];
+  if (!entry) return;
+
+  const dir = e.deltaY < 0 ? "up" : "down";
+  const actions = normalizeMappedActions(entry[dir]);
+  if (!actions.length) return;
+  showOverlay(`Zone ${zoneLabel(hit.zone)} • ${dir.toUpperCase()} → ${actions.join(" + ")}`);
+
+  let ok = false;
+  for (const action of actions) {
+    ok = runAction(action, e) || ok;
+  }
+  if (!ok) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+}, { capture: true, passive: false });
+
+// Zone-based click handler (left/middle/right click on a zone of a video)
+function handleZoneClick(e) {
+  if (!zonesActive()) return false;
+  const triggerByBtn = { 0: "left", 1: "middle", 2: "right" };
+  const which = triggerByBtn[e.button];
+  if (!which) return false;
+  // Left/middle fire on click/auxclick; right fires on contextmenu
+  if (which === "right" && e.type !== "contextmenu") return false;
+  if (which !== "right" && e.type !== "click" && e.type !== "auxclick") return false;
+
+  const hit = getZoneAtEvent(e);
+  if (!hit) return false;
+
+  const entry = zoneSettings?.click?.map?.[String(hit.zone)];
+  const actions = normalizeMappedActions(entry?.[which]);
+  if (!actions.length) return false;
+
+  e.__videoUnderPointer = hit.video;
+  showOverlay(`Zone ${zoneLabel(hit.zone)} • ${which.toUpperCase()} CLICK → ${actions.join(" + ")}`);
+
+  let ok = false;
+  for (const action of actions) ok = runAction(action, e) || ok;
+  delete e.__videoUnderPointer;
+
+  if (ok) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+  }
+  return ok;
+}
+
+window.addEventListener("click", handleZoneClick, true);
+window.addEventListener("auxclick", handleZoneClick, true);
+window.addEventListener("contextmenu", handleZoneClick, true);
+// -------------------------------------------------------------------------
+let overlaySettings = { enabled: true, autoHideMs: 900, volumeAutoHideMs: 900 };
+
+async function loadOverlaySettings() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const s = data.settings || {};
+  const o = s.overlay || {};
+  const grid = Number(o.autoHideMs ?? 900);
+  const vol = Number(o.volumeAutoHideMs ?? grid);
+  overlaySettings = {
+    enabled: o.enabled !== false && (grid > 0 || vol > 0),
+    autoHideMs: grid,
+    volumeAutoHideMs: vol
+  };
+
+  if (!overlaySettings.enabled) hideOverlayNow();
+}
+
+// -------- Overlay: Grid داخل الفيديو --------
+function injectOverlayCSS() {
+  if (document.getElementById("vz_overlay_css")) return;
+  const style = document.createElement("style");
+  style.id = "vz_overlay_css";
+  style.textContent = `
+    .vzWrap{
+      position:fixed;
+      pointer-events:none;
+      z-index:2147483647;
+      direction:ltr;
+      contain:layout style;
+    }
+    .vzGrid{
+      position:absolute; inset:0;
+      display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr);
+      direction:ltr;
+    }
+    .vzCell{ border:1px solid rgba(255,255,255,.32); }
+    .vzHint{
+      position:absolute; left:10px; bottom:10px;
+      background:rgba(0,0,0,.7); color:#fff;
+      padding:6px 10px; border-radius:10px;
+      font:12px/1.2 Arial, sans-serif; max-width:70%;
+      opacity:.95;
+    }
+    .vzVolume{
+      position:absolute; left:10px; top:10px;
+      color:var(--vz-volume-color, #fff);
+      font:700 var(--vz-volume-size, 48px)/1 Arial, sans-serif;
+      text-shadow:0 2px 10px rgba(0,0,0,.75);
+      pointer-events:none;
+      opacity:.98;
+    }
+    .vzHidden{ display:none !important; }
+  `;
+  document.documentElement.appendChild(style);
+}
+
+let vzOverlay = null;            // .vzWrap — contains grid + hint + volume
+let vzOverlayVideo = null;
+let vzGridEl = null;
+let vzHintEl = null;
+let vzVolumeBadge = null;
+let vzOverlayHost = null;        // parent it's currently attached to (body or fullscreen el)
+let vzTrackRafId = null;
+
+function buildOverlayElement() {
+  const el = document.createElement("div");
+  el.className = "vzWrap";
+  el.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
+  el.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
+  el.innerHTML = `
+    <div class="vzGrid vzHidden">
+      <div class="vzCell"></div><div class="vzCell"></div><div class="vzCell"></div>
+      <div class="vzCell"></div><div class="vzCell"></div><div class="vzCell"></div>
+      <div class="vzCell"></div><div class="vzCell"></div><div class="vzCell"></div>
+    </div>
+    <div class="vzHint vzHidden">Zones</div>
+    <div class="vzVolume vzHidden">100</div>
+  `;
+  return el;
+}
+
+function preferredOverlayHost() {
+  // Inside fullscreen, the fullscreen element is the only thing the browser paints.
+  // Outside, body is fine since we use position:fixed (viewport coords).
+  if (document.fullscreenElement) return document.fullscreenElement;
+  return document.body || document.documentElement;
+}
+
+function positionOverlayToVideo() {
+  if (!vzOverlay || !vzOverlayVideo || !vzOverlayVideo.isConnected) return;
+  const rect = vzOverlayVideo.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  vzOverlay.style.left = `${rect.left}px`;
+  vzOverlay.style.top = `${rect.top}px`;
+  vzOverlay.style.width = `${rect.width}px`;
+  vzOverlay.style.height = `${rect.height}px`;
+}
+
+function anySubElementVisible() {
+  return (
+    (vzGridEl && !vzGridEl.classList.contains("vzHidden")) ||
+    (vzHintEl && !vzHintEl.classList.contains("vzHidden")) ||
+    (vzVolumeBadge && !vzVolumeBadge.classList.contains("vzHidden"))
+  );
+}
+
+function startOverlayTracking() {
+  if (vzTrackRafId != null) return;
+  const tick = () => {
+    if (!anySubElementVisible()) {
+      vzTrackRafId = null;
+      return;
+    }
+    positionOverlayToVideo();
+    vzTrackRafId = requestAnimationFrame(tick);
+  };
+  vzTrackRafId = requestAnimationFrame(tick);
+}
+
+function attachOverlayToHost(host) {
+  if (!vzOverlay || !host) return;
+  if (host.contains(vzOverlay)) {
+    vzOverlayHost = host;
+    return;
+  }
+  host.appendChild(vzOverlay);
+  vzOverlayHost = host;
+}
+
+function teardownOverlay() {
+  if (vzOverlay) vzOverlay.remove();
+  vzOverlay = null;
+  vzGridEl = null;
+  vzHintEl = null;
+  vzVolumeBadge = null;
+  vzOverlayVideo = null;
+  vzOverlayHost = null;
+  if (vzTrackRafId != null) {
+    cancelAnimationFrame(vzTrackRafId);
+    vzTrackRafId = null;
+  }
+}
+
+function ensureVideoOverlay(video) {
+  if (!video) return;
+  injectOverlayCSS();
+
+  if (vzOverlayVideo === video && vzOverlay && video.isConnected) {
+    // Make sure it's still attached to the right host (fullscreen toggles, etc.)
+    const host = preferredOverlayHost();
+    if (host !== vzOverlayHost) attachOverlayToHost(host);
+    positionOverlayToVideo();
+    return;
+  }
+
+  teardownOverlay();
+  vzOverlay = buildOverlayElement();
+  vzGridEl = vzOverlay.querySelector(".vzGrid");
+  vzHintEl = vzOverlay.querySelector(".vzHint");
+  vzVolumeBadge = vzOverlay.querySelector(".vzVolume");
+  vzOverlayVideo = video;
+  attachOverlayToHost(preferredOverlayHost());
+  positionOverlayToVideo();
+}
+
+document.addEventListener("fullscreenchange", () => {
+  if (!vzOverlay || !vzOverlayVideo) return;
+  attachOverlayToHost(preferredOverlayHost());
+  positionOverlayToVideo();
+});
+
+function showOverlay(text) {
+  const ms = Math.max(0, Number(overlaySettings.autoHideMs ?? 0));
+  if (ms <= 0) return; // Grid overlay disabled
+  if (!vzGridEl || !vzHintEl) return;
+
+  vzHintEl.textContent = text || "Zones";
+  vzGridEl.classList.remove("vzHidden");
+  vzHintEl.classList.remove("vzHidden");
+  positionOverlayToVideo();
+  startOverlayTracking();
+
+  clearTimeout(showOverlay._t);
+  showOverlay._t = setTimeout(() => {
+    vzGridEl?.classList.add("vzHidden");
+    vzHintEl?.classList.add("vzHidden");
+  }, ms);
+}
+function hideOverlayNow() {
+  vzGridEl?.classList.add("vzHidden");
+  vzHintEl?.classList.add("vzHidden");
+  vzVolumeBadge?.classList.add("vzHidden");
+}
+
+function showVolumeIndicator(video) {
+  if (!video) return;
+  const ms = Math.max(0, Number(overlaySettings.volumeAutoHideMs ?? 0));
+  if (ms <= 0) return; // Volume indicator disabled
+
+  ensureVideoOverlay(video);
+  if (!vzVolumeBadge || vzOverlayVideo !== video) return;
+
+  const percent = video.muted ? 0 : Math.round((video.volume ?? 1) * 100);
+  vzVolumeBadge.textContent = String(percent);
+  vzOverlay?.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
+  vzOverlay?.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
+  vzVolumeBadge.classList.remove("vzHidden");
+  positionOverlayToVideo();
+  startOverlayTracking();
+
+  clearTimeout(showVolumeIndicator._t);
+  showVolumeIndicator._t = setTimeout(() => {
+    vzVolumeBadge?.classList.add("vzHidden");
+  }, ms);
+}
+// -------------------------------------------
+
+
+function baseDomain(host) {
+  const h = normalizeHost(host);
+  const p = h.split(".");
+  return p.length <= 2 ? h : p.slice(-2).join(".");
+}
+
+async function loadRulesForThisHost() {
+  const data = await chrome.storage.sync.get({
+    globalSiteRules: { enabled: false, mappings: [] }
+  });
+  siteRules = data.globalSiteRules || { enabled: false, mappings: [] };
+  buildMap();
+}
+
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === "GVZ_STATUS") {
+    sendResponse({
+      ok: true,
+      blocked: isBlockedHost(),
+      globalEnabled: !!siteRules.enabled,
+      siteProfileEnabled: !!siteProfile.enabled,
+      hasVideoUnderPointer: !!getVideoFromPointerPosition(),
+      host: baseDomain(location.host)
+    });
+    return true;
+  }
+  if (msg?.type === "SITE_RULES_UPDATED") {
+    siteRules = msg.siteRules || { enabled: false, mappings: [] };
+    buildMap();
+    if (!remappingEnabled()) hideOverlayNow();
+  }
+  if (msg?.type === "RELOAD_SITE_RULES") {
+    loadRulesForThisHost();
+  }
+  if (msg?.type === "RELOAD_SITE_PROFILE") {
+    loadSiteProfile().then(() => {
+      if (!remappingEnabled()) hideOverlayNow();
+    });
+  }
+  // from Options page
+  if (msg?.type === "GVZ_RELOAD" || msg?.type === "RELOAD_ZONE_SETTINGS") {
+    loadZoneSettings();
+    loadBlockedHosts();
+    loadSoundDisplaySettings();
+  }
+  if (msg?.type === "RELOAD_OVERLAY_SETTINGS") loadOverlaySettings();
+  if (msg?.type === "RELOAD_SUBTITLES") loadSubtitleSettings();
+});
+
+loadRulesForThisHost();
+loadSiteProfile();
+loadZoneSettings(); // ✅ مهم: تشغيل zones بعد refresh مباشرة
+loadOverlaySettings();
+loadBlockedHosts();
+loadSoundDisplaySettings();
+loadSubtitleSettings();
+startSubtitleTrackObserver();
+
+function normalizeKeyEvent(e) {
+  // نخلي ArrowRight/ArrowLeft يطلع كما هو
+  if (e.key === "ArrowRight" || e.key === "ArrowLeft") return e.key;
+
+  const parts = [];
+  if (e.ctrlKey) parts.push("Ctrl");
+  if (e.altKey) parts.push("Alt");
+  if (e.shiftKey) parts.push("Shift");
+  if (e.metaKey) parts.push("Meta");
+
+  let k = e.key;
+  if (k === " ") k = "Space";
+  if (k === "Escape") k = "Esc";
+  if (["Control", "Shift", "Alt", "Meta"].includes(k)) return null;
+
+  parts.push(k.length === 1 ? k.toUpperCase() : k);
+  return parts.join("+");
+}
+
+function normalizeMouseEvent(e) {
+  const mapBtns = ["Mouse1", "Mouse2", "Mouse3", "Mouse4", "Mouse5"];
+  return mapBtns[e.button] || `Mouse${e.button + 1}`;
+}
+function getVideoUnderPointerStrict(e) {
+  if (typeof e.clientX !== "number" || typeof e.clientY !== "number") return null;
+  const v = findVideoAtPoint(e.clientX, e.clientY);
+  return v || null;
+}
+
+function shouldLetNativeLinkHandlingRun(e, video) {
+  const target = e.target;
+  if (!target?.closest) return false;
+
+  const linkLike = target.closest("a[href], [role='link']");
+  if (!linkLike) return false;
+
+  if (!video) return true;
+
+  if (linkLike === video) return false;
+  if (video.contains?.(linkLike)) return false;
+
+  return true;
+}
+
+function togglePlay(video) {
+  if (!video) return;
+  if (video.paused) video.play().catch(()=>{});
+  else video.pause();
+}
+
+function seek(video, deltaSec) {
+  if (!video) return;
+  // بعض الستريمات live ما تدعم seek
+  if (isNaN(video.duration) || !isFinite(video.duration)) return;
+  video.currentTime = Math.max(0, Math.min(video.currentTime + deltaSec, video.duration));
+}
+
+function runAction(action, e) {
+  // Play/Pause: فقط فيديو نفسه
+  if (action === "ACTION:TOGGLE_PLAY") {
+    const video = e.__videoUnderPointer || findVideoLoose(e);
+    if (!video) return false;
+    togglePlay(video);
+    return true;
+  }
+
+  // Seek: نقدر نستخدم loose لأن الأسهم غالبًا بدون target فيديو
+  if (action.startsWith("ACTION:SEEK:")) {
+    const n = Number(action.split(":")[2]);
+    if (isNaN(n)) return false;
+    const video = findVideoLoose(e);
+    if (!video) return false;
+    seek(video, n);
+    return true;
+  }
+
+  // Fullscreen: loose (عشان Twitch overlays/iframes)
+if (action === "ACTION:TOGGLE_FULLSCREEN") {
+  // ✅ لو Mouse2 جهّز لنا فيديو تحت المؤشر، استخدمه
+  const video = e.__videoUnderPointer || findVideoLoose(e);
+  if (!video) return false;
+
+  const t = nowMs();
+  if (t - lastFsAt < 450) return true;
+  lastFsAt = t;
+
+  toggleFullscreen(video);
+  return true;
+}
+
+
+  // Mute
+  if (action === "ACTION:TOGGLE_MUTE") {
+    const video = findVideoLoose(e);
+    if (!video) return false;
+    video.muted = !video.muted;
+    showVolumeIndicator(video);
+    return true;
+  }
+
+  // PiP
+  if (action === "ACTION:TOGGLE_PIP") {
+    const video = findVideoLoose(e);
+    if (!video) return false;
+    const doc = document;
+    const pipEl = doc.pictureInPictureElement;
+    if (pipEl) {
+      doc.exitPictureInPicture?.().catch(()=>{});
+    } else {
+      video.requestPictureInPicture?.().catch(()=>{});
+    }
+    return true;
+  }
+
+  // Volume delta in percent
+  if (action.startsWith("ACTION:VOLUME:")) {
+    const n = Number(action.split(":")[2]);
+    if (isNaN(n)) return false;
+    const video = findVideoLoose(e);
+    if (!video) return false;
+    const delta = n / 100;
+    // When raising volume, force unmute first — some sites auto-mute at 0.
+    if (delta > 0 && (video.muted || (video.volume ?? 1) === 0)) {
+      video.muted = false;
+      if ((video.volume ?? 0) === 0) video.volume = Math.min(1, delta);
+    } else {
+      // When lowering, clamp to a tiny non-zero floor to prevent host-site auto-mute.
+      const next = (video.volume ?? 1) + delta;
+      video.volume = next <= 0 ? 0.0001 : Math.min(1, next);
+    }
+    showVolumeIndicator(video);
+    return true;
+  }
+
+  // Speed: SET absolute value (e.g. ACTION:SPEED:SET:2)
+  if (action.startsWith("ACTION:SPEED:SET:")) {
+    const n = Number(action.split(":")[3]);
+    if (isNaN(n)) return false;
+    const video = findVideoLoose(e);
+    if (!video) return false;
+    video.playbackRate = Math.max(0.25, Math.min(4, Math.round(n * 100) / 100));
+    return true;
+  }
+
+  // Speed: delta
+  if (action.startsWith("ACTION:SPEED:")) {
+    const n = Number(action.split(":")[2]);
+    if (isNaN(n)) return false;
+    const video = findVideoLoose(e);
+    if (!video) return false;
+    const r = (video.playbackRate || 1) + n;
+    video.playbackRate = Math.max(0.25, Math.min(4, Math.round(r * 100) / 100));
+    return true;
+  }
+
+  return false;
+}
+
+function pickFullscreenContainer(video) {
+  if (!video) return null;
+  const videoRect = video.getBoundingClientRect();
+  const videoArea = Math.max(1, videoRect.width * videoRect.height);
+
+  // جرّب نلقى أقرب حاوية “تشبه مشغل” (عادة تحتوي أزرار/controls overlay)
+  const candidates = [];
+  let cur = video;
+  for (let i = 0; i < 8 && cur; i++) {
+    candidates.push(cur);
+    cur = cur.parentElement;
+  }
+
+  // فلترة: نفضّل عنصر:
+  // - يحتوي الفيديو
+  // - وفيه buttons/controls أو class/role تشير للمشغل
+  const scored = candidates
+    .map(el => {
+      const cls = (el.className || "").toString();
+      const role = (el.getAttribute?.("role") || "");
+      const hasButtons = !!el.querySelector?.("button, [role='button'], input[type='range']");
+      const looksPlayer = /player|video|controls|overlay|container/i.test(cls + " " + role);
+      const rect = el.getBoundingClientRect?.();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+
+      const areaRatio = (rect.width * rect.height) / videoArea;
+      const containsVideoCenter =
+        rect.left <= videoRect.left + (videoRect.width / 2) &&
+        rect.right >= videoRect.left + (videoRect.width / 2) &&
+        rect.top <= videoRect.top + (videoRect.height / 2) &&
+        rect.bottom >= videoRect.top + (videoRect.height / 2);
+
+      if (!containsVideoCenter) return null;
+      if (areaRatio > 3.5) return null; // يمنع body / page wrappers
+
+      const score =
+        (hasButtons ? 3 : 0) +
+        (looksPlayer ? 2 : 0) +
+        (el === video ? 0 : 1) +
+        Math.max(0, 2 - Math.abs(areaRatio - 1.15));
+      return { el, score };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score);
+
+  // أفضل خيار: أعلى سكور، وإلا استخدم parent للفيديو
+  return scored[0]?.el || video.parentElement || video;
+}
+
+function toggleFullscreen(video) {
+  const doc = document;
+  const v = video;
+  if (!v) return;
+
+  // خروج
+  if (doc.fullscreenElement) {
+    doc.exitFullscreen?.().catch(()=>{});
+    return;
+  }
+
+  const container = pickFullscreenContainer(v);
+  const req = container?.requestFullscreen || container?.webkitRequestFullscreen;
+  if (req) {
+    try { req.call(container); } catch {}
+  }
+}
+
+
+
+
+function findVideoLoose(e) {
+  if (e.target?.tagName === "VIDEO") return e.target;
+
+  // لو الهدف overlay فوق الفيديو
+  const v1 = e.target?.closest?.("video");
+  if (v1) return v1;
+
+  // الأهم: خذ العنصر تحت المؤشر (غالباً الفيديو يكون تحته)
+  if (typeof e.clientX === "number" && typeof e.clientY === "number") {
+    const v2 = findVideoAtPoint(e.clientX, e.clientY);
+    if (v2) return v2;
+  }
+
+  return getVideoFromPointerPosition();
+}
+
+
+
+
+function shouldIgnoreKeyBecauseTyping() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+}
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "sync") return;
+  if (changes.settings) {
+    loadZoneSettings();
+    loadOverlaySettings();
+    loadBlockedHosts();
+    loadSoundDisplaySettings();
+    loadSubtitleSettings();
+  }
+  if (changes.globalSiteRules) loadRulesForThisHost();
+  if (changes.siteProfiles) loadSiteProfile();
+});
+/*chrome.tabs.query({active:true,currentWindow:true}, ([t])=>{
+  chrome.tabs.sendMessage(t.id, {type:"RELOAD_OVERLAY_SETTINGS"});
+});
+*/
+
+
+
+
+
+
+
+
+
+// ✅ ArrowRight/Left: نمنع الافتراضي ونطبق 5 ثواني
+window.addEventListener("keydown", (e) => {
+  updatePointerFromEvent(e);
+  if (isBlockedHost()) return;
+  if (!remappingEnabled()) return;
+  if (shouldIgnoreKeyBecauseTyping()) return;
+  const hoveredVideo = getVideoFromPointerPosition();
+  if (!hoveredVideo) return;
+
+  const sig = normalizeKeyEvent(e);
+  if (!sig) return;
+
+  // 1. Per-site profile beats global; both are checked via lookupRemap.
+  const to = lookupRemap(sig);
+  if (to) {
+    const ok = to.startsWith("ACTION:") ? runAction(to, e) : false;
+    if (ok) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    return;
+  }
+
+  // 2. Fall through to zone-based keyboard binding
+  if (!zonesActive()) return;
+  if (typeof lastPointer.x !== "number" || typeof lastPointer.y !== "number") return;
+  const rect = hoveredVideo.getBoundingClientRect();
+  const zone = getZoneNumber(rect, lastPointer.x, lastPointer.y);
+  if (!zone) return;
+
+  const zoneKeyMap = zoneSettings?.key?.map?.[String(zone)];
+  const actions = normalizeMappedActions(zoneKeyMap?.[sig]);
+  if (!actions.length) return;
+
+  ensureVideoOverlay(hoveredVideo);
+  e.__videoUnderPointer = hoveredVideo;
+  showOverlay(`Zone ${zoneLabel(zone)} • ${sig} → ${actions.join(" + ")}`);
+
+  let ok = false;
+  for (const action of actions) ok = runAction(action, e) || ok;
+  delete e.__videoUnderPointer;
+  if (ok) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}, true);
+
+function handleMouse(e) {
+  updatePointerFromEvent(e);
+  if (isBlockedHost()) return;
+  if (!remappingEnabled()) return;
+
+  const sig = normalizeMouseEvent(e); // Mouse1..Mouse5
+  const to = lookupRemap(sig);
+  if (!to) return;
+
+  // Mouse1 (Play/Pause): فقط click + فقط على VIDEO نفسه (من runAction)
+  if (sig === "Mouse1") {
+    if (e.type !== "click") return;
+  }
+
+  // Mouse2 (Fullscreen): auxclick أو mousedown (حسب الجهاز) + Debounce + فيديو تحت المؤشر
+  if (sig === "Mouse2") {
+    if (!(e.type === "auxclick" || e.type === "mousedown")) return;
+
+    const t = nowMs();
+    if (t - lastMouse2At < 350) return; // يمنع double-trigger
+    lastMouse2At = t;
+
+    const v = getVideoUnderPointerStrict(e);
+    if (!v) return; // خارج الفيديو = لا تسوي شي
+    if (shouldLetNativeLinkHandlingRun(e, v)) return;
+    e.__videoUnderPointer = v;
+  }
+
+  // Mouse3 = الزر الأيمن: نفّذ الاختصار وامنع قائمة الزر الأيمن
+  if (sig === "Mouse3") {
+    if (!(e.type === "mousedown" || e.type === "contextmenu")) return;
+
+    const v = getVideoUnderPointerStrict(e);
+    if (!v) return;
+    if (shouldLetNativeLinkHandlingRun(e, v)) return;
+    e.__videoUnderPointer = v;
+
+    if (e.type === "contextmenu") {
+      if (nowMs() < suppressContextMenuUntil) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      }
+      delete e.__videoUnderPointer;
+      return;
+    }
+  }
+
+  // باقي الأزرار: خله mousedown فقط
+  if (sig !== "Mouse1" && sig !== "Mouse2" && sig !== "Mouse3") {
+    if (e.type !== "mousedown") return;
+  }
+
+
+
+  const ok = to.startsWith("ACTION:") ? runAction(to, e) : false;
+  if (ok && sig === "Mouse3") {
+    suppressContextMenuUntil = nowMs() + 800;
+  }
+  delete e.__videoUnderPointer;
+  if (!ok) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+}
+
+window.addEventListener("click", handleMouse, true);
+window.addEventListener("auxclick", handleMouse, true);
+window.addEventListener("mousedown", handleMouse, true);
+window.addEventListener("contextmenu", handleMouse, true);
+}

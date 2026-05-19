@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video Interaction Zones — Settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">VIDEO ZONES</div>
+      <div class="nav">
+        <button class="navItem active" data-section="zonesSection">INTERACTION ZONES</button>
+        <button class="navItem" data-section="appearanceSection">GRID APPEARANCE</button>
+        <button class="navItem" data-section="volumeSection">VOLUME INDICATOR</button>
+        <button class="navItem" data-section="timingSection">OVERLAY TIMING</button>
+        <button class="navItem" data-section="subtitlesSection">SUBTITLES</button>
+        <button class="navItem" data-section="blockedSection">BLOCKED SITES</button>
+        <button class="navItem" data-section="backupSection">BACKUP / RESTORE</button>
+        <button class="navItem" data-section="guideSection">SETTINGS GUIDE</button>
+      </div>
+      <div class="sideNote">المؤشر على الفيديو يحدد المربع الفعّال. Wheel Up/Down حسب اتجاه عجلة الماوس.</div>
+    </aside>
+
+    <main class="main">
+      <section class="sectionPage active" id="zonesSection">
+        <div class="header">
+          <h1>Interaction Zones (3×3)</h1>
+          <div class="headerRight">
+            <label class="toggle"><input id="enabled" type="checkbox"/> <span>Enabled</span></label>
+            <label class="toggle"><input id="fullscreenOnly" type="checkbox"/> <span>FullscreenOnly</span></label>
+            <button id="reset" class="btnGhost">Reset</button>
+          </div>
+        </div>
+        <section class="panel">
+          <div class="hint">اضغط على أي مربع عشان تختار Wheel Up / Wheel Down.<br/>ترقيم المربعات: A1 أعلى يسار → C3 أسفل يمين (A/B/C صفوف، 1/2/3 أعمدة).<br/>إذا فعّلت <b>FullscreenOnly</b> فلن تعمل أوامر المربعات إلا أثناء ملء الشاشة.</div>
+
+          <div class="grid" id="grid"></div>
+
+          <div class="legend">
+            <div><b>Wheel Up</b> = سحب للأعلى</div>
+            <div><b>Wheel Down</b> = سحب للأسفل</div>
+          </div>
+        </section>
+      </section>
+
+      <section class="sectionPage" id="appearanceSection" hidden>
+        <div class="sectionHead">
+          <h1>Grid Appearance</h1>
+          <p>تخصيص شكل صفحة المربعات والشبكة الظاهرة في الإعدادات.</p>
+        </div>
+
+        <section class="panel">
+          <div class="soundSettings">
+            <label>لون خلفية المربعات
+              <input id="gridCellBg" type="color" />
+            </label>
+            <label>لون حدود المربعات
+              <input id="gridCellBorder" type="color" />
+            </label>
+            <label>لون رقم المربع
+              <input id="gridNumberColor" type="color" />
+            </label>
+            <label>استدارة الزوايا
+              <input id="gridRadius" type="range" min="8" max="28" step="1" />
+              <span class="rangeValue" id="gridRadiusValue">12px</span>
+            </label>
+          </div>
+        </section>
+      </section>
+
+      <section class="sectionPage" id="volumeSection" hidden>
+        <div class="sectionHead">
+          <h1>Volume Indicator</h1>
+          <p>إعدادات رقم الصوت الذي يظهر أعلى يسار الفيديو عند تغيير مستوى الصوت.</p>
+        </div>
+
+        <section class="panel">
+          <div class="soundSettings">
+            <label>لون الرقم
+              <input id="soundColor" type="color" />
+            </label>
+            <label>حجم الرقم
+              <input id="soundSize" type="range" min="20" max="96" step="2" />
+              <span class="rangeValue" id="soundSizeValue">48px</span>
+            </label>
+          </div>
+        </section>
+      </section>
+
+      <section class="sectionPage" id="timingSection" hidden>
+        <div class="sectionHead">
+          <h2>Overlay Timing</h2>
+          <p>تحكّم منفصل بمدة ظهور شبكة المربعات داخل الفيديو ورقم الصوت. القيمة 0 = إيقاف ذلك المؤشّر تماماً.</p>
+        </div>
+
+        <section class="panel">
+          <div class="soundSettings">
+            <label>مدة ظهور شبكة المربعات (Grid Overlay)
+              <input id="gridDuration" type="range" min="0" max="3000" step="100" />
+              <span class="rangeValue" id="gridDurationValue">0.9 ثانية</span>
+            </label>
+            <label>مدة ظهور رقم الصوت (Volume Indicator)
+              <input id="volumeDuration" type="range" min="0" max="3000" step="100" />
+              <span class="rangeValue" id="volumeDurationValue">0.9 ثانية</span>
+            </label>
+          </div>
+        </section>
+      </section>
+
+      <section class="sectionPage" id="subtitlesSection" hidden>
+        <div class="sectionHead">
+          <h2>Subtitles</h2>
+          <p>تخصيص شكل الترجمة داخل الفيديوهات، واختيار لغة افتراضية تتفعّل تلقائياً لو متوفرة في مسارات الفيديو الأصلية.</p>
+        </div>
+
+        <section class="panel">
+          <div class="soundSettings">
+            <label class="toggle" style="text-transform:none;letter-spacing:0">
+              <input id="subEnabled" type="checkbox" />
+              <span>تفعيل تنسيق الترجمة المخصص</span>
+            </label>
+
+            <label>اللغة الافتراضية (كود مثل ar / en / es)
+              <input id="subLang" type="text" placeholder="ar" style="text-transform:lowercase" />
+            </label>
+            <div class="hint" style="margin:-6px 0 0">
+              ✅ <b>YouTube</b>: الإضافة تفتح قائمة الإعدادات تلقائياً وتنقّل: <i>Subtitles → Auto-translate → اللغة</i>. تجربتها أول مرة قد ترى القائمة تومض لجزء من الثانية.<br/>
+              ⚠️ <b>Netflix</b> وغيرها: التنسيق (لون/حجم/خط/خلفية/موقع) يطبَّق، لكن اختيار اللغة من إعدادات المشغّل نفسه.<br/>
+              ℹ️ أكواد شائعة: <code>ar</code> (عربي) — <code>en</code> (إنجليزي) — <code>es</code> (إسباني) — <code>fr</code> (فرنسي) — <code>tr</code> (تركي) — <code>ja</code> (ياباني) — <code>ko</code> (كوري).
+            </div>
+
+            <label>حجم الخط
+              <input id="subFontSize" type="range" min="12" max="64" step="1" />
+              <span class="rangeValue" id="subFontSizeValue">22px</span>
+            </label>
+
+            <label>لون النص
+              <input id="subColor" type="color" />
+            </label>
+
+            <label>لون الخلفية
+              <input id="subBgColor" type="color" />
+            </label>
+
+            <label>شفافية الخلفية
+              <input id="subBgOpacity" type="range" min="0" max="100" step="5" />
+              <span class="rangeValue" id="subBgOpacityValue">60%</span>
+            </label>
+
+            <label>نوع الخط
+              <select id="subFontFamily">
+                <option value="system-ui, -apple-system, sans-serif">System (افتراضي)</option>
+                <option value="Arial, sans-serif">Arial</option>
+                <option value="'Segoe UI', sans-serif">Segoe UI</option>
+                <option value="Tahoma, sans-serif">Tahoma</option>
+                <option value="Cairo, sans-serif">Cairo</option>
+                <option value="Georgia, serif">Georgia</option>
+                <option value="'Courier New', monospace">Courier New</option>
+              </select>
+            </label>
+
+            <label>موقع الترجمة
+              <select id="subPosition">
+                <option value="bottom">أسفل (افتراضي)</option>
+                <option value="middle">منتصف</option>
+                <option value="top">أعلى</option>
+              </select>
+            </label>
+          </div>
+        </section>
+      </section>
+
+      <section class="sectionPage" id="blockedSection" hidden>
+        <div class="sectionHead">
+          <h2>Blocked Sites</h2>
+          <p>هذه المواقع لن تعمل عليها الإضافة حتى لو كانت مفعلة بشكل عام.</p>
+        </div>
+
+        <section class="panel">
+          <div class="blockedList" id="blockedList"></div>
+          <div class="emptyState" id="blockedEmpty">لا توجد مواقع ممنوعة حاليًا.</div>
+        </section>
+      </section>
+
+      <section class="sectionPage" id="backupSection" hidden>
+        <div class="sectionHead">
+          <h2>Backup / Restore</h2>
+          <p>صدّر إعداداتك كاملة لملف JSON أو استورد إعدادات من ملف سابق.</p>
+        </div>
+
+        <section class="panel">
+          <div class="backupActions">
+            <button id="exportBtn" class="btn primary">تصدير الإعدادات (Export)</button>
+            <button id="importBtn" class="btnGhost">استيراد من ملف (Import)</button>
+            <input id="importFile" type="file" accept="application/json,.json" hidden />
+          </div>
+          <div id="backupStatus" class="backupStatus"></div>
+        </section>
+      </section>
+
+      <section class="sectionPage" id="guideSection" hidden>
+        <div class="sectionHead">
+          <h2>Settings Guide</h2>
+          <p>هنا أسماء الأوامر الموجودة في الإعدادات ومعنى كل واحد منها.</p>
+        </div>
+
+        <section class="panel guidePanel">
+          <div class="guideList">
+            <div class="guideItem"><span class="guideKey">ACTION:TOGGLE_PLAY</span><span class="guideValue">تبديل تشغيل الفيديو أو إيقافه مؤقتًا</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:TOGGLE_FULLSCREEN</span><span class="guideValue">تبديل تكبير الشاشة إلى وضع ملء الشاشة أو الرجوع</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:TOGGLE_MUTE</span><span class="guideValue">كتم الصوت أو إلغاء الكتم</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:VOLUME:+4</span><span class="guideValue">رفع مستوى الصوت بنسبة 4%</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:VOLUME:-4</span><span class="guideValue">خفض مستوى الصوت بنسبة 4%</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SEEK:+1</span><span class="guideValue">تقديم الفيديو ثانية واحدة</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SEEK:-1</span><span class="guideValue">إرجاع الفيديو ثانية واحدة</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SEEK:+5</span><span class="guideValue">تقديم الفيديو 5 ثوانٍ</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SEEK:-5</span><span class="guideValue">إرجاع الفيديو 5 ثوانٍ</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SEEK:+10</span><span class="guideValue">تقديم الفيديو 10 ثوانٍ</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SEEK:-10</span><span class="guideValue">إرجاع الفيديو 10 ثوانٍ</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SEEK:+30</span><span class="guideValue">تقديم الفيديو 30 ثانية</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SEEK:-30</span><span class="guideValue">إرجاع الفيديو 30 ثانية</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SEEK:+0.5</span><span class="guideValue">مثال على قيمة مخصصة لتقديم الفيديو نصف ثانية</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SEEK:-0.5</span><span class="guideValue">مثال على قيمة مخصصة لإرجاع الفيديو نصف ثانية</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SPEED:+0.25</span><span class="guideValue">زيادة سرعة تشغيل الفيديو بمقدار 0.25</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SPEED:-0.25</span><span class="guideValue">خفض سرعة تشغيل الفيديو بمقدار 0.25</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SPEED:SET:1</span><span class="guideValue">ضبط سرعة التشغيل على 1x مباشرة</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:SPEED:SET:2</span><span class="guideValue">ضبط سرعة التشغيل على 2x مباشرة</span></div>
+            <div class="guideItem"><span class="guideKey">ACTION:TOGGLE_PIP</span><span class="guideValue">تفعيل وضع صورة داخل صورة أو إلغاؤه</span></div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal -->
+  <div class="modalOverlay" id="modalOverlay" hidden>
+    <div class="modal">
+      <div class="modalHeader">
+        <div id="modalTitle" class="modalTitle">Zone</div>
+        <button id="modalClose" class="iconBtn">✕</button>
+      </div>
+
+      <div class="zoneEditorHint">أضف أكثر من أكشن داخل نفس المربع، ثم حدّد لكل أكشن زر التنفيذ المناسب.</div>
+
+      <div class="zoneActionsList" id="zoneActionsList"></div>
+
+      <div class="zoneEditorTools">
+        <button id="addActionBtn" class="btnGhost">+ ADD ACTION</button>
+      </div>
+
+      <div class="modalActions">
+        <button id="modalCancel" class="btnGhost">Cancel</button>
+        <button id="modalSave" class="btn primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modalOverlay" id="actionModalOverlay" hidden>
+    <div class="modal smallModal">
+      <div class="modalHeader">
+        <div class="modalTitle" id="actionModalTitle">Add Action</div>
+        <button id="actionModalClose" class="iconBtn">✕</button>
+      </div>
+
+      <div class="form">
+        <label>Action
+          <select id="actionType"></select>
+        </label>
+
+        <label id="actionUnitWrap" hidden>Unit
+          <select id="actionUnit">
+            <option value="second">Second</option>
+            <option value="frame">Frame</option>
+            <option value="percent">%</option>
+          </select>
+        </label>
+
+        <label id="actionValueWrap" hidden>Value
+          <input id="actionValue" type="text" placeholder="0.5" />
+        </label>
+      </div>
+
+      <div class="modalActions">
+        <button id="actionModalDelete" class="btnGhost" hidden>Delete</button>
+        <button id="actionModalCancel" class="btnGhost">Cancel</button>
+        <button id="actionModalSave" class="btn primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modalOverlay" id="keyCaptureOverlay" hidden>
+    <div class="modal smallModal">
+      <div class="modalHeader">
+        <div class="modalTitle">Set Trigger</div>
+        <button id="keyCaptureClose" class="iconBtn">✕</button>
+      </div>
+
+      <div class="captureBox">
+        <div class="captureTitle">اختر نوع المُحَفِّز</div>
+        <div class="captureMeta">عجلة الماوس أو كليك أو مفتاح كيبورد (لما يكون المؤشر فوق الفيديو في هذا المربع)</div>
+        <div class="triggerGrid">
+          <button class="triggerBtn" data-trigger="up">Wheel Up</button>
+          <button class="triggerBtn" data-trigger="down">Wheel Down</button>
+          <button class="triggerBtn" data-trigger="click_left">Left Click</button>
+          <button class="triggerBtn" data-trigger="click_right">Right Click</button>
+          <button class="triggerBtn" data-trigger="click_middle">Middle Click</button>
+          <button class="triggerBtn" id="keyCaptureKeyboard">Keyboard…</button>
+        </div>
+        <div class="captureValue" id="captureValue">...</div>
+      </div>
+
+      <div class="modalActions">
+        <button id="keyCaptureCancel" class="btnGhost">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
