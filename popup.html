@@ -10,10 +10,20 @@
       --text:#111827; --muted:#6b7280;
       --btn:#111827; --btnText:#fff;
       --danger:#ef4444; --dangerText:#fff; --radius:12px;
+      --on:#0f9d58; --off:#cbd5e1;
     }
     *{box-sizing:border-box}
     body{margin:0;padding:12px;width:360px;font-family:Arial,sans-serif;background:var(--bg);color:var(--text)}
-    h3{margin:0 0 6px 0;font-size:16px}
+
+    .header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}
+    .header h3{margin:0;font-size:16px}
+    .iconBtn{
+      width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+      background:#fff;border:1px solid var(--border);border-radius:10px;cursor:pointer;
+      font-size:18px;line-height:1;padding:0;
+    }
+    .iconBtn:hover{background:#f0f1f3}
+
     .muted{color:var(--muted);font-size:12px;margin-bottom:10px}
     .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin-bottom:10px}
     .row{display:flex;gap:8px;align-items:center}
@@ -24,7 +34,27 @@
     .btn{background:var(--btn);color:var(--btnText)}
     .btnGhost{background:#fff;border:1px solid var(--border);color:var(--text)}
     .btnDanger{background:var(--danger);color:var(--dangerText)}
-    label.switch{display:flex;gap:8px;align-items:center;font-size:13px}
+
+    /* Toggle switch */
+    .toggleRow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 2px}
+    .toggleRow + .toggleRow{margin-top:4px;border-top:1px dashed var(--border);padding-top:10px}
+    .toggleRow .label{font-size:13px;font-weight:600}
+    .toggleRow .sub{font-size:11px;color:var(--muted);margin-top:2px}
+    .toggle{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0;direction:ltr}
+    .toggle input{opacity:0;width:0;height:0;margin:0}
+    .toggle .slider{
+      position:absolute;cursor:pointer;inset:0;background:var(--off);
+      transition:.2s;border-radius:26px;
+    }
+    .toggle .slider::before{
+      content:"";position:absolute;height:20px;width:20px;left:3px;top:3px;
+      background:#fff;transition:.2s;border-radius:50%;
+      box-shadow:0 1px 3px rgba(0,0,0,.25);
+    }
+    .toggle input:checked + .slider{background:var(--on)}
+    .toggle input:checked + .slider::before{transform:translateX(20px)}
+    .toggle input:focus-visible + .slider{outline:2px solid #93c5fd;outline-offset:2px}
+
     .listHead{display:flex;justify-content:space-between;align-items:center;margin:10px 0 6px;font-size:12px;color:var(--muted)}
     .rule{display:grid;grid-template-columns:1fr 1fr 40px;gap:8px;align-items:center;margin-top:8px}
     .delBtn{width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:10px}
@@ -43,8 +73,35 @@
   </style>
 </head>
 <body>
-  <h3>ريماب اختصارات الفيديو</h3>
+  <div class="header">
+    <h3>ريماب اختصارات الفيديو</h3>
+    <button class="iconBtn" id="openOptions" type="button" title="الإعدادات" aria-label="الإعدادات">⚙️</button>
+  </div>
   <div class="muted" id="siteLabel">...</div>
+
+  <!-- Top quick toggles -->
+  <div class="card">
+    <div class="toggleRow">
+      <div>
+        <div class="label">تفعيل الريماب في جميع المواقع</div>
+        <div class="sub">يطبّق القواعد العامة على كل صفحة فيها فيديو</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="enabled">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggleRow">
+      <div>
+        <div class="label">تفعيل الترجمة (Subtitles)</div>
+        <div class="sub">تفعيل/إيقاف طبقة تنسيق الترجمة على جميع المواقع</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="subtitlesEnabled">
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
 
   <div class="card">
     <div class="statusBox">
@@ -57,19 +114,17 @@
     </div>
   </div>
 
-  <div class="card">
-    <label class="switch">
-      <input type="checkbox" id="enabled">
-      <span>تفعيل الريماب في جميع المواقع</span>
-    </label>
-  </div>
-
   <div class="card" id="siteProfileCard">
-    <label class="switch">
-      <input type="checkbox" id="siteProfileEnabled">
-      <span>قواعد خاصة بهذا الموقع</span>
-    </label>
-    <div class="muted">القاعدة هنا تفوز على القاعدة العامة بنفس الـ From.</div>
+    <div class="toggleRow">
+      <div>
+        <div class="label">قواعد خاصة بهذا الموقع</div>
+        <div class="sub">القاعدة هنا تفوز على القاعدة العامة بنفس الـ From.</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="siteProfileEnabled">
+        <span class="slider"></span>
+      </label>
+    </div>
 
     <div class="row" style="margin-top:8px">
       <input id="siteFrom" type="text" placeholder="From مثل: ArrowRight" />
@@ -92,10 +147,16 @@
   </div>
 
   <div class="card">
-    <label class="switch">
-      <input type="checkbox" id="blockCurrentSite">
-      <span>منع هذا الموقع من استخدام الإضافة</span>
-    </label>
+    <div class="toggleRow">
+      <div>
+        <div class="label">منع هذا الموقع من استخدام الإضافة</div>
+        <div class="sub">يعطّل كل وظائف الإضافة على هذا الموقع</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="blockCurrentSite">
+        <span class="slider"></span>
+      </label>
+    </div>
   </div>
 
   <div class="card">
@@ -143,10 +204,6 @@
     </div>
 
     <div id="list"></div>
-  </div>
-
-  <div class="footerRow">
-    <button class="btnGhost" id="openOptions" type="button">⚙️ الإعدادات (Zones)</button>
   </div>
 
   <script src="popup.js"></script>

@@ -347,6 +347,29 @@ async function saveBlockedSiteState() {
   if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: "GVZ_RELOAD" }).catch(() => {});
 }
 
+async function loadSubtitlesToggle() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const s = data.settings || {};
+  const sub = s.subtitles || {};
+  const el = $("subtitlesEnabled");
+  if (el) el.checked = !!sub.enabled;
+}
+
+async function saveSubtitlesToggle() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const settings = data.settings || {};
+  settings.subtitles = {
+    ...(settings.subtitles || {}),
+    enabled: !!$("subtitlesEnabled")?.checked
+  };
+  await chrome.storage.sync.set({ settings });
+
+  const tabs = await chrome.tabs.query({});
+  for (const t of tabs) {
+    if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_SUBTITLES" }).catch(() => {});
+  }
+}
+
 async function loadOverlayUI() {
   const data = await chrome.storage.sync.get({ settings: {} });
   const s = data.settings || {};
@@ -423,6 +446,7 @@ document.addEventListener("mousedown", (e) => {
   await loadSiteProfile();
   await loadOverlayUI();
   await loadBlockedSiteUI();
+  await loadSubtitlesToggle();
   await checkPageStatus();
 
   const od = $("overlayDuration");
@@ -436,9 +460,14 @@ document.addEventListener("mousedown", (e) => {
   }
 
   $("enabled").addEventListener("change", saveGlobalData);
+  $("subtitlesEnabled")?.addEventListener("change", saveSubtitlesToggle);
   $("blockCurrentSite").addEventListener("change", saveBlockedSiteState);
   $("checkStatus").addEventListener("click", checkPageStatus);
   $("manualActivate").addEventListener("click", activateOnCurrentPage);
+
+  $("openOptions")?.addEventListener("click", async () => {
+    await chrome.tabs.create({ url: chrome.runtime.getURL("options.html") });
+  });
 
   $("capFrom").addEventListener("click", () => beginCapture("from"));
   $("capTo").addEventListener("click", () => beginCapture("to"));
@@ -495,10 +524,3 @@ document.addEventListener("mousedown", (e) => {
     }, 800);
   });
 })();
-
-const optBtn = $("openOptions");
-if (optBtn) {
-  optBtn.addEventListener("click", async () => {
-    await chrome.tabs.create({ url: chrome.runtime.getURL("options.html") });
-  });
-}
