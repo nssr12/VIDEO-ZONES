@@ -321,6 +321,19 @@ async function saveGlobalData() {
   }
 }
 
+async function loadBoostUI() {
+  const tab = await getActiveTab();
+  if (tab?.id) {
+    try {
+      const res = await chrome.tabs.sendMessage(tab.id, { type: "GET_VOLUME_BOOST" });
+      if (res?.pct != null) {
+        $("boostSlider").value = res.pct;
+        $("boostValue").textContent = res.pct + "%";
+      }
+    } catch {}
+  }
+}
+
 async function loadBlockedSiteUI() {
   const data = await chrome.storage.sync.get({ settings: {} });
   const settings = data.settings || {};
@@ -473,6 +486,7 @@ document.addEventListener("mousedown", (e) => {
   await loadSubtitlesToggle();
   await loadFullscreenOnlyToggle();
   await checkPageStatus();
+  await loadBoostUI();
 
   const od = $("overlayDuration");
   const odValue = $("overlayDurationValue");
@@ -489,6 +503,13 @@ document.addEventListener("mousedown", (e) => {
   $("fullscreenOnly")?.addEventListener("change", saveFullscreenOnlyToggle);
   $("blockSiteBtn").addEventListener("click", () => saveBlockedSiteState().then(loadBlockedSiteUI));
   $("checkStatus").addEventListener("click", checkPageStatus);
+
+  $("boostSlider").addEventListener("input", async () => {
+    const pct = Number($("boostSlider").value);
+    $("boostValue").textContent = pct + "%";
+    const tab = await getActiveTab();
+    if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: "SET_VOLUME_BOOST", pct }).catch(() => {});
+  });
   $("manualActivate").addEventListener("click", activateOnCurrentPage);
 
   $("openOptions")?.addEventListener("click", async () => {

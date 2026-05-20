@@ -21,6 +21,32 @@ let subtitleStyleEl = null;
 let subtitleTrackObserver = null;
 let ytAutoQuality = ""; // "" = auto (don't override)
 
+// Sound Booster — session-only, resets to 100% on page refresh
+let boostPct = 100;
+const boostMap = new WeakMap(); // video → { ctx, gainNode }
+
+function applyBoostToVideo(video, pct) {
+  if (!boostMap.has(video)) {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = ctx.createMediaElementSource(video);
+      const gain = ctx.createGain();
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      boostMap.set(video, { ctx, gain });
+    } catch { return; }
+  }
+  const entry = boostMap.get(video);
+  if (!entry) return;
+  entry.ctx.resume().catch(() => {});
+  entry.gain.gain.value = pct / 100;
+}
+
+function applyBoostToAllVideos(pct) {
+  boostPct = pct;
+  document.querySelectorAll("video").forEach((v) => applyBoostToVideo(v, pct));
+}
+
 let lastFsAt = 0;
 let lastMouse2At = 0;
 let suppressContextMenuUntil = 0;
@@ -965,6 +991,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "RELOAD_SUBTITLES") loadSubtitleSettings();
   if (msg?.type === "RELOAD_YT_QUALITY") {
     loadYtAutoQualitySettings().then(() => triggerYtQuality());
+  }
+  if (msg?.type === "SET_VOLUME_BOOST") {
+    applyBoostToAllVideos(Number(msg.pct) || 100);
+  }
+  if (msg?.type === "GET_VOLUME_BOOST") {
+    sendResponse({ pct: boostPct });
+    return true;
   }
 });
 
