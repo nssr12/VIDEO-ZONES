@@ -370,6 +370,29 @@ async function saveSubtitlesToggle() {
   }
 }
 
+async function loadFullscreenOnlyToggle() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const s = data.settings || {};
+  const zones = s.zones || {};
+  const el = $("fullscreenOnly");
+  if (el) el.checked = !!zones.fullscreenOnly;
+}
+
+async function saveFullscreenOnlyToggle() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const settings = data.settings || {};
+  settings.zones = {
+    ...(settings.zones || {}),
+    fullscreenOnly: !!$("fullscreenOnly")?.checked
+  };
+  await chrome.storage.sync.set({ settings });
+
+  const tabs = await chrome.tabs.query({});
+  for (const t of tabs) {
+    if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_ZONE_SETTINGS" }).catch(() => {});
+  }
+}
+
 async function loadOverlayUI() {
   const data = await chrome.storage.sync.get({ settings: {} });
   const s = data.settings || {};
@@ -447,6 +470,7 @@ document.addEventListener("mousedown", (e) => {
   await loadOverlayUI();
   await loadBlockedSiteUI();
   await loadSubtitlesToggle();
+  await loadFullscreenOnlyToggle();
   await checkPageStatus();
 
   const od = $("overlayDuration");
@@ -461,6 +485,7 @@ document.addEventListener("mousedown", (e) => {
 
   $("enabled").addEventListener("change", saveGlobalData);
   $("subtitlesEnabled")?.addEventListener("change", saveSubtitlesToggle);
+  $("fullscreenOnly")?.addEventListener("change", saveFullscreenOnlyToggle);
   $("blockCurrentSite").addEventListener("change", saveBlockedSiteState);
   $("checkStatus").addEventListener("click", checkPageStatus);
   $("manualActivate").addEventListener("click", activateOnCurrentPage);

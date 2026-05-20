@@ -1110,6 +1110,22 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
 
 function pickFullscreenContainer(video) {
   if (!video) return null;
+
+  // Prefer known site player wrappers — using the same element the site itself uses
+  // keeps the site's fullscreen state in sync and lets F/dblclick/the native button
+  // continue to work after we toggle fullscreen.
+  const knownPlayer = video.closest(
+    "#movie_player," +              // YouTube
+    ".html5-video-player," +        // YouTube alt class
+    ".video-player," +              // Twitch / generic
+    "[data-a-target='video-player']," + // Twitch
+    ".jw-wrapper," +                // JW Player
+    ".video-js," +                  // Video.js
+    ".plyr," +                      // Plyr
+    ".vjs-fluid"                    // Video.js variant
+  );
+  if (knownPlayer && knownPlayer.requestFullscreen) return knownPlayer;
+
   const videoRect = video.getBoundingClientRect();
   const videoArea = Math.max(1, videoRect.width * videoRect.height);
 
@@ -1157,10 +1173,43 @@ function pickFullscreenContainer(video) {
   return scored[0]?.el || video.parentElement || video;
 }
 
+// Selectors for sites that expose their own fullscreen button.
+// Clicking the native button keeps the site's internal fullscreen state in sync,
+// so the site's own keyboard shortcuts (F, dblclick, the on-screen button) keep working.
+const NATIVE_FS_BUTTON_SELECTORS = [
+  ".ytp-fullscreen-button",                    // YouTube
+  "button[data-a-target='player-fullscreen-button']", // Twitch
+  ".vjs-fullscreen-control",                   // Video.js
+  ".jw-icon-fullscreen",                       // JW Player
+  ".plyr__control[data-plyr='fullscreen']"     // Plyr
+];
+
+function findNativeFullscreenButton(video) {
+  if (!video) return null;
+  // Search inside the player wrapper first, then fall back to a document-wide search.
+  const player = video.closest(
+    "#movie_player,.html5-video-player,.video-player," +
+    "[data-a-target='video-player'],.jw-wrapper,.video-js,.plyr"
+  );
+  const scope = player || document;
+  for (const sel of NATIVE_FS_BUTTON_SELECTORS) {
+    const btn = scope.querySelector(sel);
+    if (btn) return btn;
+  }
+  return null;
+}
+
 function toggleFullscreen(video) {
   const doc = document;
   const v = video;
   if (!v) return;
+
+  // Prefer clicking the site's own fullscreen button when available — this keeps
+  // the site's player state in sync, so its F key / dblclick / native button still work.
+  const nativeBtn = findNativeFullscreenButton(v);
+  if (nativeBtn) {
+    try { nativeBtn.click(); return; } catch {}
+  }
 
   // خروج
   if (doc.fullscreenElement) {
