@@ -325,15 +325,16 @@ async function loadBlockedSiteUI() {
   const data = await chrome.storage.sync.get({ settings: {} });
   const settings = data.settings || {};
   const blockedHosts = Array.isArray(settings.blockedHosts) ? settings.blockedHosts : [];
-  const blockCurrentSite = $("blockCurrentSite");
-  if (blockCurrentSite) blockCurrentSite.checked = !!currentHost && blockedHosts.includes(currentHost);
+  const isBlocked = !!currentHost && blockedHosts.includes(currentHost);
+  $("blockSiteBtn").classList.toggle("blocked", isBlocked);
+  $("blockSiteBtn").title = isBlocked ? "الموقع محظور — اضغط للسماح" : "اضغط لمنع هذا الموقع";
 }
 
 async function saveBlockedSiteState() {
   const data = await chrome.storage.sync.get({ settings: {} });
   const settings = data.settings || {};
   const blockedHosts = new Set(Array.isArray(settings.blockedHosts) ? settings.blockedHosts : []);
-  const shouldBlock = !!$("blockCurrentSite")?.checked;
+  const shouldBlock = !blockedHosts.has(currentHost); // toggle
 
   if (!currentHost) return;
 
@@ -486,7 +487,7 @@ document.addEventListener("mousedown", (e) => {
   $("enabled").addEventListener("change", saveGlobalData);
   $("subtitlesEnabled")?.addEventListener("change", saveSubtitlesToggle);
   $("fullscreenOnly")?.addEventListener("change", saveFullscreenOnlyToggle);
-  $("blockCurrentSite").addEventListener("change", saveBlockedSiteState);
+  $("blockSiteBtn").addEventListener("click", () => saveBlockedSiteState().then(loadBlockedSiteUI));
   $("checkStatus").addEventListener("click", checkPageStatus);
   $("manualActivate").addEventListener("click", activateOnCurrentPage);
 

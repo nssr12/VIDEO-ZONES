@@ -19,6 +19,7 @@ let subtitleSettings = {
 };
 let subtitleStyleEl = null;
 let subtitleTrackObserver = null;
+let ytAutoQuality = ""; // "" = auto (don't override)
 
 let lastFsAt = 0;
 let lastMouse2At = 0;
@@ -498,6 +499,29 @@ async function loadSoundDisplaySettings() {
   }
 }
 
+async function loadYtAutoQualitySettings() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  ytAutoQuality = (data.settings || {}).ytAutoQuality || "";
+}
+
+// yt_quality_main.js runs in the page's main world (declared in manifest.json).
+// We communicate with it via CustomEvent — content scripts cannot call YouTube's player API directly.
+function triggerYtQuality() {
+  if (!isYouTubeHost() || !ytAutoQuality) return;
+  window.dispatchEvent(new CustomEvent("__vz_setq__", { detail: { q: ytAutoQuality } }));
+}
+
+function startYtAutoQuality() {
+  if (!isYouTubeHost()) return;
+  document.addEventListener("yt-navigate-finish", () => {
+    setTimeout(() => triggerYtQuality(), 800);
+  }, true);
+  document.addEventListener("loadedmetadata", (e) => {
+    if (e.target?.tagName !== "VIDEO") return;
+    triggerYtQuality();
+  }, true);
+}
+
 function isBlockedHost() {
   return blockedHosts.includes(baseDomain(location.host));
 }
@@ -939,6 +963,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg?.type === "RELOAD_OVERLAY_SETTINGS") loadOverlaySettings();
   if (msg?.type === "RELOAD_SUBTITLES") loadSubtitleSettings();
+  if (msg?.type === "RELOAD_YT_QUALITY") {
+    loadYtAutoQualitySettings().then(() => triggerYtQuality());
+  }
 });
 
 loadRulesForThisHost();
@@ -949,6 +976,10 @@ loadBlockedHosts();
 loadSoundDisplaySettings();
 loadSubtitleSettings();
 startSubtitleTrackObserver();
+loadYtAutoQualitySettings().then(() => {
+  startYtAutoQuality();
+  triggerYtQuality();
+});
 
 function normalizeKeyEvent(e) {
   // نخلي ArrowRight/ArrowLeft يطلع كما هو
@@ -1260,6 +1291,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     loadBlockedHosts();
     loadSoundDisplaySettings();
     loadSubtitleSettings();
+    loadYtAutoQualitySettings().then(() => triggerYtQuality());
   }
   if (changes.globalSiteRules) loadRulesForThisHost();
   if (changes.siteProfiles) loadSiteProfile();

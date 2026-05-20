@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Video Interaction Zones",
+  "name": "VIDEO-ZONES",
   "version": "2.5.0",
   "description": "Control HTML5 videos on almost any site: keyboard/mouse/wheel remap, 3x3 interaction zones with click & keyboard triggers, per-site rule profiles, backup/restore, and overlay hints.",
   "permissions": [
@@ -26,6 +26,12 @@
       ],
       "run_at": "document_start",
       "all_frames": true
+    },
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["yt_quality_main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
   "options_page": "options.html"

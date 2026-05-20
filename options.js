@@ -257,6 +257,7 @@ async function getSettings() {
   // Default volumeAutoHideMs to existing autoHideMs for migration; keeps existing user choice for both
   if (typeof settings.overlay.volumeAutoHideMs !== "number") settings.overlay.volumeAutoHideMs = settings.overlay.autoHideMs;
   if (typeof settings.overlay.enabled !== "boolean") settings.overlay.enabled = settings.overlay.autoHideMs > 0;
+  if (typeof settings.ytAutoQuality !== "string") settings.ytAutoQuality = "";
   settings.subtitles ||= {};
   const s = settings.subtitles;
   if (typeof s.enabled !== "boolean") s.enabled = false;
@@ -386,6 +387,10 @@ function applyGridAppearance(appearance) {
   root.style.setProperty("--grid-cell-border", appearance?.cellBorder || "#2a2f3a");
   root.style.setProperty("--grid-number-color", appearance?.numberColor || "#a3a3a3");
   root.style.setProperty("--grid-cell-radius", `${Number(appearance?.radius || 12)}px`);
+}
+
+function renderYtAutoQuality(quality) {
+  $("ytQuality").value = quality || "";
 }
 
 function renderSubtitles(sub) {
@@ -676,6 +681,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderSoundSettings(settings.soundDisplay);
   renderGridAppearance(settings.gridAppearance);
   renderOverlayTiming(settings.overlay);
+  renderYtAutoQuality(settings.ytAutoQuality);
   renderSubtitles(settings.subtitles);
 
   $("enabled").addEventListener("change", async () => {
@@ -832,6 +838,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   $("subEnabled").addEventListener("change", persistSubtitles);
 
+  $("ytQuality").addEventListener("change", async () => {
+    const s = await getSettings();
+    s.ytAutoQuality = $("ytQuality").value;
+    await saveSettings(s);
+    const tabs = await chrome.tabs.query({});
+    for (const t of tabs) {
+      if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_YT_QUALITY" }).catch(() => {});
+    }
+  });
+
   $("modalClose").addEventListener("click", closeZoneModal);
   $("modalCancel").addEventListener("click", closeZoneModal);
   $("modalOverlay").addEventListener("click", (e) => {
@@ -907,6 +923,26 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   setupBackupUI();
+});
+
+// Re-render UI whenever settings change from any source (popup, another tab, etc.)
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "sync" || !changes.settings) return;
+  (async () => {
+    const s = await getSettings();
+    $("enabled").checked         = !!s.zones?.enabled;
+    $("fullscreenOnly").checked  = !!s.zones?.fullscreenOnly;
+    renderBlockedSites(s.blockedHosts);
+    renderSoundSettings(s.soundDisplay);
+    renderGridAppearance(s.gridAppearance);
+    renderOverlayTiming(s.overlay);
+    renderSubtitles(s.subtitles);
+    renderYtAutoQuality(s.ytAutoQuality);
+    // Don't interrupt active zone editing
+    if ($("modalOverlay")?.hidden !== false) {
+      renderGrid(s.zones?.wheel?.actions || {});
+    }
+  })();
 });
 
 function setBackupStatus(kind, text) {

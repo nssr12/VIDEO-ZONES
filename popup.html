@@ -23,6 +23,7 @@
       font-size:18px;line-height:1;padding:0;
     }
     .iconBtn:hover{background:#f0f1f3}
+    .iconBtn.blocked{background:#fee2e2;border-color:#fca5a5}
 
     .muted{color:var(--muted);font-size:12px;margin-bottom:10px}
     .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin-bottom:10px}
@@ -75,7 +76,10 @@
 <body>
   <div class="header">
     <h3>ريماب اختصارات الفيديو</h3>
-    <button class="iconBtn" id="openOptions" type="button" title="الإعدادات" aria-label="الإعدادات">⚙️</button>
+    <div style="display:flex;gap:6px">
+      <button class="iconBtn" id="blockSiteBtn" type="button" title="منع/السماح لهذا الموقع" aria-label="منع الموقع">🚫</button>
+      <button class="iconBtn" id="openOptions" type="button" title="الإعدادات" aria-label="الإعدادات">⚙️</button>
+    </div>
   </div>
   <div class="muted" id="siteLabel">...</div>
 
@@ -156,20 +160,7 @@
     <div id="siteList"></div>
   </div>
 
-  <div class="card">
-    <div class="toggleRow">
-      <div>
-        <div class="label">منع هذا الموقع من استخدام الإضافة</div>
-        <div class="sub">يعطّل كل وظائف الإضافة على هذا الموقع</div>
-      </div>
-      <label class="toggle">
-        <input type="checkbox" id="blockCurrentSite">
-        <span class="slider"></span>
-      </label>
-    </div>
-  </div>
-
-  <div class="card">
+<div class="card">
     <div class="listHead">مدة ظهور شبكة المربعات</div>
 
     <div class="sliderWrap">

@@ -12,9 +12,9 @@
       <div class="brand">VIDEO ZONES</div>
       <div class="nav">
         <button class="navItem active" data-section="zonesSection">INTERACTION ZONES</button>
-        <button class="navItem" data-section="appearanceSection">GRID APPEARANCE</button>
         <button class="navItem" data-section="volumeSection">VOLUME INDICATOR</button>
         <button class="navItem" data-section="timingSection">OVERLAY TIMING</button>
+        <button class="navItem" data-section="youtubeSection">YOUTUBE</button>
         <button class="navItem" data-section="subtitlesSection">SUBTITLES</button>
         <button class="navItem" data-section="blockedSection">BLOCKED SITES</button>
         <button class="navItem" data-section="backupSection">BACKUP / RESTORE</button>
@@ -43,15 +43,12 @@
             <div><b>Wheel Down</b> = سحب للأسفل</div>
           </div>
         </section>
-      </section>
-
-      <section class="sectionPage" id="appearanceSection" hidden>
-        <div class="sectionHead">
-          <h1>Grid Appearance</h1>
-          <p>تخصيص شكل صفحة المربعات والشبكة الظاهرة في الإعدادات.</p>
-        </div>
 
         <section class="panel">
+          <div class="sectionHead" style="padding:0 0 12px">
+            <h2 style="margin:0 0 4px">Grid Appearance</h2>
+            <p style="margin:0">تخصيص شكل المربعات والشبكة الظاهرة داخل الفيديو.</p>
+          </div>
           <div class="soundSettings">
             <label>لون خلفية المربعات
               <input id="gridCellBg" type="color" />
@@ -105,6 +102,36 @@
               <input id="volumeDuration" type="range" min="0" max="3000" step="100" />
               <span class="rangeValue" id="volumeDurationValue">0.9 ثانية</span>
             </label>
+          </div>
+        </section>
+      </section>
+
+      <section class="sectionPage" id="youtubeSection" hidden>
+        <div class="sectionHead">
+          <h2>YouTube</h2>
+          <p>إعدادات خاصة بمشغّل YouTube.</p>
+        </div>
+
+        <section class="panel">
+          <div class="soundSettings">
+            <label>جودة الفيديو الافتراضية
+              <select id="ytQuality">
+                <option value="">Auto — يوتيوب يختار تلقائيًا</option>
+                <option value="hd4320">8K — 4320p</option>
+                <option value="hd2160">4K — 2160p</option>
+                <option value="hd1440">1440p — QHD</option>
+                <option value="hd1080">1080p — Full HD</option>
+                <option value="hd720">720p — HD</option>
+                <option value="large">480p</option>
+                <option value="medium">360p</option>
+                <option value="small">240p</option>
+                <option value="tiny">144p</option>
+              </select>
+            </label>
+            <div class="hint">
+              لو الفيديو ما عنده الجودة المختارة، تشتغل أعلى جودة متاحة تلقائيًا.<br/>
+              مثال: اخترت 4K لكن الفيديو أعلى جودة عنده 1080p — يشتغل 1080p.
+            </div>
           </div>
         </section>
       </section>
