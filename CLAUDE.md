@@ -56,6 +56,7 @@ siteProfiles = {
 settings = {
   zones: {
     enabled, fullscreenOnly,
+    gridCoverage: "player" | "video",  // "player" (default) = zones/grid span the whole player frame incl. black bars
     wheel: {
       actions: { "1": [{id, type, key, unit?, value?}], ..., "9": [...] },  // editable source of truth
       map:     { "1": { up:[...], down:[...] }, ... }                       // wheel-runtime projection
@@ -69,7 +70,13 @@ settings = {
   gridAppearance: { cellBg, cellBorder, numberColor, radius },
   subtitles: {
     enabled, defaultLang, fontSize, color, bgColor, bgOpacity, fontFamily, position
-  }
+  },
+  ytAutoQuality: "" | "hd1080" | ...,   // YouTube default quality ("" = auto)
+  ytShortsRedirect: boolean,            // default true: rewrite /shorts/<id> → /watch?v=<id>
+  cleanPlayer: {
+    enabled: boolean,
+    items: { <key>: true, ... }         // only CHECKED keys are stored (sync-quota friendly); keys from
+  }                                     // CLEAN_PLAYER_OPTIONS (options.js) = CLEAN_PLAYER_ITEMS (content.js)
 }
 ```
 
@@ -114,6 +121,9 @@ When adding a new action you MUST touch:
 | `GVZ_RELOAD` / `RELOAD_ZONE_SETTINGS` | options | Re-reads `settings.zones`, `blockedHosts`, `soundDisplay` |
 | `RELOAD_OVERLAY_SETTINGS` | popup/options | Re-reads `settings.overlay` |
 | `RELOAD_SUBTITLES` | options | Re-reads `settings.subtitles` and re-applies styles + language |
+| `RELOAD_YT_QUALITY` | options | Re-reads `settings.ytAutoQuality` and re-triggers the quality setter |
+| `RELOAD_YT_SHORTS` | options | Re-reads `settings.ytShortsRedirect` and redirects if currently on a /shorts/ URL |
+| `RELOAD_CLEAN_PLAYER` | options | Re-reads `settings.cleanPlayer` and re-injects the hide-elements CSS |
 
 `chrome.storage.onChanged` is a backup trigger that re-loads the relevant slice when `settings` / `globalSiteRules` / `siteProfiles` changes from any source.
 
@@ -140,7 +150,19 @@ When editing overlay rendering, do **not** revert to attaching inside the player
 
 ### Zone resolution
 
-`getZoneNumber(rect, x, y)` divides the video's bounding rect into a 3×3 grid and returns 1..9. Only **wheel** is zone-aware by default at the source level — click and key handlers also call `getZoneAtEvent(e)` to look up the same `{video, zone}` pair before checking the click/key runtime maps.
+`getZoneNumber(rect, x, y)` divides a rect into a 3×3 grid and returns 1..9. Only **wheel** is zone-aware by default at the source level — click and key handlers also call `getZoneAtEvent(e)` to look up the same `{video, zone}` pair before checking the click/key runtime maps.
+
+**The rect is `zoneRectForVideo(video)`, not the raw video rect.** With `zones.gridCoverage === "player"` (default) it returns the rect of the nearest known player wrapper (`KNOWN_PLAYER_WRAPPER_SELECTOR`: `#movie_player`, Twitch, JW, Video.js, Plyr…), falling back to the video rect when no wrapper matches. This matters on YouTube, which sizes `<video>` to the content aspect ratio — the letterbox black bars live *outside* the video element, so zones/overlay based on the video rect ignore them. `findVideoAtPoint` also uses `zoneRectForVideo` for its descendant-containment check so pointing at a black bar still resolves the video (hidden/0×0 videos are skipped so they can't win via a shared wrapper). With `gridCoverage === "video"` everything behaves as before (video element rect only).
+
+Guards in `zoneRectForVideo`: wrapper lookups (including negative results) are cached in `zoneContainerCache` (WeakMap, revalidated when the video is re-parented or the wrapper leaves the DOM) because the overlay rAF loop calls it every frame; and a wrapper whose area exceeds `ZONE_WRAPPER_MAX_AREA_RATIO` (7×) of the video area is rejected as a page-level container — generic classes like `.video-player` exist on non-player wrappers in the wild. 7× still allows the worst realistic letterbox (9:16 video fullscreen on a 32:9 monitor ≈ 6.3×).
+
+### YouTube Shorts redirect
+
+`ytShortsRedirect` (default true): `maybeRedirectShorts()` rewrites `/shorts/<id>` → `/watch?v=<id>` via `location.replace` (keeps Shorts URLs out of history), preserving the original query string (`?list=`, `?t=`…). Runs at `document_start` for direct loads and on `yt-navigate-start`/`yt-navigate-finish` for SPA navigation. Top frame only, YouTube hosts only, respects `blockedHosts`. `loadYtShortsRedirectSetting` refreshes `blockedHosts` from its own storage read so the blocked check can't race the separate `loadBlockedHosts()` at document_start.
+
+### Clean Player (YouTube element filter)
+
+CSS-only, same pattern as subtitles: one injected `<style id="vz_clean_player_css">` with `html`-prefixed selectors + `display:none !important`. The item registry is `CLEAN_PLAYER_ITEMS` in `content.js` (key → selector list); the options-page list is generated from `CLEAN_PLAYER_OPTIONS` in `options.js` — **keys must stay in sync between the two**. Applies on `youtube.com` and `youtube-nocookie.com` (embedded players in iframes on other sites), respects `blockedHosts`. Gated by `cleanPlayer.enabled` + per-item flags in `cleanPlayer.items` (only checked keys stored). Selectors were verified against the live 2026 player and open-source hide lists (ImprovedTube, yt-neuter, Control Panel for YouTube) — includes both classic and 2025 "Delhi" player variants.
 
 ### Subtitles
 
@@ -197,6 +219,8 @@ Two maps are built in `content.js`:
 | Add a new message type | content.js `onMessage` switch, sender (popup/options) |
 | Add a new YouTube language for CC | `YT_LANG_NAMES` in `content.js` |
 | Add a new subtitle-host selector | `applySubtitleStyles` CSS template in `content.js` |
+| Add a new Clean Player item | `CLEAN_PLAYER_ITEMS` in `content.js` **and** `CLEAN_PLAYER_OPTIONS` in `options.js` (same key) |
+| Add a new known player wrapper | `KNOWN_PLAYER_WRAPPER_SELECTOR` in `content.js` (used by zones full-frame + fullscreen logic) |
 | Bump version | `manifest.json` `version` field (semver-ish: feature bump = minor, fix = patch) |
 
 ## Useful one-liners

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VIDEO-ZONES",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "Control HTML5 videos on almost any site: keyboard/mouse/wheel remap, 3x3 interaction zones with click & keyboard triggers, per-site rule profiles, backup/restore, and overlay hints.",
   "permissions": [
     "storage",

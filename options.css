@@ -205,6 +205,22 @@ label{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:600;let
 }
 .rangeValue{font-size:12px;color:var(--muted);font-weight:600}
 
+/* ---------- Clean Player (YouTube element filter) ---------- */
+.cleanPlayerList{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+  gap:6px 18px;direction:ltr;
+}
+.cleanPlayerItem{
+  display:flex;gap:10px;align-items:center;
+  padding:8px 10px;border-radius:10px;
+  font-size:13px;color:var(--text);font-weight:500;
+  letter-spacing:0;text-transform:none;
+  cursor:pointer;user-select:none;
+  transition:background .15s ease;
+}
+.cleanPlayerItem:hover{background:var(--panel-hover)}
+.cleanPlayerItem input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer;flex:none}
+
 /* ---------- Trigger buttons (capture modal) ---------- */
 .triggerGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}
 .triggerBtn{
