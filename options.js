@@ -443,17 +443,26 @@ function renderYtShortsRedirect(enabled) {
   $("ytShortsRedirect").checked = enabled !== false;
 }
 
+let cleanPlayerSaving = 0; // guards the storage.onChanged re-render against reverting mid-save toggles
+
 async function persistCleanPlayer() {
-  const s = await getSettings();
-  const items = {};
-  for (const { key } of CLEAN_PLAYER_OPTIONS) {
-    items[key] = !!$(`cp_${key}`)?.checked;
-  }
-  s.cleanPlayer = { enabled: $("cleanPlayerEnabled").checked, items };
-  await saveSettings(s);
-  const tabs = await chrome.tabs.query({});
-  for (const t of tabs) {
-    if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_CLEAN_PLAYER" }).catch(() => {});
+  cleanPlayerSaving++;
+  try {
+    const s = await getSettings();
+    // Store only checked keys — keeps the settings item small (sync storage
+    // has an 8KB per-item quota) and missing keys read as false anyway.
+    const items = {};
+    for (const { key } of CLEAN_PLAYER_OPTIONS) {
+      if ($(`cp_${key}`)?.checked) items[key] = true;
+    }
+    s.cleanPlayer = { enabled: $("cleanPlayerEnabled").checked, items };
+    await saveSettings(s);
+    const tabs = await chrome.tabs.query({});
+    for (const t of tabs) {
+      if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_CLEAN_PLAYER" }).catch(() => {});
+    }
+  } finally {
+    cleanPlayerSaving--;
   }
 }
 
@@ -1056,7 +1065,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
     renderSubtitles(s.subtitles);
     renderYtAutoQuality(s.ytAutoQuality);
     renderYtShortsRedirect(s.ytShortsRedirect);
-    renderCleanPlayer(s.cleanPlayer);
+    // Don't clobber checkboxes the user is toggling while a save is in flight
+    if (!cleanPlayerSaving) renderCleanPlayer(s.cleanPlayer);
     // Don't interrupt active zone editing
     if ($("modalOverlay")?.hidden !== false) {
       renderGrid(s.zones?.wheel?.actions || {});

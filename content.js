@@ -552,16 +552,23 @@ function startYtAutoQuality() {
 // -------- Shorts → المشغّل العادي --------
 async function loadYtShortsRedirectSetting() {
   const data = await chrome.storage.sync.get({ settings: {} });
-  ytShortsRedirect = (data.settings || {}).ytShortsRedirect !== false; // default on
+  const s = data.settings || {};
+  // Refresh blockedHosts from the same read so the first redirect check
+  // can't run before loadBlockedHosts() resolves
+  if (Array.isArray(s.blockedHosts)) blockedHosts = s.blockedHosts;
+  ytShortsRedirect = s.ytShortsRedirect !== false; // default on
 }
 
 function maybeRedirectShorts() {
-  if (!ytShortsRedirect || !isYouTubeHost()) return;
+  if (!ytShortsRedirect || !isYouTubeHost() || isBlockedHost()) return;
   if (window.top !== window) return; // top frame only
   const m = /^\/shorts\/([A-Za-z0-9_-]+)/.exec(location.pathname);
   if (!m) return;
+  // Keep the query string (e.g. ?list= playlist context, ?t= timestamp)
+  const params = new URLSearchParams(location.search);
+  params.set("v", m[1]);
   // location.replace keeps the shorts URL out of history so Back doesn't bounce
-  location.replace(`${location.origin}/watch?v=${m[1]}`);
+  location.replace(`${location.origin}/watch?${params.toString()}`);
 }
 
 function startYtShortsRedirect() {
@@ -629,7 +636,10 @@ function isYouTubeFamilyHost() {
 
 async function loadCleanPlayerSettings() {
   const data = await chrome.storage.sync.get({ settings: {} });
-  const cp = (data.settings || {}).cleanPlayer || {};
+  const s = data.settings || {};
+  // Same-read refresh of blockedHosts (see loadYtShortsRedirectSetting)
+  if (Array.isArray(s.blockedHosts)) blockedHosts = s.blockedHosts;
+  const cp = s.cleanPlayer || {};
   cleanPlayerSettings = {
     enabled: !!cp.enabled,
     items: (cp.items && typeof cp.items === "object") ? cp.items : {}
@@ -642,7 +652,7 @@ function applyCleanPlayerCSS() {
     cleanPlayerStyleEl.remove();
     cleanPlayerStyleEl = null;
   }
-  if (!cleanPlayerSettings.enabled || !isYouTubeFamilyHost()) return;
+  if (!cleanPlayerSettings.enabled || !isYouTubeFamilyHost() || isBlockedHost()) return;
 
   const selectors = [];
   for (const [key, sels] of Object.entries(CLEAN_PLAYER_ITEMS)) {
@@ -702,7 +712,12 @@ const KNOWN_PLAYER_WRAPPER_SELECTOR =
   ".plyr," +                      // Plyr
   ".vjs-fluid";                   // Video.js variant
 
-const zoneContainerCache = new WeakMap(); // video → player wrapper element
+const zoneContainerCache = new WeakMap(); // video → { container|null, parent } (null = negative lookup, cached too)
+
+// A player frame legitimately exceeds the video area only by the letterbox
+// ratio (worst realistic case ≈ 6.3×: a 9:16 video fullscreen on a 32:9
+// monitor). Anything bigger is a page-level wrapper, not a player frame.
+const ZONE_WRAPPER_MAX_AREA_RATIO = 7;
 
 // The rect the 3×3 grid is resolved/drawn against.
 // In "player" mode we use the player frame (e.g. YouTube sizes <video> to the
@@ -713,15 +728,25 @@ function zoneRectForVideo(video) {
   // Anything other than the explicit "video" opt-out means full-frame (default)
   if (zoneSettings?.gridCoverage === "video") return videoRect;
 
-  let container = zoneContainerCache.get(video);
-  if (!container || !container.isConnected || !container.contains(video)) {
-    container = video.closest?.(KNOWN_PLAYER_WRAPPER_SELECTOR) || null;
-    zoneContainerCache.set(video, container);
+  let entry = zoneContainerCache.get(video);
+  // Re-resolve when the video was re-parented or the cached wrapper left the DOM
+  if (!entry || entry.parent !== video.parentElement ||
+      (entry.container && !entry.container.isConnected)) {
+    entry = {
+      container: video.closest?.(KNOWN_PLAYER_WRAPPER_SELECTOR) || null,
+      parent: video.parentElement
+    };
+    zoneContainerCache.set(video, entry);
   }
-  if (!container) return videoRect; // generic sites: bars are inside the <video> box already
+  if (!entry.container) return videoRect; // generic sites: bars are inside the <video> box already
 
-  const rect = container.getBoundingClientRect();
+  const rect = entry.container.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return videoRect;
+
+  const videoArea = videoRect.width * videoRect.height;
+  if (videoArea <= 0) return videoRect; // hidden/preloading video: never adopt the wrapper
+  if ((rect.width * rect.height) / videoArea > ZONE_WRAPPER_MAX_AREA_RATIO) return videoRect;
+
   return rect;
 }
 
@@ -760,6 +785,10 @@ function findVideoAtPoint(x, y) {
     if (!descendantVideos?.length) continue;
 
     for (const video of descendantVideos) {
+      // Skip hidden/preloading videos (0×0 rect) so they can't win via a
+      // shared player wrapper over the actually visible video.
+      const own = video.getBoundingClientRect?.();
+      if (!own || own.width <= 0 || own.height <= 0) continue;
       // In "player" coverage mode the black bars around the video count too
       const rect = zoneRectForVideo(video);
       if (!rect) continue;
