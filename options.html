@@ -30,11 +30,12 @@
           <div class="headerRight">
             <label class="toggle"><input id="enabled" type="checkbox"/> <span>Enabled</span></label>
             <label class="toggle"><input id="fullscreenOnly" type="checkbox"/> <span>FullscreenOnly</span></label>
+            <label class="toggle"><input id="gridFullFrame" type="checkbox"/> <span>FullFrame</span></label>
             <button id="reset" class="btnGhost">Reset</button>
           </div>
         </div>
         <section class="panel">
-          <div class="hint">اضغط على أي مربع عشان تختار Wheel Up / Wheel Down.<br/>ترقيم المربعات: A1 أعلى يسار → C3 أسفل يمين (A/B/C صفوف، 1/2/3 أعمدة).<br/>إذا فعّلت <b>FullscreenOnly</b> فلن تعمل أوامر المربعات إلا أثناء ملء الشاشة.</div>
+          <div class="hint">اضغط على أي مربع عشان تختار Wheel Up / Wheel Down.<br/>ترقيم المربعات: A1 أعلى يسار → C3 أسفل يمين (A/B/C صفوف، 1/2/3 أعمدة).<br/>إذا فعّلت <b>FullscreenOnly</b> فلن تعمل أوامر المربعات إلا أثناء ملء الشاشة.<br/><b>FullFrame</b> = تطبيق الشبكة على كامل إطار المشغّل (يشمل الأشرطة السوداء حول الفيديو). عطّله لو تريد الشبكة على صورة الفيديو فقط.</div>
 
           <div class="grid" id="grid"></div>
 
@@ -132,6 +133,33 @@
               لو الفيديو ما عنده الجودة المختارة، تشتغل أعلى جودة متاحة تلقائيًا.<br/>
               مثال: اخترت 4K لكن الفيديو أعلى جودة عنده 1080p — يشتغل 1080p.
             </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="soundSettings">
+            <label class="toggle" style="text-transform:none;letter-spacing:0">
+              <input id="ytShortsRedirect" type="checkbox" />
+              <span>فتح مقاطع Shorts في المشغّل العادي</span>
+            </label>
+            <div class="hint">
+              عند فتح رابط <code>youtube.com/shorts/…</code> يتم تحويله تلقائياً إلى
+              <code>youtube.com/watch?v=…</code> فيشتغل الفيديو في المشغّل العادي بكل أدواته.
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="sectionHead" style="padding:0 0 12px">
+            <h2 style="margin:0 0 4px">Clean Player</h2>
+            <p style="margin:0">إخفاء العناصر المحددة من داخل مشغّل يوتيوب. حدّد العناصر التي تريد إزالتها.</p>
+          </div>
+          <div class="soundSettings">
+            <label class="toggle" style="text-transform:none;letter-spacing:0">
+              <input id="cleanPlayerEnabled" type="checkbox" />
+              <span>تفعيل Clean Player</span>
+            </label>
+            <div class="cleanPlayerList" id="cleanPlayerList"></div>
           </div>
         </section>
       </section>

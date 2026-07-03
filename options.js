@@ -11,6 +11,46 @@ const ACTION_CHOICES = [
   { type: "speed_set", label: "Set speed to" }
 ];
 
+// Keys must match CLEAN_PLAYER_ITEMS in content.js
+const CLEAN_PLAYER_OPTIONS = [
+  { key: "ambient_mode",            label: "Ambient mode" },
+  { key: "top_section",             label: "Top: Whole section" },
+  { key: "top_titles",              label: "Top: Video & channel titles" },
+  { key: "top_playlist_menu",       label: "Top: Playlist menu button" },
+  { key: "top_watch_later",         label: "Top: Watch later button" },
+  { key: "top_share",               label: "Top: Share button" },
+  { key: "top_info",                label: "Top: Info button" },
+  { key: "top_card_teaser",         label: "Top: Card teaser" },
+  { key: "quick_actions",           label: "Bottom-right: Quick actions" },
+  { key: "paid_content",            label: "Paid content overlay" },
+  { key: "suggested_action",        label: "Suggested action badge" },
+  { key: "annotations",             label: "Custom video annotations" },
+  { key: "cards",                   label: "Cards" },
+  { key: "endscreen",               label: "End screen" },
+  { key: "embed_more_videos",       label: "\"More videos\" overlay in embedded player" },
+  { key: "watermark",               label: "Channel watermark" },
+  { key: "large_play_button",       label: "Large play button" },
+  { key: "spinner",                 label: "Loading spinner" },
+  { key: "heatmap",                 label: "Progress bar heatmap" },
+  { key: "prev_button",             label: "Previous button" },
+  { key: "play_button",             label: "Play button" },
+  { key: "next_button",             label: "Next button" },
+  { key: "mute_button",             label: "Mute button" },
+  { key: "volume_slider",           label: "Volume slider" },
+  { key: "time_display",            label: "Time display" },
+  { key: "chapter_button",          label: "Chapter button" },
+  { key: "fullscreen_scroll_arrow", label: "\"Scroll for details\" / \"More videos\" arrow" },
+  { key: "autoplay_toggle",         label: "Auto-play toggle" },
+  { key: "subtitles_button",        label: "Subtitles button" },
+  { key: "settings_button",         label: "Settings button" },
+  { key: "multicam_button",         label: "Multicam button" },
+  { key: "miniplayer_button",       label: "Miniplayer button" },
+  { key: "pip_button",              label: "PiP button" },
+  { key: "size_button",             label: "Default view / cinema mode" },
+  { key: "remote_button",           label: "Remote button" },
+  { key: "fullscreen_button",       label: "Full screen button" }
+];
+
 let modalZone = 1;
 let editingActions = [];
 let editingActionIndex = null;
@@ -162,6 +202,8 @@ function normalizeActionArray(value) {
 function ensureZoneActions(settings) {
   settings.zones ||= { enabled: true, fullscreenOnly: false, wheel: { map: {}, actions: {} } };
   settings.zones.fullscreenOnly = settings.zones.fullscreenOnly === true;
+  // "player" (default) = grid covers the whole player frame incl. black bars
+  settings.zones.gridCoverage = settings.zones.gridCoverage === "video" ? "video" : "player";
   settings.zones.wheel ||= { map: {}, actions: {} };
   settings.zones.wheel.map ||= {};
   settings.zones.wheel.actions ||= {};
@@ -258,6 +300,10 @@ async function getSettings() {
   if (typeof settings.overlay.volumeAutoHideMs !== "number") settings.overlay.volumeAutoHideMs = settings.overlay.autoHideMs;
   if (typeof settings.overlay.enabled !== "boolean") settings.overlay.enabled = settings.overlay.autoHideMs > 0;
   if (typeof settings.ytAutoQuality !== "string") settings.ytAutoQuality = "";
+  if (typeof settings.ytShortsRedirect !== "boolean") settings.ytShortsRedirect = true;
+  settings.cleanPlayer ||= {};
+  if (typeof settings.cleanPlayer.enabled !== "boolean") settings.cleanPlayer.enabled = false;
+  if (!settings.cleanPlayer.items || typeof settings.cleanPlayer.items !== "object") settings.cleanPlayer.items = {};
   settings.subtitles ||= {};
   const s = settings.subtitles;
   if (typeof s.enabled !== "boolean") s.enabled = false;
@@ -391,6 +437,53 @@ function applyGridAppearance(appearance) {
 
 function renderYtAutoQuality(quality) {
   $("ytQuality").value = quality || "";
+}
+
+function renderYtShortsRedirect(enabled) {
+  $("ytShortsRedirect").checked = enabled !== false;
+}
+
+async function persistCleanPlayer() {
+  const s = await getSettings();
+  const items = {};
+  for (const { key } of CLEAN_PLAYER_OPTIONS) {
+    items[key] = !!$(`cp_${key}`)?.checked;
+  }
+  s.cleanPlayer = { enabled: $("cleanPlayerEnabled").checked, items };
+  await saveSettings(s);
+  const tabs = await chrome.tabs.query({});
+  for (const t of tabs) {
+    if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_CLEAN_PLAYER" }).catch(() => {});
+  }
+}
+
+function buildCleanPlayerList() {
+  const root = $("cleanPlayerList");
+  root.innerHTML = "";
+  for (const { key, label } of CLEAN_PLAYER_OPTIONS) {
+    const lab = document.createElement("label");
+    lab.className = "cleanPlayerItem";
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.id = `cp_${key}`;
+    input.addEventListener("change", persistCleanPlayer);
+
+    const span = document.createElement("span");
+    span.textContent = label;
+
+    lab.appendChild(input);
+    lab.appendChild(span);
+    root.appendChild(lab);
+  }
+}
+
+function renderCleanPlayer(cp) {
+  $("cleanPlayerEnabled").checked = !!cp?.enabled;
+  for (const { key } of CLEAN_PLAYER_OPTIONS) {
+    const el = $(`cp_${key}`);
+    if (el) el.checked = !!cp?.items?.[key];
+  }
 }
 
 function renderSubtitles(sub) {
@@ -670,6 +763,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   $("enabled").checked = !!zones.enabled;
   $("fullscreenOnly").checked = !!zones.fullscreenOnly;
+  $("gridFullFrame").checked = zones.gridCoverage !== "video";
 
   if (Object.keys(actions).every((key) => !actions[key]?.length)) {
     zones.wheel.actions = defaultZoneActions();
@@ -682,7 +776,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderGridAppearance(settings.gridAppearance);
   renderOverlayTiming(settings.overlay);
   renderYtAutoQuality(settings.ytAutoQuality);
+  renderYtShortsRedirect(settings.ytShortsRedirect);
+  buildCleanPlayerList();
+  renderCleanPlayer(settings.cleanPlayer);
   renderSubtitles(settings.subtitles);
+
+  $("cleanPlayerEnabled").addEventListener("change", persistCleanPlayer);
 
   $("enabled").addEventListener("change", async () => {
     const s = await getSettings();
@@ -700,9 +799,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     await saveSettings(s);
   });
 
+  $("gridFullFrame").addEventListener("change", async () => {
+    const s = await getSettings();
+    s.zones.gridCoverage = $("gridFullFrame").checked ? "player" : "video";
+    await saveSettings(s);
+  });
+
   $("reset").addEventListener("click", async () => {
     const s = await getSettings();
-    s.zones = { enabled: true, fullscreenOnly: false, wheel: { map: {}, actions: defaultZoneActions() } };
+    s.zones = { enabled: true, fullscreenOnly: false, gridCoverage: "player", wheel: { map: {}, actions: defaultZoneActions() } };
     s.gridAppearance = {
       cellBg: "#10131a",
       cellBorder: "#2a2f3a",
@@ -712,6 +817,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await saveSettings(s);
     $("enabled").checked = true;
     $("fullscreenOnly").checked = false;
+    $("gridFullFrame").checked = true;
     renderGrid(s.zones.wheel.actions);
     renderBlockedSites(s.blockedHosts);
     renderSoundSettings(s.soundDisplay);
@@ -848,6 +954,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  $("ytShortsRedirect").addEventListener("change", async () => {
+    const s = await getSettings();
+    s.ytShortsRedirect = $("ytShortsRedirect").checked;
+    await saveSettings(s);
+    const tabs = await chrome.tabs.query({});
+    for (const t of tabs) {
+      if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_YT_SHORTS" }).catch(() => {});
+    }
+  });
+
   $("modalClose").addEventListener("click", closeZoneModal);
   $("modalCancel").addEventListener("click", closeZoneModal);
   $("modalOverlay").addEventListener("click", (e) => {
@@ -932,12 +1048,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
     const s = await getSettings();
     $("enabled").checked         = !!s.zones?.enabled;
     $("fullscreenOnly").checked  = !!s.zones?.fullscreenOnly;
+    $("gridFullFrame").checked   = s.zones?.gridCoverage !== "video";
     renderBlockedSites(s.blockedHosts);
     renderSoundSettings(s.soundDisplay);
     renderGridAppearance(s.gridAppearance);
     renderOverlayTiming(s.overlay);
     renderSubtitles(s.subtitles);
     renderYtAutoQuality(s.ytAutoQuality);
+    renderYtShortsRedirect(s.ytShortsRedirect);
+    renderCleanPlayer(s.cleanPlayer);
     // Don't interrupt active zone editing
     if ($("modalOverlay")?.hidden !== false) {
       renderGrid(s.zones?.wheel?.actions || {});

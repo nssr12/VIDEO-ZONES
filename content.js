@@ -20,6 +20,7 @@ let subtitleSettings = {
 let subtitleStyleEl = null;
 let subtitleTrackObserver = null;
 let ytAutoQuality = ""; // "" = auto (don't override)
+let ytShortsRedirect = true; // تحويل روابط Shorts إلى المشغّل العادي (watch)
 
 // Sound Booster — session-only, resets to 100% on page refresh
 let boostPct = 100;
@@ -548,6 +549,109 @@ function startYtAutoQuality() {
   }, true);
 }
 
+// -------- Shorts → المشغّل العادي --------
+async function loadYtShortsRedirectSetting() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  ytShortsRedirect = (data.settings || {}).ytShortsRedirect !== false; // default on
+}
+
+function maybeRedirectShorts() {
+  if (!ytShortsRedirect || !isYouTubeHost()) return;
+  if (window.top !== window) return; // top frame only
+  const m = /^\/shorts\/([A-Za-z0-9_-]+)/.exec(location.pathname);
+  if (!m) return;
+  // location.replace keeps the shorts URL out of history so Back doesn't bounce
+  location.replace(`${location.origin}/watch?v=${m[1]}`);
+}
+
+function startYtShortsRedirect() {
+  if (!isYouTubeHost()) return;
+  maybeRedirectShorts(); // direct page load (document_start)
+  // SPA navigation: both events fire after the URL has changed
+  document.addEventListener("yt-navigate-start", maybeRedirectShorts, true);
+  document.addEventListener("yt-navigate-finish", maybeRedirectShorts, true);
+}
+
+// -------- Clean Player: إخفاء عناصر مشغّل يوتيوب --------
+// Keys must match CLEAN_PLAYER_OPTIONS in options.js
+const CLEAN_PLAYER_ITEMS = {
+  ambient_mode:            ["#cinematics", "#cinematics-container"],
+  top_section:             [".ytp-chrome-top", ".ytp-gradient-top"],
+  top_titles:              [".ytp-title", ".ytp-title-channel"],
+  top_playlist_menu:       [".ytp-playlist-menu-button"],
+  top_watch_later:         [".ytp-watch-later-button"],
+  top_share:               [".ytp-share-button"],
+  top_info:                [".ytp-info-button", ".ytp-overflow-button"],
+  top_card_teaser:         [".ytp-cards-teaser"],
+  quick_actions:           [".ytp-quick-actions", ".ytp-suggestion-set"],
+  paid_content:            [".ytp-paid-content-overlay"],
+  suggested_action:        [".ytp-suggested-action", ".ytp-suggested-action-badge"],
+  annotations:             [".video-annotations", ".iv-branding"],
+  cards:                   [".ytp-cards-button", ".ytp-cards-drawer"],
+  endscreen:               [".html5-endscreen", ".ytp-ce-element"],
+  embed_more_videos:       [".ytp-pause-overlay", ".ytp-pause-overlay-container"],
+  watermark:               [".ytp-watermark"],
+  large_play_button:       [".ytp-large-play-button"],
+  spinner:                 [".ytp-spinner"],
+  heatmap:                 [".ytp-heat-map-container", ".ytp-heat-map-chapter"],
+  prev_button:             [".ytp-prev-button"],
+  play_button:             [".ytp-play-button"],
+  next_button:             [".ytp-next-button"],
+  mute_button:             [".ytp-mute-button"],
+  volume_slider:           [".ytp-volume-panel", ".ytp-volume-slider"],
+  time_display:            [".ytp-time-display"],
+  chapter_button:          [".ytp-chapter-container"],
+  fullscreen_scroll_arrow: [".ytp-fullerscreen-edu-button"],
+  autoplay_toggle:         ["button[data-tooltip-target-id='ytp-autonav-toggle-button']", ".ytp-autonav-toggle-button"],
+  subtitles_button:        [".ytp-subtitles-button"],
+  settings_button:         [".ytp-settings-button"],
+  multicam_button:         [".ytp-multicam-button"],
+  miniplayer_button:       [".ytp-miniplayer-button"],
+  pip_button:              [".ytp-pip-button"],
+  size_button:             [".ytp-size-button"],
+  remote_button:           [".ytp-remote-button"],
+  fullscreen_button:       [".ytp-fullscreen-button"]
+};
+
+let cleanPlayerSettings = { enabled: false, items: {} };
+let cleanPlayerStyleEl = null;
+
+// Embedded players also live on youtube-nocookie.com iframes
+function isYouTubeFamilyHost() {
+  return /(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname);
+}
+
+async function loadCleanPlayerSettings() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const cp = (data.settings || {}).cleanPlayer || {};
+  cleanPlayerSettings = {
+    enabled: !!cp.enabled,
+    items: (cp.items && typeof cp.items === "object") ? cp.items : {}
+  };
+  applyCleanPlayerCSS();
+}
+
+function applyCleanPlayerCSS() {
+  if (cleanPlayerStyleEl) {
+    cleanPlayerStyleEl.remove();
+    cleanPlayerStyleEl = null;
+  }
+  if (!cleanPlayerSettings.enabled || !isYouTubeFamilyHost()) return;
+
+  const selectors = [];
+  for (const [key, sels] of Object.entries(CLEAN_PLAYER_ITEMS)) {
+    if (!cleanPlayerSettings.items[key]) continue;
+    // html prefix raises specificity above YouTube's own rules (same trick as subtitles CSS)
+    for (const sel of sels) selectors.push(`html ${sel}`);
+  }
+  if (!selectors.length) return;
+
+  cleanPlayerStyleEl = document.createElement("style");
+  cleanPlayerStyleEl.id = "vz_clean_player_css";
+  cleanPlayerStyleEl.textContent = `${selectors.join(",\n")} { display: none !important; }`;
+  document.documentElement.appendChild(cleanPlayerStyleEl);
+}
+
 function isBlockedHost() {
   return blockedHosts.includes(baseDomain(location.host));
 }
@@ -571,12 +675,48 @@ async function loadZoneSettings() {
 
   zoneSettings.enabled = zoneSettings.enabled !== false; // default true
   zoneSettings.fullscreenOnly = zoneSettings.fullscreenOnly === true;
+  // "player" = الشبكة على كامل إطار المشغّل (يشمل الأشرطة السوداء)، "video" = على الفيديو فقط
+  zoneSettings.gridCoverage = zoneSettings.gridCoverage === "video" ? "video" : "player";
   zoneSettings.wheel ||= { map: {} };
   zoneSettings.wheel.map ||= {};
   zoneSettings.click ||= { map: {} };
   zoneSettings.click.map ||= {};
   zoneSettings.key ||= { map: {} };
   zoneSettings.key.map ||= {};
+}
+
+// Known site player wrappers — shared by fullscreen + zone-rect logic
+const KNOWN_PLAYER_WRAPPER_SELECTOR =
+  "#movie_player," +              // YouTube
+  ".html5-video-player," +        // YouTube alt class
+  ".video-player," +              // Twitch / generic
+  "[data-a-target='video-player']," + // Twitch
+  ".jw-wrapper," +                // JW Player
+  ".video-js," +                  // Video.js
+  ".plyr," +                      // Plyr
+  ".vjs-fluid";                   // Video.js variant
+
+const zoneContainerCache = new WeakMap(); // video → player wrapper element
+
+// The rect the 3×3 grid is resolved/drawn against.
+// In "player" mode we use the player frame (e.g. YouTube sizes <video> to the
+// content aspect ratio, so black bars live OUTSIDE the video element).
+function zoneRectForVideo(video) {
+  if (!video) return null;
+  const videoRect = video.getBoundingClientRect();
+  // Anything other than the explicit "video" opt-out means full-frame (default)
+  if (zoneSettings?.gridCoverage === "video") return videoRect;
+
+  let container = zoneContainerCache.get(video);
+  if (!container || !container.isConnected || !container.contains(video)) {
+    container = video.closest?.(KNOWN_PLAYER_WRAPPER_SELECTOR) || null;
+    zoneContainerCache.set(video, container);
+  }
+  if (!container) return videoRect; // generic sites: bars are inside the <video> box already
+
+  const rect = container.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return videoRect;
+  return rect;
 }
 
 function zonesActive() {
@@ -591,7 +731,7 @@ function getZoneAtEvent(e) {
   const video = getVideoUnderPointer(e);
   if (!video) return null;
   ensureVideoOverlay(video);
-  const rect = video.getBoundingClientRect();
+  const rect = zoneRectForVideo(video);
   const zone = getZoneNumber(rect, e.clientX, e.clientY);
   return zone ? { video, zone } : null;
 }
@@ -614,7 +754,8 @@ function findVideoAtPoint(x, y) {
     if (!descendantVideos?.length) continue;
 
     for (const video of descendantVideos) {
-      const rect = video.getBoundingClientRect?.();
+      // In "player" coverage mode the black bars around the video count too
+      const rect = zoneRectForVideo(video);
       if (!rect) continue;
       if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
         return video;
@@ -813,8 +954,8 @@ function preferredOverlayHost() {
 
 function positionOverlayToVideo() {
   if (!vzOverlay || !vzOverlayVideo || !vzOverlayVideo.isConnected) return;
-  const rect = vzOverlayVideo.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return;
+  const rect = zoneRectForVideo(vzOverlayVideo);
+  if (!rect || rect.width <= 0 || rect.height <= 0) return;
   vzOverlay.style.left = `${rect.left}px`;
   vzOverlay.style.top = `${rect.top}px`;
   vzOverlay.style.width = `${rect.width}px`;
@@ -992,6 +1133,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "RELOAD_YT_QUALITY") {
     loadYtAutoQualitySettings().then(() => triggerYtQuality());
   }
+  if (msg?.type === "RELOAD_YT_SHORTS") {
+    loadYtShortsRedirectSetting().then(() => maybeRedirectShorts());
+  }
+  if (msg?.type === "RELOAD_CLEAN_PLAYER") {
+    loadCleanPlayerSettings();
+  }
   if (msg?.type === "SET_VOLUME_BOOST") {
     applyBoostToAllVideos(Number(msg.pct) || 100);
   }
@@ -1013,6 +1160,8 @@ loadYtAutoQualitySettings().then(() => {
   startYtAutoQuality();
   triggerYtQuality();
 });
+loadYtShortsRedirectSetting().then(() => startYtShortsRedirect());
+loadCleanPlayerSettings();
 
 function normalizeKeyEvent(e) {
   // نخلي ArrowRight/ArrowLeft يطلع كما هو
@@ -1178,16 +1327,7 @@ function pickFullscreenContainer(video) {
   // Prefer known site player wrappers — using the same element the site itself uses
   // keeps the site's fullscreen state in sync and lets F/dblclick/the native button
   // continue to work after we toggle fullscreen.
-  const knownPlayer = video.closest(
-    "#movie_player," +              // YouTube
-    ".html5-video-player," +        // YouTube alt class
-    ".video-player," +              // Twitch / generic
-    "[data-a-target='video-player']," + // Twitch
-    ".jw-wrapper," +                // JW Player
-    ".video-js," +                  // Video.js
-    ".plyr," +                      // Plyr
-    ".vjs-fluid"                    // Video.js variant
-  );
+  const knownPlayer = video.closest(KNOWN_PLAYER_WRAPPER_SELECTOR);
   if (knownPlayer && knownPlayer.requestFullscreen) return knownPlayer;
 
   const videoRect = video.getBoundingClientRect();
@@ -1251,10 +1391,7 @@ const NATIVE_FS_BUTTON_SELECTORS = [
 function findNativeFullscreenButton(video) {
   if (!video) return null;
   // Search inside the player wrapper first, then fall back to a document-wide search.
-  const player = video.closest(
-    "#movie_player,.html5-video-player,.video-player," +
-    "[data-a-target='video-player'],.jw-wrapper,.video-js,.plyr"
-  );
+  const player = video.closest(KNOWN_PLAYER_WRAPPER_SELECTOR);
   const scope = player || document;
   for (const sel of NATIVE_FS_BUTTON_SELECTORS) {
     const btn = scope.querySelector(sel);
@@ -1325,6 +1462,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
     loadSoundDisplaySettings();
     loadSubtitleSettings();
     loadYtAutoQualitySettings().then(() => triggerYtQuality());
+    loadYtShortsRedirectSetting().then(() => maybeRedirectShorts());
+    loadCleanPlayerSettings();
   }
   if (changes.globalSiteRules) loadRulesForThisHost();
   if (changes.siteProfiles) loadSiteProfile();
@@ -1368,7 +1507,7 @@ window.addEventListener("keydown", (e) => {
   // 2. Fall through to zone-based keyboard binding
   if (!zonesActive()) return;
   if (typeof lastPointer.x !== "number" || typeof lastPointer.y !== "number") return;
-  const rect = hoveredVideo.getBoundingClientRect();
+  const rect = zoneRectForVideo(hoveredVideo);
   const zone = getZoneNumber(rect, lastPointer.x, lastPointer.y);
   if (!zone) return;
 
