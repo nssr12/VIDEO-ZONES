@@ -573,23 +573,27 @@ function startYtShortsRedirect() {
 }
 
 // -------- Clean Player: إخفاء عناصر مشغّل يوتيوب --------
-// Keys must match CLEAN_PLAYER_OPTIONS in options.js
+// Keys must match CLEAN_PLAYER_OPTIONS in options.js.
+// Selectors verified against the live 2026 player CSS + open-source hide lists
+// (ImprovedTube, yt-neuter, Control Panel for YouTube, YTPlayerButtonsRemover).
 const CLEAN_PLAYER_ITEMS = {
-  ambient_mode:            ["#cinematics", "#cinematics-container"],
-  top_section:             [".ytp-chrome-top", ".ytp-gradient-top"],
+  ambient_mode:            ["#cinematics-container", "#cinematics"],
+  top_section:             [".ytp-chrome-top", ".ytp-gradient-top", ".ytp-chrome-top-buttons"],
   top_titles:              [".ytp-title", ".ytp-title-channel"],
   top_playlist_menu:       [".ytp-playlist-menu-button"],
   top_watch_later:         [".ytp-watch-later-button"],
   top_share:               [".ytp-share-button"],
-  top_info:                [".ytp-info-button", ".ytp-overflow-button"],
+  // Old .ytp-info-button is gone; today's equivalent is the ⋮ overflow button + its panel
+  top_info:                [".ytp-overflow-button", ".ytp-overflow-panel", ".ytp-info-button"],
   top_card_teaser:         [".ytp-cards-teaser"],
-  quick_actions:           [".ytp-quick-actions", ".ytp-suggestion-set"],
+  // 2025 "Delhi" player: like/share cluster overlaid bottom-right in fullscreen
+  quick_actions:           [".ytp-fullscreen-quick-actions"],
   paid_content:            [".ytp-paid-content-overlay"],
   suggested_action:        [".ytp-suggested-action", ".ytp-suggested-action-badge"],
-  annotations:             [".video-annotations", ".iv-branding"],
-  cards:                   [".ytp-cards-button", ".ytp-cards-drawer"],
-  endscreen:               [".html5-endscreen", ".ytp-ce-element"],
-  embed_more_videos:       [".ytp-pause-overlay", ".ytp-pause-overlay-container"],
+  annotations:             [".video-annotations", ".annotation", ".iv-branding"],
+  cards:                   [".ytp-cards-button", ".iv-drawer"],
+  endscreen:               [".html5-endscreen", ".ytp-ce-element", ".ytp-endscreen-content", ".ytp-fullscreen-grid-stills-container"],
+  embed_more_videos:       [".ytp-pause-overlay-container", ".ytp-pause-overlay"],
   watermark:               [".ytp-watermark"],
   large_play_button:       [".ytp-large-play-button"],
   spinner:                 [".ytp-spinner"],
@@ -601,8 +605,10 @@ const CLEAN_PLAYER_ITEMS = {
   volume_slider:           [".ytp-volume-panel", ".ytp-volume-slider"],
   time_display:            [".ytp-time-display"],
   chapter_button:          [".ytp-chapter-container"],
-  fullscreen_scroll_arrow: [".ytp-fullerscreen-edu-button"],
-  autoplay_toggle:         ["button[data-tooltip-target-id='ytp-autonav-toggle-button']", ".ytp-autonav-toggle-button"],
+  // classic pill + the "Delhi" fullscreen "More videos" scroll grid that replaced it
+  fullscreen_scroll_arrow: ["button.ytp-fullerscreen-edu-button", ".ytp-fullerscreen-edu-button", ".ytp-fullscreen-grid"],
+  // hide the PARENT button (classic + Delhi variants); inner pill kept as fallback
+  autoplay_toggle:         ["button.ytp-button[data-tooltip-target-id='ytp-autonav-toggle-button']", "button.ytp-autonav-toggle", ".ytp-autonav-toggle-button"],
   subtitles_button:        [".ytp-subtitles-button"],
   settings_button:         [".ytp-settings-button"],
   multicam_button:         [".ytp-multicam-button"],
