@@ -480,12 +480,15 @@ async function loadSubtitleSettings() {
 }
 
 function applySubtitleStyles() {
+  // A blocked site must get no styling layer at all — the block button promises
+  // the extension keeps its hands off (audit #6). The existing tag is still
+  // removed below, so blocking a site strips styles already injected.
   // Remove existing style tag, then optionally inject new one
   if (subtitleStyleEl) {
     subtitleStyleEl.remove();
     subtitleStyleEl = null;
   }
-  if (!subtitleSettings.enabled) return;
+  if (isBlockedHost() || !subtitleSettings.enabled) return;
 
   const { fontSize, color, bgColor, bgOpacity, fontFamily, position } = subtitleSettings;
   const bgRgba = `rgba(${hexToRgb(bgColor)},${Math.max(0, Math.min(1, bgOpacity))})`;
@@ -572,6 +575,7 @@ function applySubtitleStyles() {
 }
 
 function applySubtitleTrack() {
+  if (isBlockedHost()) return;
   const lang = subtitleSettings.defaultLang;
   if (!subtitleSettings.enabled || !lang) return;
 
@@ -667,6 +671,9 @@ function closeYTSettingsIfOpen() {
 }
 
 async function youtubeSetCaptionLanguage(langCode) {
+  // Guarded independently of applySubtitleTrack: this one drives the player with
+  // synthetic clicks, the most intrusive thing the extension does.
+  if (isBlockedHost()) return false;
   if (!langCode || !isYouTubeHost()) return false;
 
   const targetNames = (YT_LANG_NAMES[langCode] || [langCode]).map((s) => s.toLowerCase());
