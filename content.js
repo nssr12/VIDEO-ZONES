@@ -68,32 +68,10 @@ function boostSourceCheck(video) {
   return video.crossOrigin ? "ok" : "cross_origin";
 }
 
-// → { ok: true } | { ok: false, reason }
-async function applyBoostToVideo(video, pct) {
-  if (!video) return { ok: false, reason: "no_video" };
-
-  // Already wired: just move the gain (and put the node back in the path if a
-  // previous resetBoost() bypassed it).
-  const existing = boostMap.get(video);
-  if (existing) {
-    try {
-      if (existing.bypassed) {
-        existing.src.disconnect();
-        existing.src.connect(existing.gain);
-        existing.bypassed = false;
-      }
-      existing.gain.gain.value = pct / 100;
-      return { ok: true };
-    } catch { return { ok: false, reason: "failed" }; }
-  }
-
-  // ---- Gate 1: source ----
-  const srcCheck = boostSourceCheck(video);
-  if (srcCheck !== "ok") return { ok: false, reason: srcCheck };
-
+// The graph build, split out so applyBoostToVideo can park the in-flight promise
+// in boostMap BEFORE this function's first await.
+async function buildBoostGraph(video, pct) {
   const Ctor = window.AudioContext || window.webkitAudioContext;
-  if (!Ctor) return { ok: false, reason: "unsupported" };
-
   let ctx = null;
   try {
     ctx = new Ctor();
@@ -114,7 +92,7 @@ async function applyBoostToVideo(video, pct) {
     src.connect(gain);
     gain.connect(ctx.destination);
     gain.gain.value = pct / 100;
-    boostMap.set(video, { ctx, gain, src, bypassed: false });
+    boostMap.set(video, { ctx, gain, src, bypassed: false }); // replaces the pending marker
     return { ok: true };
   } catch (err) {
     await closeBoostCtx(ctx); // never leave an orphan context behind
@@ -122,12 +100,67 @@ async function applyBoostToVideo(video, pct) {
   }
 }
 
+// → { ok: true } | { ok: false, reason }
+async function applyBoostToVideo(video, pct) {
+  if (!video) return { ok: false, reason: "no_video" };
+
+  const existing = boostMap.get(video);
+  if (existing) {
+    // An attempt is already in flight for this element — join it instead of
+    // starting a second one. Gate 2 can take up to BOOST_RESUME_TIMEOUT_MS, which
+    // is longer than the popup's throttle window, so without this marker a single
+    // slider drag raced several createMediaElementSource() calls onto one element
+    // and all but the first threw InvalidStateError.
+    if (existing.pending) {
+      const res = await existing.pending;
+      if (res.ok) {
+        const entry = boostMap.get(video);
+        if (entry?.gain) entry.gain.gain.value = pct / 100; // newest value wins
+      }
+      return res;
+    }
+    // Already wired: just move the gain (and put the node back in the path if a
+    // previous resetBoost() bypassed it).
+    try {
+      if (existing.bypassed) {
+        existing.src.disconnect();
+        existing.src.connect(existing.gain);
+        existing.bypassed = false;
+      }
+      existing.gain.gain.value = pct / 100;
+      return { ok: true };
+    } catch { return { ok: false, reason: "failed" }; }
+  }
+
+  // ---- Gate 1: source ---- (synchronous, so it settles before we claim the slot)
+  const srcCheck = boostSourceCheck(video);
+  if (srcCheck !== "ok") return { ok: false, reason: srcCheck };
+  if (!(window.AudioContext || window.webkitAudioContext)) {
+    return { ok: false, reason: "unsupported" };
+  }
+
+  // Claim the element. buildBoostGraph runs synchronously up to its first await,
+  // and no await separates it from the set() below, so no concurrent message can
+  // slip between them and start a rival attempt.
+  const attempt = buildBoostGraph(video, pct);
+  boostMap.set(video, { pending: attempt });
+
+  const res = await attempt;
+  if (!res.ok) {
+    // Release the claim so a later attempt (e.g. once the user clicks the page)
+    // can retry. On success buildBoostGraph already swapped in the real entry.
+    const cur = boostMap.get(video);
+    if (cur?.pending === attempt) boostMap.delete(video);
+  }
+  return res;
+}
+
 // The closest thing to an undo that the spec allows: the element stays routed
 // through our context forever, but bypassing the gain node restores the original
 // loudness. applyBoostToVideo() re-inserts the node when the user boosts again.
 function resetBoost(video) {
   const entry = boostMap.get(video);
-  if (!entry) return { ok: false, reason: "no_entry" };
+  if (!entry || entry.pending) return { ok: false, reason: "no_entry" };
   try {
     entry.gain.gain.value = 1;
     entry.src.disconnect();
