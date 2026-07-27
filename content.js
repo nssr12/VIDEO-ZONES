@@ -198,6 +198,14 @@ async function applyBoostToVideo(video, pct) {
     return { ok: false, reason: "unsupported" };
   }
 
+  // Without sticky activation Chrome starts every AudioContext suspended and
+  // resume() never settles, so gate 2 is guaranteed to fail. Answering here skips
+  // building — and immediately tearing down — a context we know cannot run, and
+  // makes a drag on an untouched page cost nothing at all.
+  if (navigator.userActivation && navigator.userActivation.hasBeenActive === false) {
+    return { ok: false, reason: "suspended" };
+  }
+
   // Claim the element. buildBoostGraph runs synchronously up to its first await,
   // and no await separates it from the set() below, so no concurrent message can
   // slip between them and start a rival attempt.

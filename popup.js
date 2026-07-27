@@ -366,7 +366,7 @@ function scheduleSilenceCheck() {
     silenceTimer = null;
     if (boostTabId == null) return;
     try {
-      const res = await sendToVideoFrame({ type: "GET_VOLUME_BOOST" });
+      const res = await sendBoostMessage({ type: "GET_VOLUME_BOOST" });
       if (res?.reason === "silent") setBoostNote("silent", "bad");
     } catch {}
   }, BOOST_SILENCE_POLL_MS);
@@ -410,6 +410,21 @@ function sendToVideoFrame(message) {
   return boostFrameId != null
     ? chrome.tabs.sendMessage(boostTabId, message, { frameId: boostFrameId })
     : chrome.tabs.sendMessage(boostTabId, message);
+}
+
+// The cached frameId goes stale if the page navigates while the popup stays open
+// (SPA route changes rebuild frames, and a full load renumbers them). On failure
+// we re-resolve once and retry rather than reporting a dead extension.
+async function sendBoostMessage(message) {
+  try {
+    return await sendToVideoFrame(message);
+  } catch (err) {
+    if (boostTabId == null) throw err;
+    const fresh = await findVideoFrameId(boostTabId);
+    if (fresh === boostFrameId) throw err; // same frame — genuinely unreachable
+    boostFrameId = fresh;
+    return await sendToVideoFrame(message);
+  }
 }
 
 async function loadBoostUI() {
@@ -458,7 +473,7 @@ function flushBoostSend(pct) {
 async function sendBoost(pct, isFinal = false) {
   if (boostTabId == null) return; // resolved once in loadBoostUI
   try {
-    const res = await sendToVideoFrame({ type: "SET_VOLUME_BOOST", pct });
+    const res = await sendBoostMessage({ type: "SET_VOLUME_BOOST", pct });
     if (res?.ok) {
       setBoostNote(null);
       if (pct > 100) scheduleSilenceCheck();
