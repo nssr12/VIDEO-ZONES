@@ -766,6 +766,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   fillActionTypeSelect();
   showSection("zonesSection");
 
+  // Idempotent, and a no-op read once the legacy key is gone. Runs from both
+  // entry points so it happens whichever the user opens first.
+  await migrateSiteProfiles().catch(() => {});
+
   const settings = await getSettings();
   const zones = settings.zones;
   const actions = zones.wheel.actions;
@@ -1095,45 +1099,104 @@ function downloadJSON(filename, payload) {
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
+// v1 = one `siteProfiles` blob · v2 = one `sp:<domain>` key per site.
+// A v1 file still imports: migrateSiteProfiles() shards it right after the write.
+const BACKUP_VERSION = 2;
+
 async function exportAllSettings() {
+  // get(null) is the whole account, so every sp:* shard is included automatically.
   const data = await chrome.storage.sync.get(null);
   const payload = {
     __vizExport: true,
-    version: 1,
+    version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     data
   };
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   downloadJSON(`video-zones-backup-${stamp}.json`, payload);
-  setBackupStatus("ok", "تم تصدير الإعدادات بنجاح");
+  setBackupStatus("ok", `تم تصدير الإعدادات بنجاح (${Object.keys(data).length} عنصراً)`);
+}
+
+// → null when the file is safe to restore, otherwise an Arabic reason.
+function validateBackup(parsed) {
+  const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+
+  if (!isObj(parsed)) return "الملف غير صالح";
+  if (!parsed.__vizExport) return "الملف ليس من نسخ هذه الإضافة";
+
+  const v = Number(parsed.version);
+  if (!Number.isFinite(v) || v < 1) return "رقم نسخة الملف غير صالح";
+  if (v > BACKUP_VERSION) return `الملف من نسخة أحدث (${v}) — حدّث الإضافة أولاً`;
+
+  const d = parsed.data;
+  if (!isObj(d)) return "بنية الملف غير صالحة";
+
+  // Type-check every key content.js reads, so a malformed file can never reach
+  // storage and break the loaders on every page (see audit item #3).
+  if ("settings" in d && !isObj(d.settings)) return "حقل settings تالف في الملف";
+  if ("globalSiteRules" in d && !isObj(d.globalSiteRules)) return "حقل globalSiteRules تالف في الملف";
+  if ("siteProfiles" in d && !isObj(d.siteProfiles)) return "حقل siteProfiles تالف في الملف";
+  if (isObj(d.settings)) {
+    const s = d.settings;
+    if ("blockedHosts" in s && !Array.isArray(s.blockedHosts)) return "قائمة المواقع المحظورة تالفة";
+    if ("zones" in s && !isObj(s.zones)) return "إعدادات المربعات تالفة في الملف";
+  }
+  for (const k of Object.keys(d)) {
+    if (isSpKey(k) && !isObj(d[k])) return `قواعد الموقع تالفة في الملف: ${spHost(k)}`;
+  }
+  return null;
 }
 
 async function importAllSettings(file) {
   if (!file) return;
+
+  let parsed;
   try {
-    const text = await file.text();
-    const parsed = JSON.parse(text);
-    if (!parsed || !parsed.__vizExport || !parsed.data || typeof parsed.data !== "object") {
-      setBackupStatus("bad", "الملف غير صالح أو ليس من نسخ الإضافة");
-      return;
-    }
-    if (!confirm("سيتم استبدال الإعدادات الحالية بالكامل. متأكد؟")) {
-      setBackupStatus("bad", "تم إلغاء العملية");
-      return;
-    }
-    await chrome.storage.sync.clear();
-    await chrome.storage.sync.set(parsed.data);
-
-    const tabs = await chrome.tabs.query({});
-    for (const t of tabs) {
-      if (t.id) chrome.tabs.sendMessage(t.id, { type: "GVZ_RELOAD" }).catch(() => {});
-    }
-
-    setBackupStatus("ok", "تم استيراد الإعدادات. أعد تحميل الصفحة لتظهر التغييرات في المحرر");
-    setTimeout(() => location.reload(), 900);
+    parsed = JSON.parse(await file.text());
   } catch (err) {
     setBackupStatus("bad", `فشل قراءة الملف: ${err?.message || err}`);
+    return;
   }
+
+  const invalid = validateBackup(parsed);
+  if (invalid) { setBackupStatus("bad", invalid); return; }
+
+  if (!confirm("سيتم استبدال الإعدادات الحالية بالكامل. متأكد؟")) {
+    setBackupStatus("bad", "تم إلغاء العملية");
+    return;
+  }
+
+  // clear() before set() means a failed set leaves the user with NOTHING, so we
+  // snapshot first and put it back if anything goes wrong (audit item #1).
+  const snapshot = await chrome.storage.sync.get(null);
+  try {
+    await chrome.storage.sync.clear();
+    await chrome.storage.sync.set(parsed.data);
+  } catch (err) {
+    try {
+      await chrome.storage.sync.clear();
+      await chrome.storage.sync.set(snapshot);
+      setBackupStatus("bad", `فشل الاستيراد وأُعيدت إعداداتك السابقة: ${err?.message || err}`);
+    } catch {
+      setBackupStatus("bad", "فشل الاستيراد وتعذّرت الاستعادة — استورد ملف نسخة احتياطية فوراً");
+    }
+    return;
+  }
+
+  // A v1 file lands as a legacy blob; shard it before anything reads it.
+  const migrated = await migrateSiteProfiles().catch(() => ({ ok: false }));
+  if (!migrated.ok) {
+    setBackupStatus("bad", "استُوردت الإعدادات لكن تعذّرت تجزئة قواعد المواقع — افتح الصفحة مجدداً");
+    return;
+  }
+
+  const tabs = await chrome.tabs.query({});
+  for (const t of tabs) {
+    if (t.id) chrome.tabs.sendMessage(t.id, { type: "GVZ_RELOAD" }).catch(() => {});
+  }
+
+  setBackupStatus("ok", "تم استيراد الإعدادات. أعد تحميل الصفحة لتظهر التغييرات في المحرر");
+  setTimeout(() => location.reload(), 900);
 }
 
 function setupBackupUI() {
