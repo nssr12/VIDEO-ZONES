@@ -80,13 +80,18 @@
             <label>لون رقم المربع
               <input id="gridNumberColor" type="color" />
             </label>
+            <label>شفافية رقم المربع
+              <input id="gridNumberOpacity" type="range" min="0" max="100" step="1" />
+              <span class="rangeValue" id="gridNumberOpacityValue">100%</span>
+            </label>
             <label>استدارة الزوايا
               <input id="gridRadius" type="range" min="0" max="28" step="1" />
               <span class="rangeValue" id="gridRadiusValue">0px</span>
             </label>
             <div class="hint" style="margin:0">
               اللون وحده لا يظهر حتى ترفع شفافيته. الافتراضي: خلفية شفافة تماماً
-              وحدود بيضاء خفيفة — وهو مظهر الشبكة الأصلي داخل الفيديو.
+              وحدود بيضاء خفيفة — وهو مظهر الشبكة الأصلي داخل الفيديو.<br/>
+              اجعل شفافية الرقم <b>0%</b> لإخفاء أرقام المربعات تماماً.
             </div>
             <div>
               <button id="gridAppearanceReset" class="btnGhost">إعادة مظهر الشبكة للافتراضي</button>

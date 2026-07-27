@@ -495,7 +495,7 @@ function applyGridAppearance(appearance) {
   const root = document.documentElement;
   root.style.setProperty("--grid-cell-bg", rgbaFrom(g.cellBg, g.cellBgOpacity));
   root.style.setProperty("--grid-cell-border", rgbaFrom(g.cellBorder, g.cellBorderOpacity));
-  root.style.setProperty("--grid-number-color", g.numberColor);
+  root.style.setProperty("--grid-number-color", rgbaFrom(g.numberColor, g.numberOpacity));
   root.style.setProperty("--grid-cell-radius", `${g.radius}px`);
 }
 
@@ -596,12 +596,15 @@ function renderGridAppearance(appearance) {
   $("gridRadius").value = String(g.radius);
   $("gridRadiusValue").textContent = `${g.radius}px`;
 
-  const bgOp = Math.round(g.cellBgOpacity * 100);
-  const brOp = Math.round(g.cellBorderOpacity * 100);
-  $("gridCellBgOpacity").value = String(bgOp);
-  $("gridCellBgOpacityValue").textContent = `${bgOp}%`;
-  $("gridCellBorderOpacity").value = String(brOp);
-  $("gridCellBorderOpacityValue").textContent = `${brOp}%`;
+  for (const [slider, valueEl, val] of [
+    ["gridCellBgOpacity", "gridCellBgOpacityValue", g.cellBgOpacity],
+    ["gridCellBorderOpacity", "gridCellBorderOpacityValue", g.cellBorderOpacity],
+    ["gridNumberOpacity", "gridNumberOpacityValue", g.numberOpacity]
+  ]) {
+    const pct = Math.round(val * 100);
+    $(slider).value = String(pct);
+    $(valueEl).textContent = `${pct}%`;
+  }
   applyGridAppearance(appearance);
 }
 
@@ -928,7 +931,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   for (const [slider, valueEl, field] of [
     ["gridCellBgOpacity", "gridCellBgOpacityValue", "cellBgOpacity"],
-    ["gridCellBorderOpacity", "gridCellBorderOpacityValue", "cellBorderOpacity"]
+    ["gridCellBorderOpacity", "gridCellBorderOpacityValue", "cellBorderOpacity"],
+    ["gridNumberOpacity", "gridNumberOpacityValue", "numberOpacity"]
   ]) {
     $(slider).addEventListener("input", () => {
       $(valueEl).textContent = `${$(slider).value}%`;
@@ -939,7 +943,8 @@ document.addEventListener("DOMContentLoaded", async () => {
           numberColor: $("gridNumberColor").value,
           radius: Number($("gridRadius").value),
           cellBgOpacity: Number($("gridCellBgOpacity").value) / 100,
-          cellBorderOpacity: Number($("gridCellBorderOpacity").value) / 100
+          cellBorderOpacity: Number($("gridCellBorderOpacity").value) / 100,
+          numberOpacity: Number($("gridNumberOpacity").value) / 100
         })
       });
     });
@@ -969,7 +974,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       numberColor: $("gridNumberColor").value,
       radius: Number($("gridRadius").value),
       cellBgOpacity: Number($("gridCellBgOpacity").value) / 100,
-      cellBorderOpacity: Number($("gridCellBorderOpacity").value) / 100
+      cellBorderOpacity: Number($("gridCellBorderOpacity").value) / 100,
+      numberOpacity: Number($("gridNumberOpacity").value) / 100
     });
   });
 

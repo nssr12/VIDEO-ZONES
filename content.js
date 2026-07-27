@@ -804,17 +804,35 @@ function startSubtitleTrackObserver() {
 // options.js must share these: it used to auto-fill a different set (opaque
 // #10131a) merely by being opened, which — once the setting actually reached the
 // overlay — turned the grid into a solid wall nobody had chosen.
+//
+// Colours are stored separately from their opacity because <input type="color">
+// cannot express alpha. Without that split, touching any colour field once made
+// the grid opaque with no way back from the UI.
 const GRID_APPEARANCE_DEFAULTS = Object.freeze({
   cellBg: "#000000",
   cellBgOpacity: 0,          // شفاف تماماً: لا خلفية إطلاقاً، كما كان
   cellBorder: "#ffffff",
   cellBorderOpacity: 0.32,   // نفس rgba(255,255,255,.32) القديمة
   numberColor: "#ffffff",
+  numberOpacity: 1,          // الأرقام ظاهرة كما هي؛ 0 يخفيها من الـ DOM أصلاً
   radius: 0
 });
 
-// What options.js wrote just by being opened. A stored value identical to one of
-// these was never picked by a human, so it must not migrate as a deliberate colour.
+// ── استدلالية الهجرة ─────────────────────────────────────────────────────────
+// هذه القيم الأربع هي ما كانت options.js تكتبها في التخزين بمجرد **فتح** الصفحة،
+// قبل أن يلمس المستخدم أي حقل. فوجود أيٍّ منها مخزَّناً ليس دليل اختيار، ولذلك
+// نعامله كأنه غير مضبوط ونعيده لمظهر الـ overlay الأصلي.
+//
+// ⚠️ هذا استدلال لا يقين: مستخدم اختار #10131a عمداً — وهو لون داكن معقول —
+// سيُعامَل خطأً كأنه تعبئة تلقائية، فيرى شبكته شفافة بدل لونه. الأثر مقبول
+// لسببين: النتيجة هي المظهر الأصلي المألوف لا مظهراً غريباً، وإعادة ضبطه من
+// اللوحة تستغرق ثانيتين. البديل — احترام القيمة حرفياً — كان سيُبقي الجدار
+// المعتم على كل من فتح صفحة الإعدادات ولو مرة واحدة دون أن يختار شيئاً، وهو
+// العطب نفسه الذي يعالجه هذا الكود.
+//
+// الاستدلال يُطبَّق على الألوان الثلاثة فقط. أما radius فلا يُعاد إلا حين يكون
+// الكائن كله تعبئة تلقائية (isLegacyGridAutofill)، لأن 12px اختيار معقول
+// وأثره تجميلي بحت لا يحجب الفيديو.
 const GRID_APPEARANCE_LEGACY = Object.freeze({
   cellBg: "#10131a", cellBorder: "#2a2f3a", numberColor: "#a3a3a3", radius: 12
 });
@@ -851,7 +869,9 @@ function resolveGridAppearance(stored) {
 
   const colour = (key) => {
     const v = g?.[key];
-    return typeof v === "string" && v ? v : GRID_APPEARANCE_DEFAULTS[key];
+    if (typeof v !== "string" || !v) return GRID_APPEARANCE_DEFAULTS[key];
+    const legacy = String(GRID_APPEARANCE_LEGACY[key] || "").toLowerCase();
+    return v.toLowerCase() === legacy ? GRID_APPEARANCE_DEFAULTS[key] : v;
   };
   const opacity = (colourKey, opacityKey) => {
     const saved = Number(g?.[opacityKey]);
@@ -869,6 +889,7 @@ function resolveGridAppearance(stored) {
     cellBorder: colour("cellBorder"),
     cellBorderOpacity: opacity("cellBorder", "cellBorderOpacity"),
     numberColor: colour("numberColor"),
+    numberOpacity: opacity("numberColor", "numberOpacity"),
     radius: Number.isFinite(radius) ? radius : GRID_APPEARANCE_DEFAULTS.radius
   };
 }
@@ -880,8 +901,29 @@ function applyGridVars(el) {
   if (!el) return;
   el.style.setProperty("--vz-cell-bg", rgbaFrom(gridAppearance.cellBg, gridAppearance.cellBgOpacity));
   el.style.setProperty("--vz-cell-border", rgbaFrom(gridAppearance.cellBorder, gridAppearance.cellBorderOpacity));
-  el.style.setProperty("--vz-num-color", gridAppearance.numberColor);
+  el.style.setProperty("--vz-num-color", rgbaFrom(gridAppearance.numberColor, gridAppearance.numberOpacity));
   el.style.setProperty("--vz-cell-radius", `${gridAppearance.radius}px`);
+  syncZoneNumbers(el);
+}
+
+// Opacity 0 means the numbers are REMOVED, not painted invisibly: an element that
+// can never be seen has no business sitting in the overlay of every video, and it
+// doubles as the "no numbers" switch without needing a separate setting.
+function syncZoneNumbers(root) {
+  const grid = root?.querySelector?.(".vzGrid");
+  if (!grid) return;
+  const wanted = gridAppearance.numberOpacity > 0;
+  grid.querySelectorAll(".vzCell").forEach((cell, i) => {
+    const existing = cell.querySelector(".vzNum");
+    if (wanted && !existing) {
+      const num = document.createElement("div");
+      num.className = "vzNum";
+      num.textContent = ZONE_LABELS[i] || "";
+      cell.appendChild(num);
+    } else if (!wanted && existing) {
+      existing.remove();
+    }
+  });
 }
 
 async function loadGridAppearance() {
@@ -1366,14 +1408,12 @@ function buildOverlayElement() {
   el.className = "vzWrap";
   el.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
   el.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
-  applyGridVars(el);
-  // ZONE_LABELS ثوابت في الملف لا بيانات مستخدم، فلا خطر من القالب هنا
-  const cells = ZONE_LABELS.map((l) => `<div class="vzCell"><div class="vzNum">${l}</div></div>`).join("");
   el.innerHTML = `
-    <div class="vzGrid vzHidden">${cells}</div>
+    <div class="vzGrid vzHidden">${'<div class="vzCell"></div>'.repeat(9)}</div>
     <div class="vzHint vzHidden">Zones</div>
     <div class="vzVolume vzHidden">100</div>
   `;
+  applyGridVars(el); // يزرع الأرقام بـ textContent بعد بناء الخلايا
   return el;
 }
 

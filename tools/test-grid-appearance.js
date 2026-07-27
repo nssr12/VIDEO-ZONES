@@ -83,6 +83,31 @@ const OLD_BORDER = "rgba(255,255,255,.32)";
     check("قيمة خارج المدى تُقصّ", R({ cellBgOpacity: 5 }).cellBgOpacity === 1);
   }
 
+  console.log("\n[6b] شفافية رقم المربع");
+  {
+    check("الافتراضي 100% (لا تغيير للمظهر)", R(undefined).numberOpacity === 1, R(undefined));
+    check("#a3a3a3 التلقائي ⇒ اللون يعود أبيض", R({ numberColor: "#a3a3a3", cellBorder: "#ff0000" }).numberColor === "#ffffff",
+      R({ numberColor: "#a3a3a3", cellBorder: "#ff0000" }));
+    check("لون مختار ⇒ يبقى وشفافيته 100%",
+      R({ numberColor: "#00ffff" }).numberColor === "#00ffff" && R({ numberColor: "#00ffff" }).numberOpacity === 1);
+    check("شفافية 0 مخزَّنة تُحترم", R({ numberOpacity: 0 }).numberOpacity === 0, R({ numberOpacity: 0 }));
+    check("0 تُنتج transparent", rgba(R({ numberOpacity: 0 }).numberColor, 0) === "transparent");
+
+    const css = fs.readFileSync("content.js", "utf8");
+    check("0 تحذف العنصر من الـ DOM لا تُشفّفه", /function syncZoneNumbers[\s\S]*?existing\.remove\(\)/.test(css));
+    check("الأرقام تُزرع بـ textContent", /num\.textContent = ZONE_LABELS/.test(css));
+    check("لا قالب innerHTML للأرقام", !/vzNum">\$\{/.test(css));
+  }
+
+  console.log("\n[6c] الاستدلالية موثّقة فوق الكتلة");
+  {
+    const st = fs.readFileSync("storage.js", "utf8");
+    check("يشرح أن options.js كانت تكتبها تلقائياً", /بمجرد \*\*فتح\*\* الصفحة/.test(st));
+    check("يذكر حالة من اختار #10131a عمداً", /مستخدم اختار #10131a عمداً/.test(st));
+    check("يعلّل قبول الأثر", /الأثر مقبول/.test(st));
+    check("يوضّح استثناء radius", /أما radius فلا يُعاد إلا/.test(st));
+  }
+
   console.log("\n[7] الافتراضيات مصدر واحد بين الملفات");
   {
     const st = fs.readFileSync("storage.js", "utf8"), ct = fs.readFileSync("content.js", "utf8");
@@ -96,8 +121,8 @@ const OLD_BORDER = "rgba(255,255,255,.32)";
   console.log("\n[8] الأرقام داخل .vzGrid، وبلا التقاط للمؤشر");
   {
     const css = fs.readFileSync("content.js", "utf8");
-    check("الرقم داخل الخلية داخل الشبكة",
-      /vzGrid vzHidden">\$\{cells\}/.test(css) && /class="vzCell"><div class="vzNum">/.test(css));
+    check("الخلايا التسع داخل .vzGrid", /vzGrid vzHidden">\$\{'<div class="vzCell"><\/div>'\.repeat\(9\)\}/.test(css));
+    check("الرقم يُضاف داخل الخلية", /cell\.appendChild\(num\)/.test(css));
     check("pointer-events:none على .vzNum", /\.vzNum\{[^}]*pointer-events:none/.test(css));
     check("الحجم نسبي للشبكة بلا إعداد جديد", /font-size:clamp\(9px, 6cqmin/.test(css));
   }
