@@ -66,16 +66,31 @@
             <label>لون خلفية المربعات
               <input id="gridCellBg" type="color" />
             </label>
+            <label>شفافية خلفية المربعات
+              <input id="gridCellBgOpacity" type="range" min="0" max="100" step="1" />
+              <span class="rangeValue" id="gridCellBgOpacityValue">0%</span>
+            </label>
             <label>لون حدود المربعات
               <input id="gridCellBorder" type="color" />
+            </label>
+            <label>شفافية حدود المربعات
+              <input id="gridCellBorderOpacity" type="range" min="0" max="100" step="1" />
+              <span class="rangeValue" id="gridCellBorderOpacityValue">32%</span>
             </label>
             <label>لون رقم المربع
               <input id="gridNumberColor" type="color" />
             </label>
             <label>استدارة الزوايا
-              <input id="gridRadius" type="range" min="8" max="28" step="1" />
-              <span class="rangeValue" id="gridRadiusValue">12px</span>
+              <input id="gridRadius" type="range" min="0" max="28" step="1" />
+              <span class="rangeValue" id="gridRadiusValue">0px</span>
             </label>
+            <div class="hint" style="margin:0">
+              اللون وحده لا يظهر حتى ترفع شفافيته. الافتراضي: خلفية شفافة تماماً
+              وحدود بيضاء خفيفة — وهو مظهر الشبكة الأصلي داخل الفيديو.
+            </div>
+            <div>
+              <button id="gridAppearanceReset" class="btnGhost">إعادة مظهر الشبكة للافتراضي</button>
+            </div>
           </div>
         </section>
       </section>

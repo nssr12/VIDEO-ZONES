@@ -294,12 +294,9 @@ async function getSettings() {
   const settings = data.settings || {};
   settings.blockedHosts ||= [];
   settings.soundDisplay ||= { color: "#ffffff", fontSize: 48 };
-  settings.gridAppearance ||= {
-    cellBg: "#10131a",
-    cellBorder: "#2a2f3a",
-    numberColor: "#a3a3a3",
-    radius: 12
-  };
+  // لا تُعبَّأ تلقائياً: غيابها يعني "لم تُضبط قط"، و resolveGridAppearance
+  // يحوّل ذلك إلى مظهر الـ overlay الأصلي. تعبئتها هنا هي ما أعطى الجميع
+  // شبكة معتمة لم يخترها أحد.
   settings.overlay ||= {};
   if (typeof settings.overlay.autoHideMs !== "number") settings.overlay.autoHideMs = 900;
   // Default volumeAutoHideMs to existing autoHideMs for migration; keeps existing user choice for both
@@ -492,12 +489,14 @@ function renderSoundSettings(soundDisplay) {
   $("soundSizeValue").textContent = `${size}px`;
 }
 
+// المعاينة في هذه الصفحة تعرض ما سيراه المستخدم داخل الفيديو حرفياً
 function applyGridAppearance(appearance) {
+  const g = resolveGridAppearance(appearance);
   const root = document.documentElement;
-  root.style.setProperty("--grid-cell-bg", appearance?.cellBg || "#10131a");
-  root.style.setProperty("--grid-cell-border", appearance?.cellBorder || "#2a2f3a");
-  root.style.setProperty("--grid-number-color", appearance?.numberColor || "#a3a3a3");
-  root.style.setProperty("--grid-cell-radius", `${Number(appearance?.radius || 12)}px`);
+  root.style.setProperty("--grid-cell-bg", rgbaFrom(g.cellBg, g.cellBgOpacity));
+  root.style.setProperty("--grid-cell-border", rgbaFrom(g.cellBorder, g.cellBorderOpacity));
+  root.style.setProperty("--grid-number-color", g.numberColor);
+  root.style.setProperty("--grid-cell-radius", `${g.radius}px`);
 }
 
 function renderYtAutoQuality(quality) {
@@ -590,19 +589,20 @@ function renderOverlayTiming(overlay) {
 }
 
 function renderGridAppearance(appearance) {
-  const next = appearance || {
-    cellBg: "#10131a",
-    cellBorder: "#2a2f3a",
-    numberColor: "#a3a3a3",
-    radius: 12
-  };
+  const g = resolveGridAppearance(appearance);
+  $("gridCellBg").value = g.cellBg;
+  $("gridCellBorder").value = g.cellBorder;
+  $("gridNumberColor").value = g.numberColor;
+  $("gridRadius").value = String(g.radius);
+  $("gridRadiusValue").textContent = `${g.radius}px`;
 
-  $("gridCellBg").value = next.cellBg;
-  $("gridCellBorder").value = next.cellBorder;
-  $("gridNumberColor").value = next.numberColor;
-  $("gridRadius").value = String(Number(next.radius || 12));
-  $("gridRadiusValue").textContent = `${Number(next.radius || 12)}px`;
-  applyGridAppearance(next);
+  const bgOp = Math.round(g.cellBgOpacity * 100);
+  const brOp = Math.round(g.cellBorderOpacity * 100);
+  $("gridCellBgOpacity").value = String(bgOp);
+  $("gridCellBgOpacityValue").textContent = `${bgOp}%`;
+  $("gridCellBorderOpacity").value = String(brOp);
+  $("gridCellBorderOpacityValue").textContent = `${brOp}%`;
+  applyGridAppearance(appearance);
 }
 
 function fillActionTypeSelect() {
@@ -874,12 +874,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("reset").addEventListener("click", async () => {
     const s = await getSettings();
     s.zones = { enabled: true, fullscreenOnly: false, gridCoverage: "player", wheel: { map: {}, actions: defaultZoneActions() } };
-    s.gridAppearance = {
-      cellBg: "#10131a",
-      cellBorder: "#2a2f3a",
-      numberColor: "#a3a3a3",
-      radius: 12
-    };
+    s.gridAppearance = { ...GRID_APPEARANCE_DEFAULTS };
     await saveSettings(s);
     $("enabled").checked = true;
     $("fullscreenOnly").checked = false;
@@ -912,26 +907,58 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   $("gridCellBg").addEventListener("change", async () => {
     const s = await getSettings();
-    s.gridAppearance ||= {};
-    s.gridAppearance.cellBg = $("gridCellBg").value;
+    s.gridAppearance = { ...resolveGridAppearance(s.gridAppearance), cellBg: $("gridCellBg").value };
     await saveSettings(s);
     renderGridAppearance(s.gridAppearance);
   });
 
   $("gridCellBorder").addEventListener("change", async () => {
     const s = await getSettings();
-    s.gridAppearance ||= {};
-    s.gridAppearance.cellBorder = $("gridCellBorder").value;
+    s.gridAppearance = { ...resolveGridAppearance(s.gridAppearance), cellBorder: $("gridCellBorder").value };
     await saveSettings(s);
     renderGridAppearance(s.gridAppearance);
   });
 
   $("gridNumberColor").addEventListener("change", async () => {
     const s = await getSettings();
-    s.gridAppearance ||= {};
-    s.gridAppearance.numberColor = $("gridNumberColor").value;
+    s.gridAppearance = { ...resolveGridAppearance(s.gridAppearance), numberColor: $("gridNumberColor").value };
     await saveSettings(s);
     renderGridAppearance(s.gridAppearance);
+  });
+
+  for (const [slider, valueEl, field] of [
+    ["gridCellBgOpacity", "gridCellBgOpacityValue", "cellBgOpacity"],
+    ["gridCellBorderOpacity", "gridCellBorderOpacityValue", "cellBorderOpacity"]
+  ]) {
+    $(slider).addEventListener("input", () => {
+      $(valueEl).textContent = `${$(slider).value}%`;
+      applyGridAppearance({
+        ...resolveGridAppearance({
+          cellBg: $("gridCellBg").value,
+          cellBorder: $("gridCellBorder").value,
+          numberColor: $("gridNumberColor").value,
+          radius: Number($("gridRadius").value),
+          cellBgOpacity: Number($("gridCellBgOpacity").value) / 100,
+          cellBorderOpacity: Number($("gridCellBorderOpacity").value) / 100
+        })
+      });
+    });
+    $(slider).addEventListener("change", async () => {
+      const s = await getSettings();
+      s.gridAppearance = { ...resolveGridAppearance(s.gridAppearance), [field]: Number($(slider).value) / 100 };
+      await saveSettings(s);
+      renderGridAppearance(s.gridAppearance);
+    });
+  }
+
+  // إعادة مظهر الشبكة وحدها: حذف المفتاح يعيد المظهر الأصلي بلا لمس أي إعداد آخر
+  $("gridAppearanceReset").addEventListener("click", async () => {
+    const s = await getSettings();
+    delete s.gridAppearance;
+    if (await saveSettings(s)) {
+      renderGridAppearance(undefined);
+      showToast("ok", "أُعيد مظهر الشبكة للافتراضي");
+    }
   });
 
   $("gridRadius").addEventListener("input", () => {
@@ -940,14 +967,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       cellBg: $("gridCellBg").value,
       cellBorder: $("gridCellBorder").value,
       numberColor: $("gridNumberColor").value,
-      radius: Number($("gridRadius").value)
+      radius: Number($("gridRadius").value),
+      cellBgOpacity: Number($("gridCellBgOpacity").value) / 100,
+      cellBorderOpacity: Number($("gridCellBorderOpacity").value) / 100
     });
   });
 
   $("gridRadius").addEventListener("change", async () => {
     const s = await getSettings();
-    s.gridAppearance ||= {};
-    s.gridAppearance.radius = Number($("gridRadius").value);
+    s.gridAppearance = { ...resolveGridAppearance(s.gridAppearance), radius: Number($("gridRadius").value) };
     await saveSettings(s);
     renderGridAppearance(s.gridAppearance);
   });

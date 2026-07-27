@@ -10,7 +10,7 @@ function slice(file, from, to) {
   if (a === -1 || b === -1) throw new Error(`تعذّر استخراج ${from}`);
   return t.slice(a, b);
 }
-const SRC = slice("content.js", "const GRID_APPEARANCE_DEFAULTS", "async function loadSoundDisplaySettings");
+const SRC = slice("content.js", "// ---- BEGIN gridAppearance ----", "async function loadSoundDisplaySettings");
 
 function load(settings) {
   const vars = {};
@@ -32,62 +32,74 @@ const check = (n, c, x) => c ? (pass++, console.log("  ✅ " + n))
 const OLD_BORDER = "rgba(255,255,255,.32)";
 
 (async () => {
-  console.log("\n[1] لا إعدادات إطلاقاً ⇒ مظهر الـ overlay القديم حرفياً");
+  const R = (stored) => load({}).ctx.resolveGridAppearance(stored);
+  const rgba = (h, a) => load({}).ctx.rgbaFrom(h, a);
+
+  console.log("\n[1] غياب gridAppearance كلياً ⇒ المظهر القديم حرفياً");
   {
-    const l = load({});
-    await l.ctx.loadGridAppearance();
-    const g = l.read();
-    check("الحدّ = قيمة overlay القديمة", g.cellBorder === OLD_BORDER, g.cellBorder);
-    check("الخلفية شفافة كما كانت", g.cellBg === "transparent", g.cellBg);
-    check("لا استدارة كما كان", g.radius === 0, g.radius);
-    check("لون الرقم أبيض مثل بقية نصوص الـ overlay", g.numberColor === "#ffffff", g.numberColor);
+    const g = R(undefined);
+    check("خلفية شفافة تماماً", g.cellBgOpacity === 0, g);
+    check("شفافية الحدود 32%", g.cellBorderOpacity === 0.32, g);
+    check("لا استدارة", g.radius === 0, g.radius);
+    check("الحدّ يُنتج rgba القديمة", rgba(g.cellBorder, g.cellBorderOpacity) === "rgba(255,255,255,0.32)", rgba(g.cellBorder, g.cellBorderOpacity));
   }
 
-  console.log("\n[2] إعدادات المستخدم تصل للمتغيرات فعلاً");
+  console.log("\n[2] شفافية 0 للخلفية ⇒ transparent لا rgba(x,y,z,0)");
   {
-    const l = load({ gridAppearance: { cellBg: "#101010", cellBorder: "#ff0000", numberColor: "#00ff00", radius: 14 } });
-    await l.ctx.loadGridAppearance();
-    check("--vz-cell-bg", l.vars["--vz-cell-bg"] === "#101010", l.vars);
-    check("--vz-cell-border", l.vars["--vz-cell-border"] === "#ff0000", l.vars);
-    check("--vz-num-color", l.vars["--vz-num-color"] === "#00ff00", l.vars);
-    check("--vz-cell-radius بوحدة px", l.vars["--vz-cell-radius"] === "14px", l.vars);
+    check("transparent", rgba("#123456", 0) === "transparent", rgba("#123456", 0));
+    check("قيمة سالبة أيضاً", rgba("#123456", -1) === "transparent");
+    check("لون تالف ⇒ transparent", rgba("nope", 1) === "transparent");
+    check("شفافية كاملة ⇒ rgb بلا ألفا", rgba("#ff0000", 1) === "rgb(255,0,0)", rgba("#ff0000", 1));
   }
 
-  console.log("\n[3] حقل واحد ناقص ⇒ الباقي يُحترم والناقص يعود للقديم");
+  console.log("\n[3] حقل مضبوط سلفاً بلا شفافية مخزَّنة ⇒ 100%");
   {
-    const l = load({ gridAppearance: { cellBorder: "#abcdef" } });
-    await l.ctx.loadGridAppearance();
-    const g = l.read();
-    check("المضبوط يُحترم", g.cellBorder === "#abcdef", g.cellBorder);
-    check("الناقص يعود للقيمة القديمة", g.cellBg === "transparent" && g.radius === 0, g);
+    const g = R({ cellBg: "#ff0000", cellBorder: "#00ff00" });
+    check("خلفية اختارها المستخدم ⇒ 1", g.cellBgOpacity === 1, g);
+    check("حدود اختارها المستخدم ⇒ 1", g.cellBorderOpacity === 1, g);
+    check("اللون محفوظ كما اختاره", g.cellBg === "#ff0000" && g.cellBorder === "#00ff00", g);
   }
 
-  console.log("\n[4] قيم تالفة لا تُمرَّر");
+  console.log("\n[4] تعبئة options التلقائية ليست اختياراً ⇒ المظهر القديم");
   {
-    const l = load({ gridAppearance: { radius: "abc", cellBg: "" } });
-    await l.ctx.loadGridAppearance();
-    const g = l.read();
-    check("radius غير رقمي ⇒ 0", g.radius === 0, g.radius);
-    check("نص فارغ ⇒ الافتراضي", g.cellBg === "transparent", g.cellBg);
+    const g = R({ cellBg: "#10131a", cellBorder: "#2a2f3a", numberColor: "#a3a3a3", radius: 12 });
+    check("لا جدار صلب", g.cellBgOpacity === 0, g);
+    check("الحدود تعود لـ 32%", g.cellBorderOpacity === 0.32, g);
+    check("الاستدارة تعود 0", g.radius === 0, g.radius);
   }
 
-  console.log("\n[5] تحميل متكرر لا يُراكم القيم");
+  console.log("\n[5] تغيير جزئي: المُختار يبقى والباقي يعود للأصل");
   {
-    const l = load({ gridAppearance: { cellBorder: "#111111" } });
-    await l.ctx.loadGridAppearance();
-    // تحميل ثانٍ بإعدادات فارغة يجب أن يعود للافتراضي لا لقيمة التحميل السابق
-    const l2 = load({});
-    await l2.ctx.loadGridAppearance();
-    check("لا تسرّب بين التحميلات", l2.read().cellBorder === OLD_BORDER, l2.read().cellBorder);
+    const g = R({ cellBg: "#10131a", cellBorder: "#ff0000", numberColor: "#a3a3a3", radius: 12 });
+    check("الحدود المُختارة ⇒ 100%", g.cellBorderOpacity === 1 && g.cellBorder === "#ff0000", g);
+    check("الخلفية التلقائية ⇒ شفافة", g.cellBgOpacity === 0, g);
   }
 
-  console.log("\n[6] الأرقام داخل .vzGrid فتختفي معها، وبلا التقاط للمؤشر");
+  console.log("\n[6] شفافية مخزَّنة صراحةً تُحترم ولا تُشتقّ");
+  {
+    const g = R({ cellBg: "#ff0000", cellBgOpacity: 0.5, cellBorder: "#00ff00", cellBorderOpacity: 0 });
+    check("0.5 كما هي", g.cellBgOpacity === 0.5, g);
+    check("0 صراحةً تبقى 0 لا 1", g.cellBorderOpacity === 0, g);
+    check("قيمة خارج المدى تُقصّ", R({ cellBgOpacity: 5 }).cellBgOpacity === 1);
+  }
+
+  console.log("\n[7] الافتراضيات مصدر واحد بين الملفات");
+  {
+    const st = fs.readFileSync("storage.js", "utf8"), ct = fs.readFileSync("content.js", "utf8");
+    const blk = (t) => t.slice(t.indexOf("// ---- BEGIN gridAppearance ----"), t.indexOf("// ---- END gridAppearance ----"));
+    check("النسختان متطابقتان حرفياً", blk(st) === blk(ct));
+    const opt = fs.readFileSync("options.js", "utf8");
+    check("options.js بلا افتراضيات مكرَّرة", !/10131a|2a2f3a|a3a3a3/.test(opt));
+    check("options.js يستورد GRID_APPEARANCE_DEFAULTS", /GRID_APPEARANCE_DEFAULTS/.test(opt));
+  }
+
+  console.log("\n[8] الأرقام داخل .vzGrid، وبلا التقاط للمؤشر");
   {
     const css = fs.readFileSync("content.js", "utf8");
     check("الرقم داخل الخلية داخل الشبكة",
       /vzGrid vzHidden">\$\{cells\}/.test(css) && /class="vzCell"><div class="vzNum">/.test(css));
     check("pointer-events:none على .vzNum", /\.vzNum\{[^}]*pointer-events:none/.test(css));
-    check("لا إعداد حجم جديد — الحجم نسبي للشبكة", /font-size:clamp\(9px, 6cqmin/.test(css));
+    check("الحجم نسبي للشبكة بلا إعداد جديد", /font-size:clamp\(9px, 6cqmin/.test(css));
   }
 
   console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);

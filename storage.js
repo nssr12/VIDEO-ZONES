@@ -120,6 +120,83 @@ function normalizeKeyCombo(e) {
 }
 // ---- END normalizeKeyCombo ----
 
+// ⚠️ PAIRED COPY — duplicated verbatim in content.js. Edit both together;
+// tools/test-migration.js fails if they drift apart.
+// ---- BEGIN gridAppearance ----
+// The exact look the in-video overlay had BEFORE Grid Appearance was wired up.
+// options.js must share these: it used to auto-fill a different set (opaque
+// #10131a) merely by being opened, which — once the setting actually reached the
+// overlay — turned the grid into a solid wall nobody had chosen.
+const GRID_APPEARANCE_DEFAULTS = Object.freeze({
+  cellBg: "#000000",
+  cellBgOpacity: 0,          // شفاف تماماً: لا خلفية إطلاقاً، كما كان
+  cellBorder: "#ffffff",
+  cellBorderOpacity: 0.32,   // نفس rgba(255,255,255,.32) القديمة
+  numberColor: "#ffffff",
+  radius: 0
+});
+
+// What options.js wrote just by being opened. A stored value identical to one of
+// these was never picked by a human, so it must not migrate as a deliberate colour.
+const GRID_APPEARANCE_LEGACY = Object.freeze({
+  cellBg: "#10131a", cellBorder: "#2a2f3a", numberColor: "#a3a3a3", radius: 12
+});
+
+// alpha 0 → "transparent", never "rgba(r,g,b,0)": the keyword is what the overlay
+// used originally, and it keeps the computed style honest for anyone inspecting it.
+function rgbaFrom(hex, alpha) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+  const a = Math.max(0, Math.min(1, Number(alpha)));
+  if (!m || !(a > 0)) return "transparent";
+  const n = parseInt(m[1], 16);
+  return a >= 1
+    ? `rgb(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255})`
+    : `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+// True when every field present matches what options.js auto-filled — i.e. the
+// user opened the page once and changed nothing.
+function isLegacyGridAutofill(g) {
+  if (!g || typeof g !== "object") return false;
+  const keys = Object.keys(GRID_APPEARANCE_LEGACY);
+  if (!keys.some((k) => g[k] !== undefined)) return false;
+  return keys.every((k) =>
+    g[k] === undefined || String(g[k]).toLowerCase() === String(GRID_APPEARANCE_LEGACY[k]).toLowerCase());
+}
+
+// Resolves stored settings into a complete appearance, migrating anything saved
+// before the opacity sliders existed: a colour that differs from the auto-fill was
+// chosen on purpose and keeps full opacity, everything else returns to the
+// original overlay look.
+function resolveGridAppearance(stored) {
+  const g = isLegacyGridAutofill(stored) ? null
+          : (stored && typeof stored === "object" ? stored : null);
+
+  const colour = (key) => {
+    const v = g?.[key];
+    return typeof v === "string" && v ? v : GRID_APPEARANCE_DEFAULTS[key];
+  };
+  const opacity = (colourKey, opacityKey) => {
+    const saved = Number(g?.[opacityKey]);
+    if (Number.isFinite(saved)) return Math.max(0, Math.min(1, saved));
+    const c = g?.[colourKey];
+    const deliberate = typeof c === "string" && c &&
+      c.toLowerCase() !== String(GRID_APPEARANCE_LEGACY[colourKey]).toLowerCase();
+    return deliberate ? 1 : GRID_APPEARANCE_DEFAULTS[opacityKey];
+  };
+
+  const radius = Number(g?.radius);
+  return {
+    cellBg: colour("cellBg"),
+    cellBgOpacity: opacity("cellBg", "cellBgOpacity"),
+    cellBorder: colour("cellBorder"),
+    cellBorderOpacity: opacity("cellBorder", "cellBorderOpacity"),
+    numberColor: colour("numberColor"),
+    radius: Number.isFinite(radius) ? radius : GRID_APPEARANCE_DEFAULTS.radius
+  };
+}
+// ---- END gridAppearance ----
+
 const SP_PREFIX = "sp:";
 const SYNC_ITEM_LIMIT = 8192;    // chrome.storage.sync.QUOTA_BYTES_PER_ITEM
 const SYNC_TOTAL_LIMIT = 102400; // chrome.storage.sync.QUOTA_BYTES
