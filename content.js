@@ -1554,21 +1554,38 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
-loadRulesForThisHost();
-loadSiteProfile();
-loadZoneSettings(); // ✅ مهم: تشغيل zones بعد refresh مباشرة
-loadOverlaySettings();
-loadBlockedHosts();
-loadSoundDisplaySettings();
-loadSubtitleSettings();
-startSubtitleTrackObserver();
-loadYtAutoQualitySettings().then(() => {
+// Every startup step goes through here so failure handling lives in ONE place.
+// Unhandled rejections used to spam the console of every open page after the
+// extension was reloaded, because each loader's chrome.storage call rejects with
+// "Extension context invalidated" (audit #37). That case is expected and stays
+// silent; anything else is still reported so real bugs are not buried.
+//
+// Audit #13 will collapse these ten separate storage reads into a single get().
+// Keeping each step as a `startup(label, fn)` call means that change rewrites the
+// bodies only — it never has to touch error handling again.
+function startup(label, run) {
+  return Promise.resolve().then(run).catch((err) => {
+    const msg = String(err?.message || err);
+    if (/context invalidated|Extension context|message port closed/i.test(msg)) return;
+    console.debug(`[VIDEO-ZONES] تعذّر تنفيذ ${label}:`, err);
+  });
+}
+
+startup("globalRules", loadRulesForThisHost);
+startup("siteProfile", loadSiteProfile);
+startup("zones", loadZoneSettings); // ✅ مهم: تشغيل zones بعد refresh مباشرة
+startup("overlay", loadOverlaySettings);
+startup("blockedHosts", loadBlockedHosts);
+startup("soundDisplay", loadSoundDisplaySettings);
+startup("subtitles", loadSubtitleSettings);
+startup("subtitleObserver", startSubtitleTrackObserver);
+startup("ytQuality", () => loadYtAutoQualitySettings().then(() => {
   startYtAutoQuality();
   triggerYtQuality();
-});
-loadYtShortsRedirectSetting().then(() => startYtShortsRedirect());
-loadCleanPlayerSettings();
-startBoostReapply();
+}));
+startup("ytShorts", () => loadYtShortsRedirectSetting().then(() => startYtShortsRedirect()));
+startup("cleanPlayer", loadCleanPlayerSettings);
+startup("boostReapply", startBoostReapply);
 
 function normalizeKeyEvent(e) {
   // نخلي ArrowRight/ArrowLeft يطلع كما هو
