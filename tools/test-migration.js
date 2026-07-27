@@ -105,7 +105,31 @@ function pairedBlock(file) {
       ["batelco.com.bh", "batelco.com.bh"],
       ["omantel.com.om", "omantel.com.om"],
       ["zain.com.jo", "zain.com.jo"],
-      ["masrawy.com.eg", "masrawy.com.eg"]
+      ["masrawy.com.eg", "masrawy.com.eg"],
+      // بقية الخليج والمشرق وشمال أفريقيا
+      ["ku.edu.kw", "ku.edu.kw"],
+      ["moe.gov.kw", "moe.gov.kw"],
+      ["qu.edu.qa", "qu.edu.qa"],
+      ["moh.gov.qa", "moh.gov.qa"],
+      ["uob.edu.bh", "uob.edu.bh"],
+      ["squ.edu.om", "squ.edu.om"],
+      ["taqnia.net.om", "taqnia.net.om"],
+      ["sanaa.edu.ye", "sanaa.edu.ye"],
+      ["ju.edu.jo", "ju.edu.jo"],
+      ["aub.edu.lb", "aub.edu.lb"],
+      ["damascus.edu.sy", "damascus.edu.sy"],
+      ["uobaghdad.edu.iq", "uobaghdad.edu.iq"],
+      ["birzeit.edu.ps", "birzeit.edu.ps"],
+      ["cu.edu.eg", "cu.edu.eg"],
+      ["uot.edu.ly", "uot.edu.ly"],
+      ["utm.rnu.tn", "rnu.tn"],            // rnu.tn ليست في القائمة: لاحقة مفردة منطقياً
+      ["ooredoo.com.tn", "ooredoo.com.tn"],
+      ["usthb.edu.dz", "usthb.edu.dz"],
+      ["um5.ac.ma", "um5.ac.ma"],
+      ["maroctelecom.co.ma", "maroctelecom.co.ma"],
+      ["uofk.edu.sd", "uofk.edu.sd"],
+      ["mil.ae", "mil.ae"],                // اللاحقة وحدها: مقطعان
+      ["etisalat.mil.ae", "etisalat.mil.ae"]
     ];
     for (const [input, want] of cases) {
       const got = baseDomain(input);
