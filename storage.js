@@ -128,6 +128,37 @@ async function syncWriteGuard(key, value) {
   return total > SYNC_TOTAL_LIMIT ? "total" : null;
 }
 
+// Turns a rejected chrome.storage.sync write into an Arabic sentence naming the
+// actual cause, instead of leaking a raw English quota string to the user.
+function syncErrorText(err) {
+  const raw = String(err?.message || err || "");
+  if (/QUOTA_BYTES_PER_ITEM/i.test(raw)) return SYNC_LIMIT_TEXT.item;
+  if (/MAX_ITEMS/i.test(raw)) return SYNC_LIMIT_TEXT.items;
+  if (/MAX_WRITE_OPERATIONS/i.test(raw)) {
+    return "تجاوزت عدد عمليات الحفظ المسموحة — انتظر دقيقة ثم أعد المحاولة";
+  }
+  if (/QUOTA_BYTES|quota/i.test(raw)) return SYNC_LIMIT_TEXT.total;
+  return raw || "خطأ غير معروف أثناء الحفظ";
+}
+
+// The ONLY way anything should write to chrome.storage.sync: pre-checks the
+// quotas with syncWriteGuard, then catches a genuine rejection. Callers must
+// wait for { ok: true } before telling the user anything was saved (audit #10) —
+// previously every write was unguarded and a full quota failed silently behind
+// a "تم الحفظ ✅" message.
+async function safeSyncSet(items) {
+  for (const [key, value] of Object.entries(items)) {
+    const limit = await syncWriteGuard(key, value);
+    if (limit) return { ok: false, message: SYNC_LIMIT_TEXT[limit] };
+  }
+  try {
+    await chrome.storage.sync.set(items);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, message: syncErrorText(err) };
+  }
+}
+
 // Legacy { siteProfiles: { host: profile } } → one "sp:<host>" key each.
 //
 // Idempotent by construction: a shard identical to what we would write is left

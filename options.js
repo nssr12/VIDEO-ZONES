@@ -324,13 +324,30 @@ async function getSettings() {
   return settings;
 }
 
+// Failure is surfaced here rather than at each of the ~15 call sites, so no save
+// path can ever swallow a quota error. Returns true only when the write landed.
 async function saveSettings(settings) {
   rebuildWheelMap(settings);
-  await chrome.storage.sync.set({ settings });
+  const res = await safeSyncSet({ settings });
+  if (!res.ok) {
+    showToast("bad", `تعذّر الحفظ: ${res.message}`);
+    return false;
+  }
   const tabs = await chrome.tabs.query({});
   for (const t of tabs) {
     if (t.id) chrome.tabs.sendMessage(t.id, { type: "GVZ_RELOAD" }).catch(() => {});
   }
+  return true;
+}
+
+let toastTimer = null;
+function showToast(kind, text) {
+  const el = $("toast");
+  if (!el) return;
+  el.textContent = text;
+  el.className = `toast show ${kind === "bad" ? "bad" : "ok"}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), kind === "bad" ? 6000 : 2200);
 }
 
 function defaultZoneActions() {
@@ -1172,6 +1189,9 @@ async function importAllSettings(file) {
 
   // clear() before set() means a failed set leaves the user with NOTHING, so we
   // snapshot first and put it back if anything goes wrong (audit item #1).
+  // Deliberately NOT safeSyncSet: its guard measures storage as it is now, but we
+  // are about to clear it, so every check would be against a total that no longer
+  // exists. The snapshot restore below is this path's safety net instead.
   const snapshot = await chrome.storage.sync.get(null);
   try {
     await chrome.storage.sync.clear();
@@ -1180,7 +1200,7 @@ async function importAllSettings(file) {
     try {
       await chrome.storage.sync.clear();
       await chrome.storage.sync.set(snapshot);
-      setBackupStatus("bad", `فشل الاستيراد وأُعيدت إعداداتك السابقة: ${err?.message || err}`);
+      setBackupStatus("bad", `فشل الاستيراد وأُعيدت إعداداتك السابقة: ${syncErrorText(err)}`);
     } catch {
       setBackupStatus("bad", "فشل الاستيراد وتعذّرت الاستعادة — استورد ملف نسخة احتياطية فوراً");
     }
