@@ -346,6 +346,15 @@ async function applyBoostToAllVideos(pct) {
     } else reasons.add(res.reason);
   }
 
+  // "degraded" means an element is bound to our context for good with no usable
+  // gain node. Unlike not_ready/no_src — routine on preload and ad elements — it
+  // must reach the user even when another video on the page succeeded, otherwise
+  // the failure is invisible and the only remedy (a reload) is never offered.
+  if (reasons.has("degraded")) {
+    lastBoostFailure = "degraded";
+    return { ok: false, reason: "degraded", count: okCount };
+  }
+
   if (okCount > 0) {
     lastBoostFailure = null;
     return { ok: true, count: okCount };
