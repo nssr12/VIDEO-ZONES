@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+> ⚠️ **اقرأ `HANDOFF.md` أولاً قبل أي عمل** — فيه حالة العمل الجارية، وقرارات
+> مالك المشروع النهائية، والثوابت المعمارية، والبند التالي المطلوب تنفيذه.
+
 Guidance for AI assistants (Claude Code in particular) working on this repository.
 
 ## Project
