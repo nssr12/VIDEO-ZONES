@@ -797,6 +797,39 @@ function startSubtitleTrackObserver() {
   }, true);
 }
 
+// Grid appearance, driven by the Grid Appearance panel in options.html. The
+// defaults below are EXACTLY the values the overlay was hardcoded with before
+// this setting was wired up, so a user who never opened the options page sees no
+// visual change at all (audit #7 — the panel promised this and did nothing).
+const GRID_APPEARANCE_DEFAULTS = Object.freeze({
+  cellBg: "transparent",                 // كانت الخلايا شفافة
+  cellBorder: "rgba(255,255,255,.32)",   // نفس حدّ .vzCell القديم
+  numberColor: "#ffffff",                // نفس لون نصوص الـ overlay
+  radius: 0                              // لم يكن هناك استدارة
+});
+let gridAppearance = { ...GRID_APPEARANCE_DEFAULTS };
+
+function applyGridVars(el) {
+  if (!el) return;
+  el.style.setProperty("--vz-cell-bg", gridAppearance.cellBg);
+  el.style.setProperty("--vz-cell-border", gridAppearance.cellBorder);
+  el.style.setProperty("--vz-num-color", gridAppearance.numberColor);
+  el.style.setProperty("--vz-cell-radius", `${gridAppearance.radius}px`);
+}
+
+async function loadGridAppearance() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const g = (data.settings || {}).gridAppearance || {};
+  const radius = Number(g.radius);
+  gridAppearance = {
+    cellBg: g.cellBg || GRID_APPEARANCE_DEFAULTS.cellBg,
+    cellBorder: g.cellBorder || GRID_APPEARANCE_DEFAULTS.cellBorder,
+    numberColor: g.numberColor || GRID_APPEARANCE_DEFAULTS.numberColor,
+    radius: Number.isFinite(radius) ? radius : GRID_APPEARANCE_DEFAULTS.radius
+  };
+  applyGridVars(vzOverlay);
+}
+
 async function loadSoundDisplaySettings() {
   const data = await chrome.storage.sync.get({ settings: {} });
   const settings = data.settings || {};
@@ -1223,8 +1256,23 @@ function injectOverlayCSS() {
       position:absolute; inset:0;
       display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr);
       direction:ltr;
+      container-type:size;            /* لتحجيم الأرقام نسبةً لحجم الشبكة */
     }
-    .vzCell{ border:1px solid rgba(255,255,255,.32); }
+    .vzCell{
+      border:1px solid var(--vz-cell-border, rgba(255,255,255,.32));
+      background:var(--vz-cell-bg, transparent);
+      border-radius:var(--vz-cell-radius, 0px);
+      display:flex; align-items:center; justify-content:center;
+    }
+    /* أرقام المربعات: داخل .vzGrid فتظهر وتختفي معها تلقائياً */
+    .vzNum{
+      pointer-events:none; user-select:none;
+      color:var(--vz-num-color, #fff);
+      font:700 14px/1 Arial, sans-serif;
+      font-size:clamp(9px, 6cqmin, 26px);
+      letter-spacing:1px; opacity:.9;
+      text-shadow:0 1px 4px rgba(0,0,0,.65);
+    }
     .vzHint{
       position:absolute; left:10px; bottom:10px;
       background:rgba(0,0,0,.7); color:#fff;
@@ -1258,12 +1306,11 @@ function buildOverlayElement() {
   el.className = "vzWrap";
   el.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
   el.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
+  applyGridVars(el);
+  // ZONE_LABELS ثوابت في الملف لا بيانات مستخدم، فلا خطر من القالب هنا
+  const cells = ZONE_LABELS.map((l) => `<div class="vzCell"><div class="vzNum">${l}</div></div>`).join("");
   el.innerHTML = `
-    <div class="vzGrid vzHidden">
-      <div class="vzCell"></div><div class="vzCell"></div><div class="vzCell"></div>
-      <div class="vzCell"></div><div class="vzCell"></div><div class="vzCell"></div>
-      <div class="vzCell"></div><div class="vzCell"></div><div class="vzCell"></div>
-    </div>
+    <div class="vzGrid vzHidden">${cells}</div>
     <div class="vzHint vzHidden">Zones</div>
     <div class="vzVolume vzHidden">100</div>
   `;
@@ -1532,6 +1579,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     loadZoneSettings();
     loadBlockedHosts();
     loadSoundDisplaySettings();
+    loadGridAppearance();
   }
   if (msg?.type === "RELOAD_OVERLAY_SETTINGS") loadOverlaySettings();
   if (msg?.type === "RELOAD_SUBTITLES") loadSubtitleSettings();
@@ -1584,6 +1632,7 @@ startup("zones", loadZoneSettings); // ✅ مهم: تشغيل zones بعد refre
 startup("overlay", loadOverlaySettings);
 startup("blockedHosts", loadBlockedHosts);
 startup("soundDisplay", loadSoundDisplaySettings);
+startup("gridAppearance", loadGridAppearance);
 startup("subtitles", loadSubtitleSettings);
 startup("subtitleObserver", startSubtitleTrackObserver);
 startup("ytQuality", () => loadYtAutoQualitySettings().then(() => {
@@ -1928,6 +1977,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     loadOverlaySettings();
     loadBlockedHosts();
     loadSoundDisplaySettings();
+    loadGridAppearance();
     loadSubtitleSettings();
     loadYtAutoQualitySettings().then(() => triggerYtQuality());
     loadYtShortsRedirectSetting().then(() => maybeRedirectShorts());
