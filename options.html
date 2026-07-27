@@ -24,6 +24,18 @@
     </aside>
 
     <main class="main">
+      <div class="conflictNotice" id="conflictNotice" hidden>
+        <div class="conflictHead">⚠️ نسخة قديمة من قواعد المواقع ما زالت مخزَّنة</div>
+        <p class="conflictBody">
+          هذه النطاقات لها قواعد حالية تختلف عن نسخة قديمة محفوظة. لم تُطمس قواعدك
+          الحالية — وهي الفعّالة الآن — لكن النسخة القديمة باقية في التخزين:
+        </p>
+        <ul class="conflictList" id="conflictList"></ul>
+        <div class="conflictActions">
+          <button id="conflictDiscard" class="btnGhost">حذف النسخة القديمة نهائياً</button>
+        </div>
+      </div>
+
       <section class="sectionPage active" id="zonesSection">
         <div class="header">
           <h1>Interaction Zones (3×3)</h1>

@@ -340,6 +340,48 @@ async function saveSettings(settings) {
   return true;
 }
 
+// migrateSiteProfiles refuses to overwrite a live shard, and keeps the entries it
+// skipped in the legacy `siteProfiles` key. Without this notice that leftover is
+// invisible: the user never learns an older copy is still stored. Nothing is ever
+// deleted automatically — removal is behind an explicit confirm.
+async function renderConflictNotice() {
+  const box = $("conflictNotice");
+  const list = $("conflictList");
+  if (!box || !list) return;
+
+  const { siteProfiles } = await chrome.storage.sync.get({ siteProfiles: null });
+  const hosts = siteProfiles && typeof siteProfiles === "object" ? Object.keys(siteProfiles) : [];
+  if (!hosts.length) { box.hidden = true; return; }
+
+  list.textContent = "";
+  for (const host of hosts) {
+    const li = document.createElement("li");
+    // textContent, never innerHTML: these strings come from storage
+    li.textContent = `${host} — ${(siteProfiles[host]?.mappings || []).length} قاعدة في النسخة القديمة`;
+    list.appendChild(li);
+  }
+  box.hidden = false;
+}
+
+async function discardLegacySiteProfiles() {
+  const { siteProfiles } = await chrome.storage.sync.get({ siteProfiles: null });
+  const hosts = siteProfiles && typeof siteProfiles === "object" ? Object.keys(siteProfiles) : [];
+  if (!hosts.length) { await renderConflictNotice(); return; }
+
+  if (!confirm(
+    `سيتم حذف النسخة القديمة نهائياً لـ ${hosts.length} نطاق:\n\n${hosts.join("\n")}\n\n` +
+    "قواعدك الحالية الفعّالة لن تتأثر. هل أنت متأكد؟"
+  )) return;
+
+  try {
+    await chrome.storage.sync.remove("siteProfiles");
+    showToast("ok", "حُذفت النسخة القديمة. قواعدك الحالية كما هي.");
+  } catch (err) {
+    showToast("bad", `تعذّر الحذف: ${syncErrorText(err)}`);
+  }
+  await renderConflictNotice();
+}
+
 let toastTimer = null;
 function showToast(kind, text) {
   const el = $("toast");
@@ -792,6 +834,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Idempotent, and a no-op read once the legacy key is gone. Runs from both
   // entry points so it happens whichever the user opens first.
   await migrateSiteProfiles().catch(() => {});
+  renderConflictNotice().catch(() => {});
+  $("conflictDiscard")?.addEventListener("click", discardLegacySiteProfiles);
 
   const settings = await getSettings();
   const zones = settings.zones;
