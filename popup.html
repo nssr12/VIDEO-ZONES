@@ -71,6 +71,14 @@
     .statusOk{color:#0f9d58}
     .statusWarn{color:#b45309}
     .statusBad{color:#dc2626}
+
+    /* سبب رفض تعزيز الصوت */
+    .boostNote{display:none}
+    .boostNote.show{
+      display:block;margin-top:8px;padding:8px 10px;
+      background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;
+      color:#92400e;font-size:11.5px;line-height:1.55;
+    }
   </style>
 </head>
 <body>
@@ -123,6 +131,7 @@
       <span id="boostValue" style="font-weight:700;font-size:13px;color:#111827">100%</span>
     </div>
     <input id="boostSlider" type="range" min="50" max="600" step="5" value="100" />
+    <div class="boostNote" id="boostNote"></div>
   </div>
 
   <div class="card">
