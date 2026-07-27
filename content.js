@@ -1192,13 +1192,18 @@ function getZoneAtEvent(e) {
   return zone ? { video, zone } : null;
 }
 
-function findVideoAtPoint(x, y) {
-  if (typeof x !== "number" || typeof y !== "number") return null;
+// Web Components hide their <video> behind a shadow boundary that neither
+// elementsFromPoint nor querySelectorAll will cross, so such players were
+// invisible to the entire extension (audit #16).
+//
+// COST: the shadow walk runs ONLY after the plain document pass found nothing,
+// so the wheel path — the hot one — pays a single Array#filter over the hit stack
+// on ordinary pages and nothing more. Depth is capped so a pathological nesting
+// can never turn a wheel event into a tree walk. See tools/bench-shadow.js.
+const SHADOW_MAX_DEPTH = 5;
 
-  const stack = typeof document.elementsFromPoint === "function"
-    ? document.elementsFromPoint(x, y)
-    : [document.elementFromPoint(x, y)].filter(Boolean);
-
+// The original light-DOM scan, unchanged, factored out so the shadow walk reuses it.
+function videoFromStack(stack, x, y) {
   for (const el of stack) {
     if (!el) continue;
     if (el.tagName === "VIDEO") return el;
@@ -1222,8 +1227,43 @@ function findVideoAtPoint(x, y) {
       }
     }
   }
-
   return null;
+}
+
+// Descends host → shadowRoot.elementsFromPoint, breadth-first, depth-capped.
+function videoFromShadowStack(stack, x, y) {
+  // Allocate only if a shadow host is actually present — pages without Web
+  // Components (the overwhelming majority) then pay one cheap scan and nothing else.
+  let hosts = null;
+  for (const el of stack) {
+    if (el?.shadowRoot) (hosts ||= []).push(el);
+  }
+  if (!hosts) return null;
+
+  for (let depth = 0; depth < SHADOW_MAX_DEPTH && hosts.length; depth++) {
+    const next = [];
+    for (const host of hosts) {
+      const inner = host.shadowRoot.elementsFromPoint?.(x, y);
+      if (!inner?.length) continue;
+      const hit = videoFromStack(inner, x, y);
+      if (hit) return hit;
+      for (const el of inner) if (el?.shadowRoot) next.push(el);
+    }
+    hosts = next;
+  }
+  return null;
+}
+
+function findVideoAtPoint(x, y) {
+  if (typeof x !== "number" || typeof y !== "number") return null;
+
+  const stack = typeof document.elementsFromPoint === "function"
+    ? document.elementsFromPoint(x, y)
+    : [document.elementFromPoint(x, y)].filter(Boolean);
+
+  const direct = videoFromStack(stack, x, y);
+  if (direct) return direct;          // المسار الشائع: يخرج قبل أي عمل إضافي
+  return videoFromShadowStack(stack, x, y);
 }
 
 function getVideoUnderPointer(e) {
@@ -2064,11 +2104,21 @@ function findVideoLoose(e) {
 
 
 
+// document.activeElement stops at the shadow host, so typing inside a Web
+// Component looked like "not typing" and the shortcuts fired mid-sentence
+// (audit #22). Runs on keydown only — nowhere near as hot as the wheel path.
 function shouldIgnoreKeyBecauseTyping() {
-  const el = document.activeElement;
-  if (!el) return false;
-  const tag = el.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+  let el = document.activeElement;
+  for (let depth = 0; el && depth <= SHADOW_MAX_DEPTH; depth++) {
+    const tag = el.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+    if (el.isContentEditable) return true;
+    if (el.getAttribute?.("role") === "textbox") return true;
+    const inner = el.shadowRoot?.activeElement;
+    if (!inner) return false;
+    el = inner;
+  }
+  return false;
 }
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "sync") return;
