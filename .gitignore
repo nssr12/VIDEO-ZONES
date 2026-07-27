@@ -27,3 +27,6 @@ build/
 
 # Claude Code local settings (per-user, contains permission allowlist)
 .claude/settings.local.json
+
+# Audit report: AUDIT.md is tracked, the rendered HTML view is generated from it
+AUDIT.html
