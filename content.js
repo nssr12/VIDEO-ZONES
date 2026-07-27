@@ -114,10 +114,15 @@ async function buildBoostGraph(video, pct) {
     srcCreated = true; // ⚠️ past this line ctx must NEVER be closed
 
     const gain = ctx.createGain();
+    // Analyser sits between gain and output purely as a tap — it passes audio
+    // through untouched and lets detectBoostSilence() measure what we produce.
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
     src.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(analyser);
+    analyser.connect(ctx.destination);
     gain.gain.value = pct / 100;
-    boostMap.set(video, { ctx, gain, src, bypassed: false }); // replaces the pending marker
+    boostMap.set(video, { ctx, gain, src, analyser, bypassed: false }); // replaces the pending marker
     return { ok: true };
   } catch (err) {
     if (!srcCreated) {
@@ -225,6 +230,46 @@ function resetBoost(video) {
   } catch { return { ok: false, reason: "failed" }; }
 }
 
+// A CORS-tainted MediaElementAudioSourceNode outputs digital silence by spec, and
+// boostSourceCheck() cannot see post-redirect URLs, so gate 1 has a real blind
+// spot. Rather than warn every user forever, we measure the graph we built: if the
+// element is definitely decoding audio and should be audible, yet our own output
+// is exactly zero across three consecutive frames, the source was tainted and our
+// routing is what silenced it.
+const BOOST_SILENCE_DELAY_MS = 1000;
+const BOOST_SILENCE_FRAMES = 3;
+let boostSilent = false; // sticky: taint cannot be undone without a reload
+
+function detectBoostSilence(video) {
+  const entry = boostMap.get(video);
+  if (!entry?.analyser || entry.silenceChecked) return;
+  entry.silenceChecked = true;
+
+  setTimeout(async () => {
+    const e = boostMap.get(video);
+    if (!e?.analyser || e.bypassed) return;
+
+    // Only meaningful while the element should genuinely be producing sound.
+    // webkitAudioDecodedByteCount proves an audio track is actually being decoded,
+    // which rules out silent-by-nature videos.
+    const audible = () =>
+      !video.paused && !video.muted && video.volume > 0 &&
+      video.webkitAudioDecodedByteCount > 0;
+    if (!audible()) return;
+
+    const buf = new Float32Array(e.analyser.fftSize);
+    for (let i = 0; i < BOOST_SILENCE_FRAMES; i++) {
+      if (i > 0) await new Promise((r) => requestAnimationFrame(r));
+      if (!audible()) return;               // state changed mid-check
+      e.analyser.getFloatTimeDomainData(buf);
+      if (buf.some((s) => s !== 0)) return; // real audio — nothing wrong
+    }
+
+    boostSilent = true;
+    lastBoostFailure = "silent";
+  }, BOOST_SILENCE_DELAY_MS);
+}
+
 function pickBoostReason(reasons) {
   for (const r of BOOST_REASON_PRIORITY) if (reasons.has(r)) return r;
   return "failed";
@@ -277,8 +322,10 @@ async function applyBoostToAllVideos(pct) {
   const reasons = new Set();
   for (const v of videos) {
     const res = await applyBoostToVideo(v, pct);
-    if (res.ok) okCount++;
-    else reasons.add(res.reason);
+    if (res.ok) {
+      okCount++;
+      detectBoostSilence(v);
+    } else reasons.add(res.reason);
   }
 
   if (okCount > 0) {
@@ -1426,7 +1473,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
   if (msg?.type === "GET_VOLUME_BOOST") {
-    sendResponse({ pct: boostPct, reason: lastBoostFailure });
+    // Silence is sticky and outranks any earlier reason — it means audio is gone.
+    sendResponse({ pct: boostPct, reason: boostSilent ? "silent" : lastBoostFailure });
     return true;
   }
 });

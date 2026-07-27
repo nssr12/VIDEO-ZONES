@@ -335,31 +335,41 @@ const BOOST_REASON_TEXT = {
   no_src:       "الفيديو بلا مصدر صالح",
   no_video:     "لا يوجد فيديو في هذه الصفحة",
   blocked:      "هذا الموقع محظور في إعدادات الإضافة",
+  silent:       "انقطع الصوت — أعد تحميل الصفحة",
   failed:       "تعذّر تفعيل التعزيز على هذه الصفحة",
   no_content:   "الإضافة غير محقونة هنا — استخدم «تفعيل يدوي» أعلاه"
 };
 
-// Standing note while a boost is live. A same-origin URL that redirects to another
-// origin passes the content-script gate but is still CORS-tainted, and the only
-// recovery is a reload — createMediaElementSource() is irreversible.
-const BOOST_ACTIVE_HINT =
-  "التعزيز مفعّل. إذا انقطع الصوت تماماً فأعد تحميل الصفحة — يستعيده فوراً.";
-
 function setBoostNote(reason, kind) {
   const el = $("boostNote");
   if (!el) return;
-  el.classList.remove("show", "info");
+  el.classList.remove("show", "bad");
   if (!reason) {
     el.textContent = "";
     return;
   }
-  if (kind === "info") {
-    el.textContent = "ℹ️ " + reason;
-    el.classList.add("show", "info");
-    return;
-  }
-  el.textContent = "⚠️ " + (BOOST_REASON_TEXT[reason] || BOOST_REASON_TEXT.failed);
+  el.textContent = (kind === "bad" ? "⛔ " : "⚠️ ") +
+    (BOOST_REASON_TEXT[reason] || BOOST_REASON_TEXT.failed);
   el.classList.add("show");
+  if (kind === "bad") el.classList.add("bad");
+}
+
+// The content script can only tell whether the boosted output is actually silent
+// after it has sampled the graph, so we re-ask once the measurement has had time
+// to land instead of warning pre-emptively on every boost.
+const BOOST_SILENCE_POLL_MS = 1400;
+let silenceTimer = null;
+
+function scheduleSilenceCheck() {
+  if (silenceTimer) clearTimeout(silenceTimer);
+  silenceTimer = setTimeout(async () => {
+    silenceTimer = null;
+    if (boostTabId == null) return;
+    try {
+      const res = await sendToVideoFrame({ type: "GET_VOLUME_BOOST" });
+      if (res?.reason === "silent") setBoostNote("silent", "bad");
+    } catch {}
+  }, BOOST_SILENCE_POLL_MS);
 }
 
 // Broadcasting to every frame made each one build its own AudioContext and let a
@@ -450,7 +460,8 @@ async function sendBoost(pct, isFinal = false) {
   try {
     const res = await sendToVideoFrame({ type: "SET_VOLUME_BOOST", pct });
     if (res?.ok) {
-      setBoostNote(pct > 100 ? BOOST_ACTIVE_HINT : null, "info");
+      setBoostNote(null);
+      if (pct > 100) scheduleSilenceCheck();
       return;
     }
     setBoostNote(res?.reason || "failed");
