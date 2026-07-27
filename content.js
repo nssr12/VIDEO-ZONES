@@ -1685,8 +1685,7 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
   if (t - lastFsAt < 450) return true;
   lastFsAt = t;
 
-  toggleFullscreen(video);
-  return true;
+  return toggleFullscreen(video);
 }
 
 
@@ -1704,12 +1703,20 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
     const video = findVideoLoose(e);
     if (!video) return false;
     const doc = document;
-    const pipEl = doc.pictureInPictureElement;
-    if (pipEl) {
-      doc.exitPictureInPicture?.().catch(()=>{});
-    } else {
-      video.requestPictureInPicture?.().catch(()=>{});
+    if (doc.pictureInPictureElement) {
+      const exit = doc.exitPictureInPicture?.();
+      if (!exit) return false;
+      Promise.resolve(exit).catch((err) =>
+        notifyVideoActionFailed(video, "تعذّر الخروج من صورة داخل صورة", err));
+      return true;
     }
+    // Sites opt out with disablePictureInPicture; requesting anyway always rejects.
+    if (typeof video.requestPictureInPicture !== "function" || video.disablePictureInPicture) {
+      notifyVideoActionFailed(video, "هذا الفيديو لا يدعم صورة داخل صورة");
+      return false;
+    }
+    Promise.resolve(video.requestPictureInPicture()).catch((err) =>
+      notifyVideoActionFailed(video, "المتصفح رفض صورة داخل صورة", err));
     return true;
   }
 
@@ -1836,29 +1843,54 @@ function findNativeFullscreenButton(video) {
   return null;
 }
 
+// requestFullscreen / requestPictureInPicture return promises. A synchronous
+// try/catch cannot see their rejection, so a refusal surfaced only as
+// "Uncaught (in promise)" while runAction still returned true and preventDefault
+// swallowed the click — the user saw nothing happen and got no explanation
+// (audit #9, #33).
+//
+// preventDefault has to be decided synchronously, so the contract is:
+//   return false → we know the request is impossible, do NOT swallow the event
+//   return true  → a request was dispatched; if it later rejects we say so
+function notifyVideoActionFailed(video, text, err) {
+  if (err) console.debug(`[VIDEO-ZONES] ${text}:`, err);
+  if (video) ensureVideoOverlay(video);
+  showOverlay(`⚠️ ${text}`); // respects the user's overlay duration setting
+}
+
 function toggleFullscreen(video) {
   const doc = document;
   const v = video;
-  if (!v) return;
+  if (!v) return false;
 
   // Prefer clicking the site's own fullscreen button when available — this keeps
   // the site's player state in sync, so its F key / dblclick / native button still work.
   const nativeBtn = findNativeFullscreenButton(v);
   if (nativeBtn) {
-    try { nativeBtn.click(); return; } catch {}
+    try { nativeBtn.click(); return true; } catch {}
   }
 
   // خروج
   if (doc.fullscreenElement) {
-    doc.exitFullscreen?.().catch(()=>{});
-    return;
+    const exit = doc.exitFullscreen?.();
+    if (!exit) return false;
+    Promise.resolve(exit).catch((err) =>
+      notifyVideoActionFailed(v, "تعذّر الخروج من ملء الشاشة", err));
+    return true;
   }
 
   const container = pickFullscreenContainer(v);
   const req = container?.requestFullscreen || container?.webkitRequestFullscreen;
-  if (req) {
-    try { req.call(container); } catch {}
+  if (!req) return false; // no API at all: leave the event to the page
+  try {
+    Promise.resolve(req.call(container)).catch((err) =>
+      notifyVideoActionFailed(v, "المتصفح رفض ملء الشاشة", err));
+  } catch (err) {
+    // threw synchronously ⇒ nothing was dispatched
+    notifyVideoActionFailed(v, "المتصفح رفض ملء الشاشة", err);
+    return false;
   }
+  return true;
 }
 
 
