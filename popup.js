@@ -321,16 +321,176 @@ async function saveGlobalData() {
   }
 }
 
+// -------- Sound Booster --------
+// Why a boost can legitimately refuse to run. Surfacing these beats a slider that
+// slides with no audible effect.
+const BOOST_REASON_TEXT = {
+  cross_origin: "مصدر الفيديو من نطاق آخر بلا CORS — التعزيز كان سيكتم الصوت نهائياً، فأُلغي",
+  suspended:    "المتصفح منع تشغيل الصوت — انقر داخل الصفحة ثم حرّك المُنزلق مجدداً",
+  connected:    "الفيديو موصول مسبقاً بمعالج صوت آخر (الموقع نفسه أو إضافة أخرى)",
+  unsupported:  "المتصفح لا يدعم Web Audio في هذه الصفحة",
+  degraded:     "تعذّر إكمال التعزيز؛ الصوت يعمل بمستواه الطبيعي — أعد تحميل الصفحة للمحاولة مجدداً",
+  media_error:  "الفيديو فشل تحميله — لا يمكن تعزيز صوته",
+  not_ready:    "الفيديو لم يُحمّل بعد — شغّله ثوانٍ ثم أعد المحاولة",
+  no_src:       "الفيديو بلا مصدر صالح",
+  no_video:     "لا يوجد فيديو في هذه الصفحة",
+  blocked:      "هذا الموقع محظور في إعدادات الإضافة",
+  silent:       "انقطع الصوت — أعد تحميل الصفحة",
+  failed:       "تعذّر تفعيل التعزيز على هذه الصفحة",
+  no_content:   "الإضافة غير محقونة هنا — استخدم «تفعيل يدوي» أعلاه"
+};
+
+function setBoostNote(reason, kind) {
+  const el = $("boostNote");
+  if (!el) return;
+  el.classList.remove("show", "bad");
+  if (!reason) {
+    el.textContent = "";
+    return;
+  }
+  el.textContent = (kind === "bad" ? "⛔ " : "⚠️ ") +
+    (BOOST_REASON_TEXT[reason] || BOOST_REASON_TEXT.failed);
+  el.classList.add("show");
+  if (kind === "bad") el.classList.add("bad");
+}
+
+// The content script can only tell whether the boosted output is actually silent
+// after it has sampled the graph, so we re-ask once the measurement has had time
+// to land instead of warning pre-emptively on every boost.
+const BOOST_SILENCE_POLL_MS = 1400;
+let silenceTimer = null;
+
+function scheduleSilenceCheck() {
+  if (silenceTimer) clearTimeout(silenceTimer);
+  silenceTimer = setTimeout(async () => {
+    silenceTimer = null;
+    if (boostTabId == null) return;
+    try {
+      const res = await sendBoostMessage({ type: "GET_VOLUME_BOOST" });
+      if (res?.reason === "silent") setBoostNote("silent", "bad");
+    } catch {}
+  }, BOOST_SILENCE_POLL_MS);
+}
+
+// Broadcasting to every frame made each one build its own AudioContext and let a
+// random frame answer GET_VOLUME_BOOST. We resolve the tab and the frame holding
+// the largest visible video ONCE when the popup opens, then every later message
+// is a single sendMessage — no tabs.query and no frame scan per slider step.
+let boostTabId = null;
+let boostFrameId = null;
+
+async function findVideoFrameId(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => {
+        let biggest = 0;
+        for (const v of document.querySelectorAll("video")) {
+          const r = v.getBoundingClientRect();
+          biggest = Math.max(biggest, r.width * r.height);
+        }
+        return biggest;
+      }
+    });
+    let winner = null;
+    let bestArea = 0;
+    for (const r of results) {
+      if (typeof r?.result === "number" && r.result > bestArea) {
+        bestArea = r.result;
+        winner = r.frameId;
+      }
+    }
+    return winner;
+  } catch {
+    return null;
+  }
+}
+
+function sendToVideoFrame(message) {
+  return boostFrameId != null
+    ? chrome.tabs.sendMessage(boostTabId, message, { frameId: boostFrameId })
+    : chrome.tabs.sendMessage(boostTabId, message);
+}
+
+// The cached frameId goes stale if the page navigates while the popup stays open
+// (SPA route changes rebuild frames, and a full load renumbers them). On failure
+// we re-resolve once and retry rather than reporting a dead extension.
+async function sendBoostMessage(message) {
+  try {
+    return await sendToVideoFrame(message);
+  } catch (err) {
+    if (boostTabId == null) throw err;
+    const fresh = await findVideoFrameId(boostTabId);
+    if (fresh === boostFrameId) throw err; // same frame — genuinely unreachable
+    boostFrameId = fresh;
+    return await sendToVideoFrame(message);
+  }
+}
+
 async function loadBoostUI() {
   const tab = await getActiveTab();
-  if (tab?.id) {
-    try {
-      const res = await chrome.tabs.sendMessage(tab.id, { type: "GET_VOLUME_BOOST" });
-      if (res?.pct != null) {
-        $("boostSlider").value = res.pct;
-        $("boostValue").textContent = res.pct + "%";
-      }
-    } catch {}
+  if (!tab?.id) return;
+  boostTabId = tab.id;
+  boostFrameId = await findVideoFrameId(tab.id);
+  try {
+    const res = await sendToVideoFrame({ type: "GET_VOLUME_BOOST" });
+    if (res?.pct != null) {
+      // A tab left open from before the 100% floor landed can still report < 100
+      const pct = Math.max(100, Math.min(600, Number(res.pct) || 100));
+      $("boostSlider").value = pct;
+      $("boostValue").textContent = pct + "%";
+    }
+    if (res?.reason) setBoostNote(res.reason);
+  } catch {}
+}
+
+// ~120ms throttle: the range input fires on every 5% step, so one drag across
+// 100→600 used to emit ~100 messages.
+const BOOST_THROTTLE_MS = 120;
+let boostTimer = null;
+let boostPending = null;
+
+function queueBoostSend(pct) {
+  boostPending = pct;
+  if (boostTimer) return;
+  boostTimer = setTimeout(() => {
+    boostTimer = null;
+    const next = boostPending;
+    boostPending = null;
+    if (next != null) sendBoost(next);
+  }, BOOST_THROTTLE_MS);
+}
+
+function flushBoostSend(pct) {
+  if (boostTimer) {
+    clearTimeout(boostTimer);
+    boostTimer = null;
+  }
+  boostPending = null;
+  return sendBoost(pct, true);
+}
+
+async function sendBoost(pct, isFinal = false) {
+  if (boostTabId == null) return; // resolved once in loadBoostUI
+  try {
+    const res = await sendBoostMessage({ type: "SET_VOLUME_BOOST", pct });
+    if (res?.ok) {
+      setBoostNote(null);
+      if (pct > 100) scheduleSilenceCheck();
+      return;
+    }
+    setBoostNote(res?.reason || "failed");
+    // The value was never applied — don't leave the slider claiming otherwise.
+    if (isFinal) {
+      $("boostSlider").value = 100;
+      $("boostValue").textContent = "100%";
+    }
+  } catch {
+    setBoostNote("no_content");
+    if (isFinal) {
+      $("boostSlider").value = 100;
+      $("boostValue").textContent = "100%";
+    }
   }
 }
 
@@ -504,11 +664,14 @@ document.addEventListener("mousedown", (e) => {
   $("blockSiteBtn").addEventListener("click", () => saveBlockedSiteState().then(loadBlockedSiteUI));
   $("checkStatus").addEventListener("click", checkPageStatus);
 
-  $("boostSlider").addEventListener("input", async () => {
+  $("boostSlider").addEventListener("input", () => {
     const pct = Number($("boostSlider").value);
     $("boostValue").textContent = pct + "%";
-    const tab = await getActiveTab();
-    if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: "SET_VOLUME_BOOST", pct }).catch(() => {});
+    queueBoostSend(pct);
+  });
+  // Final, unthrottled send once the drag ends
+  $("boostSlider").addEventListener("change", () => {
+    flushBoostSend(Number($("boostSlider").value));
   });
   $("manualActivate").addEventListener("click", activateOnCurrentPage);
 

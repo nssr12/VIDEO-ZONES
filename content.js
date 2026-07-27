@@ -22,30 +22,345 @@ let subtitleTrackObserver = null;
 let ytAutoQuality = ""; // "" = auto (don't override)
 let ytShortsRedirect = true; // تحويل روابط Shorts إلى المشغّل العادي (watch)
 
-// Sound Booster — session-only, resets to 100% on page refresh
+// -------- Sound Booster — session-only, resets to 100% on page refresh --------
+//
+// ⚠️ createMediaElementSource() is IRREVERSIBLE. Once an element is routed into a
+// Web Audio graph its audio never returns to the native output path, and the
+// element can never be attached to a second context. So we never touch the
+// element until BOTH gates pass:
+//
+//   Gate 1 — source: a CORS-tainted MediaElementAudioSourceNode outputs pure
+//            silence by spec. Routing a cross-origin video would mute it forever.
+//   Gate 2 — context: a suspended AudioContext outputs nothing, and there is no
+//            way back. We require state === "running" before wiring anything.
+//
+// Every failure path closes its AudioContext so orphans can't accumulate.
 let boostPct = 100;
-const boostMap = new WeakMap(); // video → { ctx, gainNode }
+let lastBoostFailure = null;    // reason of the most recent failed attempt
+const boostMap = new WeakMap(); // video → { ctx, gain, src, bypassed }
 
-function applyBoostToVideo(video, pct) {
-  if (!boostMap.has(video)) {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const src = ctx.createMediaElementSource(video);
-      const gain = ctx.createGain();
-      src.connect(gain);
-      gain.connect(ctx.destination);
-      boostMap.set(video, { ctx, gain });
-    } catch { return; }
-  }
-  const entry = boostMap.get(video);
-  if (!entry) return;
-  entry.ctx.resume().catch(() => {});
-  entry.gain.gain.value = pct / 100;
+// resume() can stay PENDING forever when Chrome's autoplay policy blocks it,
+// so we never await it unbounded — we race it and then read the real state.
+const BOOST_RESUME_TIMEOUT_MS = 400;
+
+// Most informative reason wins when several videos fail for different causes.
+const BOOST_REASON_PRIORITY = [
+  "cross_origin", "degraded", "connected", "suspended", "unsupported", "failed",
+  "media_error", "not_ready", "no_src", "no_video"
+];
+
+function closeBoostCtx(ctx) {
+  if (!ctx) return Promise.resolve();
+  try { return Promise.resolve(ctx.close()).catch(() => {}); }
+  catch { return Promise.resolve(); }
 }
 
-function applyBoostToAllVideos(pct) {
+// Gate 1 — is this media source safe to route through Web Audio?
+// blob:/data:/mediasource are same-origin by construction (MSE players land here).
+// A real cross-origin URL only passes when the element opted into CORS, because
+// a crossOrigin element that failed CORS would not have loaded at all.
+//
+// ⚠️ KNOWN BLIND SPOT — HTTP redirects.
+// currentSrc holds the URL the element *selected*, not the URL finally served.
+// A same-origin path that 302s to another origin therefore passes this gate while
+// the resource actually loaded is cross-origin, so the node is CORS-tainted and
+// outputs silence. We cannot see the post-redirect URL from a content script
+// (no response object, and the media fetch is opaque to us).
+// This is why the popup keeps a standing note telling the user that reloading the
+// page restores the audio — reload is the only recovery, since routing an element
+// through createMediaElementSource() can never be undone.
+//
+// readyState >= HAVE_CURRENT_DATA is required because before it currentSrc can
+// still be empty or provisional, which would let a real cross-origin resource
+// slip through gate 1 as "no_src" and get boosted on a later call.
+function boostSourceCheck(video) {
+  if (video.error) return "media_error";
+  if (video.readyState < 2) return "not_ready"; // HAVE_CURRENT_DATA
+  const url = video.currentSrc || video.src || "";
+  if (!url) return "no_src";
+  if (/^(blob:|data:|mediasource:)/i.test(url)) return "ok";
+  let origin;
+  try { origin = new URL(url, location.href).origin; } catch { return "cross_origin"; }
+  if (origin === location.origin) return "ok";
+  return video.crossOrigin ? "ok" : "cross_origin";
+}
+
+// The graph build, split out so applyBoostToVideo can park the in-flight promise
+// in boostMap BEFORE this function's first await.
+async function buildBoostGraph(video, pct) {
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  let ctx = null;
+  let src = null;
+  // Once createMediaElementSource() returns, the element is bound to ctx for the
+  // lifetime of the document. Closing ctx from that point on kills its audio
+  // permanently, so the cleanup path has to branch on this flag.
+  let srcCreated = false;
+
+  try {
+    ctx = new Ctor();
+
+    // ---- Gate 2: context actually running ----
+    await Promise.race([
+      Promise.resolve(ctx.resume()).catch(() => {}),
+      new Promise((r) => setTimeout(r, BOOST_RESUME_TIMEOUT_MS))
+    ]);
+    if (ctx.state !== "running") {
+      await closeBoostCtx(ctx);
+      return { ok: false, reason: "suspended" }; // element untouched
+    }
+
+    // ---- Both gates passed: the irreversible step ----
+    src = ctx.createMediaElementSource(video);
+    srcCreated = true; // ⚠️ past this line ctx must NEVER be closed
+
+    const gain = ctx.createGain();
+    // Analyser sits between gain and output purely as a tap — it passes audio
+    // through untouched and lets detectBoostSilence() measure what we produce.
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    src.connect(gain);
+    gain.connect(analyser);
+    analyser.connect(ctx.destination);
+    gain.gain.value = pct / 100;
+    boostMap.set(video, { ctx, gain, src, analyser, bypassed: false }); // replaces the pending marker
+    return { ok: true };
+  } catch (err) {
+    if (!srcCreated) {
+      // Nothing is attached yet — closing is safe and prevents orphan contexts.
+      await closeBoostCtx(ctx);
+      return { ok: false, reason: err?.name === "InvalidStateError" ? "connected" : "failed" };
+    }
+
+    // The element is already routed through ctx and can never be detached.
+    // Closing here would silence the video for good, so we keep the context alive
+    // and wire the source straight to the output: audio survives at its natural
+    // level, just without boost. The entry is stored (degraded) so no later call
+    // retries on an element a second createMediaElementSource() would reject.
+    try {
+      src.disconnect();
+      src.connect(ctx.destination);
+    } catch {}
+    boostMap.set(video, { ctx, src, gain: null, bypassed: true, degraded: true });
+    return { ok: false, reason: "degraded" };
+  }
+}
+
+// → { ok: true } | { ok: false, reason }
+async function applyBoostToVideo(video, pct) {
+  if (!video) return { ok: false, reason: "no_video" };
+
+  // 100% is the neutral floor: never build an irreversible graph just to reach a
+  // level the element can already produce. Anything at or below 100% belongs to
+  // ACTION:VOLUME, which stays the sole owner of video.volume / video.muted —
+  // the booster only ever writes gain.gain.value on its own node, so the two
+  // never fight over the same property.
+  if (pct <= 100) {
+    if (boostMap.has(video)) resetBoost(video);
+    return { ok: true };
+  }
+
+  const existing = boostMap.get(video);
+  if (existing) {
+    // An attempt is already in flight for this element — join it instead of
+    // starting a second one. Gate 2 can take up to BOOST_RESUME_TIMEOUT_MS, which
+    // is longer than the popup's throttle window, so without this marker a single
+    // slider drag raced several createMediaElementSource() calls onto one element
+    // and all but the first threw InvalidStateError.
+    if (existing.pending) {
+      const res = await existing.pending;
+      if (res.ok) {
+        const entry = boostMap.get(video);
+        if (entry?.gain) entry.gain.gain.value = pct / 100; // newest value wins
+      }
+      return res;
+    }
+    // Bound to our context but with no usable gain node — boosting it again is
+    // impossible until the page reloads.
+    if (existing.degraded) return { ok: false, reason: "degraded" };
+
+    // Already wired: just move the gain (and put the node back in the path if a
+    // previous resetBoost() bypassed it).
+    try {
+      if (existing.bypassed) {
+        existing.src.disconnect();
+        existing.src.connect(existing.gain);
+        existing.bypassed = false;
+      }
+      existing.gain.gain.value = pct / 100;
+      return { ok: true };
+    } catch { return { ok: false, reason: "failed" }; }
+  }
+
+  // ---- Gate 1: source ---- (synchronous, so it settles before we claim the slot)
+  const srcCheck = boostSourceCheck(video);
+  if (srcCheck !== "ok") return { ok: false, reason: srcCheck };
+  if (!(window.AudioContext || window.webkitAudioContext)) {
+    return { ok: false, reason: "unsupported" };
+  }
+
+  // Without sticky activation Chrome starts every AudioContext suspended and
+  // resume() never settles, so gate 2 is guaranteed to fail. Answering here skips
+  // building — and immediately tearing down — a context we know cannot run, and
+  // makes a drag on an untouched page cost nothing at all.
+  if (navigator.userActivation && navigator.userActivation.hasBeenActive === false) {
+    return { ok: false, reason: "suspended" };
+  }
+
+  // Claim the element. buildBoostGraph runs synchronously up to its first await,
+  // and no await separates it from the set() below, so no concurrent message can
+  // slip between them and start a rival attempt.
+  const attempt = buildBoostGraph(video, pct);
+  boostMap.set(video, { pending: attempt });
+
+  const res = await attempt;
+  if (!res.ok) {
+    // Release the claim so a later attempt (e.g. once the user clicks the page)
+    // can retry. On success buildBoostGraph already swapped in the real entry.
+    const cur = boostMap.get(video);
+    if (cur?.pending === attempt) boostMap.delete(video);
+  }
+  return res;
+}
+
+// The closest thing to an undo that the spec allows: the element stays routed
+// through our context forever, but bypassing the gain node restores the original
+// loudness. applyBoostToVideo() re-inserts the node when the user boosts again.
+function resetBoost(video) {
+  const entry = boostMap.get(video);
+  // A degraded entry is already bypassed and has no gain node to neutralise.
+  if (!entry || entry.pending || entry.degraded) return { ok: false, reason: "no_entry" };
+  try {
+    entry.gain.gain.value = 1;
+    entry.src.disconnect();
+    entry.src.connect(entry.ctx.destination);
+    entry.bypassed = true;
+    return { ok: true };
+  } catch { return { ok: false, reason: "failed" }; }
+}
+
+// A CORS-tainted MediaElementAudioSourceNode outputs digital silence by spec, and
+// boostSourceCheck() cannot see post-redirect URLs, so gate 1 has a real blind
+// spot. Rather than warn every user forever, we measure the graph we built: if the
+// element is definitely decoding audio and should be audible, yet our own output
+// is exactly zero every time we look, the source was tainted and our routing is
+// what silenced it.
+//
+// The reads are SPACED, not consecutive animation frames. Three rAF ticks span
+// ~50ms, and legitimate content clears that easily — a pause between sentences, a
+// gap between scenes, or a fade-out is silent for far longer, which would fire a
+// false alarm on perfectly healthy audio. Spreading three reads over ~2s means a
+// false positive now requires two full seconds of absolute digital silence while
+// the decoder is still producing audio bytes.
+const BOOST_SILENCE_DELAY_MS = 1000; // let playback settle before the first read
+const BOOST_SILENCE_GAP_MS = 400;    // spacing between reads
+const BOOST_SILENCE_READS = 3;       // last read lands ~1.8s after the boost
+let boostSilent = false;             // sticky: taint cannot be undone without a reload
+
+function detectBoostSilence(video) {
+  const entry = boostMap.get(video);
+  if (!entry?.analyser || entry.silenceChecked) return;
+  entry.silenceChecked = true;
+
+  setTimeout(async () => {
+    const e = boostMap.get(video);
+    if (!e?.analyser) return;
+
+    // Only meaningful while the element should genuinely be producing sound AND
+    // our analyser is still in the signal path. resetBoost() bypasses the gain and
+    // analyser, so a user dropping to 100% mid-check would starve the tap and read
+    // as pure silence. webkitAudioDecodedByteCount proves an audio track is really
+    // being decoded, which rules out silent-by-nature videos.
+    const measurable = () =>
+      !e.bypassed && !video.paused && !video.muted && video.volume > 0 &&
+      video.webkitAudioDecodedByteCount > 0;
+
+    const buf = new Float32Array(e.analyser.fftSize);
+    for (let i = 0; i < BOOST_SILENCE_READS; i++) {
+      if (i > 0) await new Promise((r) => setTimeout(r, BOOST_SILENCE_GAP_MS));
+      if (!measurable()) return;            // conditions changed — verdict unsafe
+      e.analyser.getFloatTimeDomainData(buf);
+      if (buf.some((s) => s !== 0)) return; // real audio — nothing wrong
+    }
+
+    // All reads were pure zeros across ~2s of decoded audio.
+    boostSilent = true;
+    lastBoostFailure = "silent";
+  }, BOOST_SILENCE_DELAY_MS);
+}
+
+function pickBoostReason(reasons) {
+  for (const r of BOOST_REASON_PRIORITY) if (reasons.has(r)) return r;
+  return "failed";
+}
+
+// A player that swaps its <video> (YouTube between Shorts/home/watch) leaves the
+// new element unboosted while boostPct still says e.g. 300% — the popup would lie.
+// So we re-apply to the new element, and when that fails we drop back to 100%
+// so the reported value always matches what is actually audible.
+async function reapplyBoostTo(video) {
+  if (isBlockedHost()) return;
+  if (boostPct <= 100) return;       // nothing to carry over
+  if (!video || boostMap.has(video)) return; // same element, gain already live
+  const res = await applyBoostToVideo(video, boostPct);
+  if (!res.ok) {
+    boostPct = 100;
+    lastBoostFailure = res.reason;
+  }
+}
+
+// Same trigger pair as startYtAutoQuality()
+function startBoostReapply() {
+  document.addEventListener("loadedmetadata", (e) => {
+    if (e.target?.tagName !== "VIDEO") return;
+    reapplyBoostTo(e.target);
+  }, true);
+  document.addEventListener("yt-navigate-finish", () => {
+    setTimeout(() => {
+      for (const v of document.querySelectorAll("video")) reapplyBoostTo(v);
+    }, 800);
+  }, true);
+}
+
+async function applyBoostToAllVideos(pct) {
+  // A blocked site must stay untouched — routing its audio through Web Audio is
+  // exactly the kind of interference the block button promises to stop.
+  if (isBlockedHost()) {
+    lastBoostFailure = "blocked";
+    return { ok: false, reason: "blocked" };
+  }
+
   boostPct = pct;
-  document.querySelectorAll("video").forEach((v) => applyBoostToVideo(v, pct));
+  const videos = document.querySelectorAll("video");
+  if (!videos.length) {
+    lastBoostFailure = "no_video";
+    return { ok: false, reason: "no_video" };
+  }
+
+  let okCount = 0;
+  const reasons = new Set();
+  for (const v of videos) {
+    const res = await applyBoostToVideo(v, pct);
+    if (res.ok) {
+      okCount++;
+      detectBoostSilence(v);
+    } else reasons.add(res.reason);
+  }
+
+  // "degraded" means an element is bound to our context for good with no usable
+  // gain node. Unlike not_ready/no_src — routine on preload and ad elements — it
+  // must reach the user even when another video on the page succeeded, otherwise
+  // the failure is invisible and the only remedy (a reload) is never offered.
+  if (reasons.has("degraded")) {
+    lastBoostFailure = "degraded";
+    return { ok: false, reason: "degraded", count: okCount };
+  }
+
+  if (okCount > 0) {
+    lastBoostFailure = null;
+    return { ok: true, count: okCount };
+  }
+  lastBoostFailure = pickBoostReason(reasons);
+  return { ok: false, reason: lastBoostFailure };
 }
 
 let lastFsAt = 0;
@@ -1175,10 +1490,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     loadCleanPlayerSettings();
   }
   if (msg?.type === "SET_VOLUME_BOOST") {
-    applyBoostToAllVideos(Number(msg.pct) || 100);
+    // Floor is 100: the booster only amplifies. Attenuation is ACTION:VOLUME's job.
+    const pct = Math.max(100, Math.min(600, Number(msg.pct) || 100));
+    // async: the popup needs the reason so it can explain a silent no-op
+    applyBoostToAllVideos(pct).then(
+      (res) => sendResponse(res),
+      () => sendResponse({ ok: false, reason: "failed" })
+    );
+    return true;
   }
   if (msg?.type === "GET_VOLUME_BOOST") {
-    sendResponse({ pct: boostPct });
+    // Silence is sticky and outranks any earlier reason — it means audio is gone.
+    sendResponse({ pct: boostPct, reason: boostSilent ? "silent" : lastBoostFailure });
     return true;
   }
 });
@@ -1197,6 +1520,7 @@ loadYtAutoQualitySettings().then(() => {
 });
 loadYtShortsRedirectSetting().then(() => startYtShortsRedirect());
 loadCleanPlayerSettings();
+startBoostReapply();
 
 function normalizeKeyEvent(e) {
   // نخلي ArrowRight/ArrowLeft يطلع كما هو
