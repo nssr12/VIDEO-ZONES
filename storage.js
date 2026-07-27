@@ -207,14 +207,8 @@ async function migrateSiteProfiles() {
       continue;
     }
 
-    const limit = await syncWriteGuard(key, value);
-    if (limit) return { ok: false, reason: limit, host };
-
-    try {
-      await chrome.storage.sync.set({ [key]: value });
-    } catch {
-      return { ok: false, reason: "write", host };
-    }
+    const written = await safeSyncSet({ [key]: value });
+    if (!written.ok) return { ok: false, reason: "write", host, message: written.message };
 
     const back = (await chrome.storage.sync.get(key))[key];
     if (JSON.stringify(back) !== wanted) return { ok: false, reason: "verify", host };
@@ -224,7 +218,8 @@ async function migrateSiteProfiles() {
   if (conflicts.length) {
     // Keep ONLY the entries we refused to migrate, so nothing is discarded
     // silently. loadSiteProfile prefers the shard, so the live rules still win.
-    await chrome.storage.sync.set({ siteProfiles: unresolved });
+    const kept = await safeSyncSet({ siteProfiles: unresolved });
+    if (!kept.ok) return { ok: false, reason: "write", message: kept.message, orphans, conflicts };
   } else {
     // Every shard verified — only now is dropping the legacy blob safe.
     await chrome.storage.sync.remove("siteProfiles");
