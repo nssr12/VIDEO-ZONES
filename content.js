@@ -374,10 +374,6 @@ function zoneLabel(zone) {
   return ZONE_LABELS[Number(zone) - 1] || String(zone);
 }
 
-function normalizeHost(host) {
-  return (host || "").replace(/^www\./i, "").replace(/^m\./i, "");
-}
-
 function buildMap() {
   map = new Map();
   for (const m of (siteRules.mappings || [])) {
@@ -1439,11 +1435,75 @@ function showVolumeIndicator(video) {
 // -------------------------------------------
 
 
-function baseDomain(host) {
-  const h = normalizeHost(host);
-  const p = h.split(".");
-  return p.length <= 2 ? h : p.slice(-2).join(".");
+// ⚠️ PAIRED COPY — the block between the BEGIN/END markers below is duplicated
+// verbatim in storage.js. A content script cannot load storage.js without
+// injecting it into every frame, so the two copies must be edited TOGETHER,
+// never one alone. tools/test-migration.js fails the build if they drift apart.
+//
+// Every site identity in the extension comes from here: the "sp:<domain>" shard
+// keys, blockedHosts entries, and isBlockedHost(). One derivation, one source.
+// ---- BEGIN baseDomain ----
+// Multi-label public suffixes. Not the full Public Suffix List (~9000 entries,
+// unbundlable without a build step) but the registrar suffixes users actually
+// hit. Without this, "bbc.co.uk" collapses to "co.uk", so blocking one British
+// site blocks every British site and their per-site rules all share one key.
+const MULTI_LABEL_SUFFIXES = new Set([
+  "co.uk","org.uk","me.uk","ltd.uk","plc.uk","net.uk","sch.uk","ac.uk","gov.uk","nhs.uk","police.uk","mod.uk",
+  "com.au","net.au","org.au","edu.au","gov.au","asn.au","id.au",
+  "co.nz","net.nz","org.nz","govt.nz","ac.nz","school.nz",
+  "co.jp","ne.jp","or.jp","ac.jp","go.jp","ad.jp","ed.jp","gr.jp","lg.jp",
+  "co.kr","ne.kr","or.kr","re.kr","pe.kr","go.kr","ac.kr",
+  "com.cn","net.cn","org.cn","gov.cn","edu.cn","ac.cn",
+  "com.hk","net.hk","org.hk","edu.hk","gov.hk","idv.hk",
+  "com.tw","net.tw","org.tw","edu.tw","gov.tw","idv.tw",
+  "com.sg","net.sg","org.sg","edu.sg","gov.sg",
+  "co.in","net.in","org.in","firm.in","gen.in","ind.in","ac.in","edu.in","gov.in","res.in",
+  "com.br","net.br","org.br","gov.br","edu.br","art.br","blog.br",
+  "com.mx","org.mx","net.mx","edu.mx","gob.mx",
+  "com.ar","net.ar","org.ar","gov.ar","edu.ar",
+  "com.co","net.co","org.co","edu.co","gov.co",
+  "co.at","or.at","ac.at","gv.at",
+  "com.es","org.es","gob.es","edu.es","nom.es",
+  "com.pl","net.pl","org.pl","edu.pl","gov.pl",
+  "com.pt","org.pt","edu.pt","gov.pt",
+  "com.tr","net.tr","org.tr","gov.tr","edu.tr","bel.tr","k12.tr",
+  "com.ua","net.ua","org.ua","gov.ua","edu.ua",
+  "com.ru","net.ru","org.ru","edu.ru","gov.ru",
+  "co.il","org.il","net.il","ac.il","gov.il","k12.il",
+  "co.za","net.za","org.za","gov.za","ac.za","web.za",
+  "com.sa","net.sa","org.sa","edu.sa","gov.sa","med.sa","pub.sa",
+  "com.eg","net.eg","org.eg","edu.eg","gov.eg",
+  "com.ng","net.ng","org.ng","edu.ng","gov.ng",
+  "com.pk","net.pk","org.pk","edu.pk","gov.pk",
+  "com.my","net.my","org.my","edu.my","gov.my",
+  "co.id","net.id","or.id","ac.id","go.id","web.id",
+  "com.ph","net.ph","org.ph","edu.ph","gov.ph",
+  "com.vn","net.vn","org.vn","edu.vn","gov.vn",
+  "co.th","in.th","ac.th","go.th","or.th",
+  "com.bd","net.bd","org.bd","edu.bd","gov.bd"
+]);
+
+function normalizeHost(host) {
+  return String(host || "").replace(/^www\./i, "").replace(/^m\./i, "");
 }
+
+// Input is always location.host (or a URL's .host), so it may carry a port.
+// The port is preserved so example.com:3000 stays a distinct site, but it is
+// stripped before suffix matching or "co.uk:8080" would never match the list.
+function baseDomain(host) {
+  const raw = normalizeHost(host).toLowerCase();
+  if (raw.startsWith("[")) return raw;              // IPv6 literal
+  const colon = raw.indexOf(":");
+  const port = colon === -1 ? "" : raw.slice(colon);
+  const name = colon === -1 ? raw : raw.slice(0, colon);
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(name)) return name + port; // IPv4 literal
+  const parts = name.split(".");
+  if (parts.length <= 2) return name + port;
+  const lastTwo = parts.slice(-2).join(".");
+  const base = MULTI_LABEL_SUFFIXES.has(lastTwo) ? parts.slice(-3).join(".") : lastTwo;
+  return base + port;
+}
+// ---- END baseDomain ----
 
 async function loadRulesForThisHost() {
   const data = await chrome.storage.sync.get({

@@ -49,7 +49,54 @@ const check = (name, cond, extra) => {
   else { fail++; console.log(`  ❌ ${name}`, extra ?? ""); }
 };
 
+// The baseDomain block is duplicated verbatim in storage.js and content.js
+// (a content script cannot load storage.js). Fail loudly if they drift.
+function pairedBlock(file) {
+  const t = fs.readFileSync(file, "utf8");
+  const a = t.indexOf("// ---- BEGIN baseDomain ----");
+  const b = t.indexOf("// ---- END baseDomain ----");
+  return a === -1 || b === -1 ? null : t.slice(a, b);
+}
+
 (async () => {
+  console.log("\n[0] النسختان المقترنتان متطابقتان حرفياً");
+  {
+    const a = pairedBlock("storage.js"), b = pairedBlock("content.js");
+    check("العلامات موجودة في الملفين", !!a && !!b);
+    check("النصّ متطابق حرفياً", a === b, a && b ? "انحراف بين storage.js و content.js" : "");
+  }
+
+  console.log("\n[0b] baseDomain — اللواحق المركّبة");
+  {
+    const { baseDomain } = load(makeStore({}));
+    const cases = [
+      ["www.bbc.co.uk", "bbc.co.uk"],
+      ["theguardian.co.uk", "theguardian.co.uk"],
+      ["news.bbc.co.uk", "bbc.co.uk"],
+      ["a.b.news.bbc.co.uk", "bbc.co.uk"],
+      ["example.com.au", "example.com.au"],
+      ["shop.example.com.au", "example.com.au"],
+      ["asahi.co.jp", "asahi.co.jp"],
+      ["globo.com.br", "globo.com.br"],
+      ["m.youtube.com", "youtube.com"],
+      ["www.youtube.com", "youtube.com"],
+      ["music.youtube.com", "youtube.com"],
+      ["youtube.com", "youtube.com"],
+      ["localhost", "localhost"],
+      ["localhost:3000", "localhost:3000"],
+      ["example.com:8080", "example.com:8080"],
+      ["news.bbc.co.uk:8080", "bbc.co.uk:8080"],
+      ["192.168.1.5", "192.168.1.5"],
+      ["192.168.1.5:8080", "192.168.1.5:8080"],
+      ["WWW.BBC.CO.UK", "bbc.co.uk"]
+    ];
+    for (const [input, want] of cases) {
+      const got = baseDomain(input);
+      check(`${input} → ${want}`, got === want, `حصلنا على ${got}`);
+    }
+    check("bbc.co.uk ≠ theguardian.co.uk", baseDomain("bbc.co.uk") !== baseDomain("theguardian.co.uk"));
+  }
+
   console.log("\n[1] هجرة عادية");
   {
     const s = makeStore({
@@ -123,6 +170,36 @@ const check = (name, cond, extra) => {
     check("تجاهل التالف ونقل السليم", r.ok && r.migrated === 1, r);
     check("mappings صار مصفوفة", Array.isArray(d["sp:c.com"].mappings));
     check("لا شظايا للتالف", !("sp:a.com" in d) && !("sp:b.com" in d));
+  }
+
+  console.log("\n[8] شظايا منفصلة للواحق المركّبة");
+  {
+    const s = makeStore({
+      siteProfiles: {
+        "bbc.co.uk":         { enabled: true,  mappings: [{ from: "A", to: "1" }] },
+        "theguardian.co.uk": { enabled: true,  mappings: [{ from: "B", to: "2" }] },
+        "example.com.au":    { enabled: false, mappings: [{ from: "C", to: "3" }] },
+        "example.com:8080":  { enabled: true,  mappings: [{ from: "D", to: "4" }] },
+        "news.bbc.co.uk":    { enabled: true,  mappings: [{ from: "E", to: "5" }] }
+      }
+    });
+    const r = await load(s).migrateSiteProfiles();
+    const d = s.dump();
+    check("bbc.co.uk شظية مستقلة", d["sp:bbc.co.uk"]?.mappings[0].from === "E" || d["sp:bbc.co.uk"]?.mappings[0].from === "A", Object.keys(d));
+    check("theguardian.co.uk شظية مستقلة", !!d["sp:theguardian.co.uk"]);
+    check("لم تُدمجا في sp:co.uk", !("sp:co.uk" in d), Object.keys(d));
+    check("example.com.au شظية مستقلة", !!d["sp:example.com.au"]);
+    check("المنفذ محفوظ في المفتاح", !!d["sp:example.com:8080"], Object.keys(d));
+    check("النطاق الثالث انطوى تحت bbc.co.uk", !("sp:news.bbc.co.uk" in d), Object.keys(d));
+    check("اكتملت بلا يتامى", r.ok && r.orphans.length === 0, r);
+  }
+
+  console.log("\n[9] مفتاح قديم مكسور (لاحقة عامة) يُبلَّغ عنه ولا يُحذف");
+  {
+    const s = makeStore({ siteProfiles: { "co.uk": { enabled: true, mappings: [{ from: "A", to: "1" }] } } });
+    const r = await load(s).migrateSiteProfiles();
+    check("نُقل ولم يُفقد", !!s.dump()["sp:co.uk"]);
+    check("أُبلغ عنه كيتيم", r.ok && r.orphans.includes("co.uk"), r);
   }
 
   console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);

@@ -115,16 +115,9 @@ function setStatus(kind, text) {
   el.textContent = text;
 }
 
-function normalizeHost(host) {
-  return (host || "").replace(/^www\./i, "").replace(/^m\./i, "");
-}
-
-function baseDomain(host) {
-  const h = normalizeHost(host);
-  const parts = h.split(".");
-  return parts.length <= 2 ? h : parts.slice(-2).join(".");
-}
-
+// normalizeHost() and baseDomain() come from storage.js — loaded before this
+// file in popup.html. Do not re-declare them here: a third derivation is exactly
+// how the co.uk bug survived (audit item #5).
 function hostFromUrl(url) {
   try {
     return baseDomain(new URL(url).host);
