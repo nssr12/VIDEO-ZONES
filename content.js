@@ -142,6 +142,33 @@ function pickBoostReason(reasons) {
   return "failed";
 }
 
+// A player that swaps its <video> (YouTube between Shorts/home/watch) leaves the
+// new element unboosted while boostPct still says e.g. 300% — the popup would lie.
+// So we re-apply to the new element, and when that fails we drop back to 100%
+// so the reported value always matches what is actually audible.
+async function reapplyBoostTo(video) {
+  if (boostPct === 100) return;      // nothing to carry over
+  if (!video || boostMap.has(video)) return; // same element, gain already live
+  const res = await applyBoostToVideo(video, boostPct);
+  if (!res.ok) {
+    boostPct = 100;
+    lastBoostFailure = res.reason;
+  }
+}
+
+// Same trigger pair as startYtAutoQuality()
+function startBoostReapply() {
+  document.addEventListener("loadedmetadata", (e) => {
+    if (e.target?.tagName !== "VIDEO") return;
+    reapplyBoostTo(e.target);
+  }, true);
+  document.addEventListener("yt-navigate-finish", () => {
+    setTimeout(() => {
+      for (const v of document.querySelectorAll("video")) reapplyBoostTo(v);
+    }, 800);
+  }, true);
+}
+
 async function applyBoostToAllVideos(pct) {
   boostPct = pct;
   const videos = document.querySelectorAll("video");
@@ -1323,6 +1350,7 @@ loadYtAutoQualitySettings().then(() => {
 });
 loadYtShortsRedirectSetting().then(() => startYtShortsRedirect());
 loadCleanPlayerSettings();
+startBoostReapply();
 
 function normalizeKeyEvent(e) {
   // نخلي ArrowRight/ArrowLeft يطلع كما هو
