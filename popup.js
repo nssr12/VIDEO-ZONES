@@ -246,9 +246,10 @@ function renderSiteList() {
 
 async function loadSiteProfile() {
   if (!currentHost) return;
-  const data = await chrome.storage.sync.get({ siteProfiles: {} });
-  const profiles = data.siteProfiles || {};
-  const profile = profiles[currentHost] || { enabled: false, mappings: [] };
+  const key = spKey(currentHost);
+  // Shard first, legacy blob as fallback until migrateSiteProfiles() has run
+  const data = await chrome.storage.sync.get([key, "siteProfiles"]);
+  const profile = data[key] || data.siteProfiles?.[currentHost] || { enabled: false, mappings: [] };
   $("siteProfileEnabled").checked = !!profile.enabled;
   siteMappings = Array.isArray(profile.mappings) ? profile.mappings : [];
   renderSiteList();
@@ -267,17 +268,27 @@ async function saveSiteProfile() {
     cleaned.push({ from, to });
   }
 
-  const data = await chrome.storage.sync.get({ siteProfiles: {} });
-  const profiles = data.siteProfiles || {};
+  const key = spKey(currentHost);
   const enabled = !!$("siteProfileEnabled").checked;
 
+  // One domain, one key — a write no longer rewrites every other domain's rules.
   if (!enabled && cleaned.length === 0) {
-    delete profiles[currentHost];
+    await chrome.storage.sync.remove(key);
   } else {
-    profiles[currentHost] = { enabled, mappings: cleaned };
+    const value = { enabled, mappings: cleaned };
+    const limit = await syncWriteGuard(key, value);
+    if (limit) {
+      setStatus("bad", `تعذّر الحفظ: ${SYNC_LIMIT_TEXT[limit]}`);
+      return;
+    }
+    try {
+      await chrome.storage.sync.set({ [key]: value });
+    } catch (err) {
+      setStatus("bad", `تعذّر الحفظ: ${err?.message || err}`);
+      return;
+    }
   }
 
-  await chrome.storage.sync.set({ siteProfiles: profiles });
   siteMappings = cleaned;
   renderSiteList();
 
@@ -515,7 +526,22 @@ async function saveBlockedSiteState() {
   else blockedHosts.delete(currentHost);
 
   settings.blockedHosts = Array.from(blockedHosts).sort();
-  await chrome.storage.sync.set({ settings });
+
+  // blockedHosts stays inside `settings` in sync; refuse the addition up front
+  // rather than letting an oversized write fail silently.
+  if (shouldBlock) {
+    const limit = await syncWriteGuard("settings", settings);
+    if (limit) {
+      setStatus("bad", `تعذّر حظر الموقع: ${SYNC_LIMIT_TEXT[limit]}`);
+      return;
+    }
+  }
+  try {
+    await chrome.storage.sync.set({ settings });
+  } catch (err) {
+    setStatus("bad", `تعذّر الحفظ: ${err?.message || err}`);
+    return;
+  }
 
   const tab = await getActiveTab();
   if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: "GVZ_RELOAD" }).catch(() => {});
@@ -639,6 +665,8 @@ document.addEventListener("mousedown", (e) => {
     : "يعمل على جميع المواقع التي تحتوي على فيديو";
 
   fillActionPreset();
+  // Idempotent, and a no-op read once the legacy key is gone
+  await migrateSiteProfiles().catch(() => {});
   await loadGlobalData();
   await loadSiteProfile();
   await loadOverlayUI();

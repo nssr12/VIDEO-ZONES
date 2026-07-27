@@ -766,6 +766,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   fillActionTypeSelect();
   showSection("zonesSection");
 
+  // Idempotent, and a no-op read once the legacy key is gone. Runs from both
+  // entry points so it happens whichever the user opens first.
+  await migrateSiteProfiles().catch(() => {});
+
   const settings = await getSettings();
   const zones = settings.zones;
   const actions = zones.wheel.actions;

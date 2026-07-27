@@ -403,11 +403,18 @@ function remappingEnabled() {
   return !!(siteRules?.enabled || siteProfile?.enabled);
 }
 
+// Per-site profiles are sharded one key per domain (see storage.js). We read only
+// our own shard instead of every profile on the account. The legacy blob is read
+// in the SAME call as a fallback, so a user who has not opened the popup or the
+// options page yet — and therefore has not run the migration — keeps working.
+// Once migration removes the legacy key this read carries the shard alone.
+function spKeyFor(host) { return `sp:${host}`; }
+
 async function loadSiteProfile() {
   const host = baseDomain(location.host);
-  const data = await chrome.storage.sync.get({ siteProfiles: {} });
-  const profiles = data.siteProfiles || {};
-  const profile = profiles[host];
+  const key = spKeyFor(host);
+  const data = await chrome.storage.sync.get([key, "siteProfiles"]);
+  const profile = data[key] || data.siteProfiles?.[host];
   siteProfile = {
     enabled: !!profile?.enabled,
     mappings: Array.isArray(profile?.mappings) ? profile.mappings : []
@@ -1825,7 +1832,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
     loadCleanPlayerSettings();
   }
   if (changes.globalSiteRules) loadRulesForThisHost();
-  if (changes.siteProfiles) loadSiteProfile();
+  // Our own shard, or the legacy blob while it still exists
+  if (changes.siteProfiles || changes[spKeyFor(baseDomain(location.host))]) loadSiteProfile();
 });
 /*chrome.tabs.query({active:true,currentWindow:true}, ([t])=>{
   chrome.tabs.sendMessage(t.id, {type:"RELOAD_OVERLAY_SETTINGS"});
