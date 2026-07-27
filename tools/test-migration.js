@@ -51,19 +51,21 @@ const check = (name, cond, extra) => {
 
 // The baseDomain block is duplicated verbatim in storage.js and content.js
 // (a content script cannot load storage.js). Fail loudly if they drift.
-function pairedBlock(file) {
+function pairedBlock(file, name) {
   const t = fs.readFileSync(file, "utf8");
-  const a = t.indexOf("// ---- BEGIN baseDomain ----");
-  const b = t.indexOf("// ---- END baseDomain ----");
+  const a = t.indexOf(`// ---- BEGIN ${name} ----`);
+  const b = t.indexOf(`// ---- END ${name} ----`);
   return a === -1 || b === -1 ? null : t.slice(a, b);
 }
 
 (async () => {
   console.log("\n[0] النسختان المقترنتان متطابقتان حرفياً");
   {
-    const a = pairedBlock("storage.js"), b = pairedBlock("content.js");
-    check("العلامات موجودة في الملفين", !!a && !!b);
-    check("النصّ متطابق حرفياً", a === b, a && b ? "انحراف بين storage.js و content.js" : "");
+    for (const name of ["baseDomain", "normalizeKeyCombo"]) {
+      const a = pairedBlock("storage.js", name), b = pairedBlock("content.js", name);
+      check(`${name}: العلامات موجودة في الملفين`, !!a && !!b);
+      check(`${name}: النصّ متطابق حرفياً`, a === b, "انحراف بين storage.js و content.js");
+    }
   }
 
   console.log("\n[0b] baseDomain — اللواحق المركّبة");
@@ -157,6 +159,34 @@ function pairedBlock(file) {
     check("لم تُدمجا في قواعد واحدة", d["sp:stc.com.sa"].mappings[0].to !== d["sp:sabb.com.sa"].mappings[0].to);
     check("sp:amazon.sa كما هو", !!d["sp:amazon.sa"]);
     check("com.sa أُبلغ عنه كيتيم", r.ok && r.orphans.includes("com.sa"), r.orphans);
+  }
+
+  console.log("\n[0d] البند #11 — صيغة واحدة للمفاتيح مع احترام المُعدِّلات");
+  {
+    const { normalizeKeyCombo } = load(makeStore({}));
+    const k = (key, mods = {}) => normalizeKeyCombo({
+      key, ctrlKey: !!mods.ctrl, altKey: !!mods.alt, shiftKey: !!mods.shift, metaKey: !!mods.meta
+    });
+    const cases = [
+      [["ArrowRight"], "ArrowRight"],
+      [["ArrowRight", { shift: true }], "Shift+ArrowRight"],   // كانت قاعدة ميتة
+      [["ArrowRight", { ctrl: true }], "Ctrl+ArrowRight"],     // كانت تُختطف كـ ArrowRight
+      [["ArrowLeft", { alt: true }], "Alt+ArrowLeft"],
+      [["ArrowUp", { ctrl: true }], "Ctrl+ArrowUp"],
+      [["k"], "K"],
+      [["k", { ctrl: true }], "Ctrl+K"],
+      [[" "], "Space"],
+      [[" ", { shift: true }], "Shift+Space"],
+      [["Escape"], "Esc"],
+      [["F5"], "F5"],
+      [["a", { ctrl: true, shift: true, alt: true, meta: true }], "Ctrl+Alt+Shift+Meta+A"]
+    ];
+    for (const [args, want] of cases) {
+      const got = k(...args);
+      check(`${args[0]}${args[1] ? " +مُعدِّلات" : ""} → ${want}`, got === want, `حصلنا على ${got}`);
+    }
+    check("المُعدِّل وحده ⇒ null", k("Shift") === null && k("Control") === null);
+    check("الأسهم لم تعد تتجاهل المُعدِّلات", k("ArrowRight", { shift: true }) !== k("ArrowRight"));
   }
 
   console.log("\n[1] هجرة عادية");

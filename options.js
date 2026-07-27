@@ -802,27 +802,15 @@ function applyCapturedKey(key) {
   setTimeout(closeKeyCapture, 180);
 }
 
-function normalizeKeyboardEvent(e) {
-  const parts = [];
-  if (e.ctrlKey) parts.push("Ctrl");
-  if (e.altKey) parts.push("Alt");
-  if (e.shiftKey) parts.push("Shift");
-  if (e.metaKey) parts.push("Meta");
-
-  let k = e.key;
-  if (k === " ") k = "Space";
-  if (k === "Escape") return null;
-  if (["Control", "Shift", "Alt", "Meta"].includes(k)) return null;
-
-  parts.push(k.length === 1 ? k.toUpperCase() : k);
-  return parts.join("+");
-}
+// normalizeKeyCombo() يأتي من storage.js — لا تُعرِّف نسخة ثالثة (البند #11).
 
 window.addEventListener("keydown", (e) => {
   if (!keyboardCaptureMode || capturingActionId === null || $("keyCaptureOverlay").hidden) return;
   e.preventDefault();
   e.stopPropagation();
-  const combo = normalizeKeyboardEvent(e);
+  // Escape يلغي الالتقاط بدل أن يُربط كمفتاح — سلوك النافذة المتوقّع
+  if (e.key === "Escape") { closeKeyCapture(); return; }
+  const combo = normalizeKeyCombo(e);
   if (!combo) return;
   applyCapturedKey(combo);
 }, { capture: true });

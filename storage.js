@@ -96,6 +96,30 @@ function baseDomain(host) {
 }
 // ---- END baseDomain ----
 
+// ⚠️ PAIRED COPY — duplicated verbatim in content.js. Edit both together;
+// tools/test-migration.js fails if they drift apart.
+// ---- BEGIN normalizeKeyCombo ----
+// ONE key-signature format for the whole extension. content.js matches against
+// exactly what popup.js and options.js record, so any divergence here silently
+// kills rules. The old content.js returned bare "ArrowRight"/"ArrowLeft" and
+// dropped every modifier: a shortcut captured as "Shift+ArrowRight" could never
+// fire, and "Ctrl+ArrowRight" hijacked the site's own shortcut (audit #11).
+function normalizeKeyCombo(e) {
+  let k = e.key;
+  if (["Control", "Shift", "Alt", "Meta"].includes(k)) return null; // modifier alone
+  if (k === " ") k = "Space";
+  if (k === "Escape") k = "Esc";
+
+  const parts = [];
+  if (e.ctrlKey) parts.push("Ctrl");
+  if (e.altKey) parts.push("Alt");
+  if (e.shiftKey) parts.push("Shift");
+  if (e.metaKey) parts.push("Meta");
+  parts.push(k.length === 1 ? k.toUpperCase() : k);
+  return parts.join("+");
+}
+// ---- END normalizeKeyCombo ----
+
 const SP_PREFIX = "sp:";
 const SYNC_ITEM_LIMIT = 8192;    // chrome.storage.sync.QUOTA_BYTES_PER_ITEM
 const SYNC_TOTAL_LIMIT = 102400; // chrome.storage.sync.QUOTA_BYTES

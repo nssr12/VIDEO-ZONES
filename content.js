@@ -1594,24 +1594,29 @@ startup("ytShorts", () => loadYtShortsRedirectSetting().then(() => startYtShorts
 startup("cleanPlayer", loadCleanPlayerSettings);
 startup("boostReapply", startBoostReapply);
 
-function normalizeKeyEvent(e) {
-  // نخلي ArrowRight/ArrowLeft يطلع كما هو
-  if (e.key === "ArrowRight" || e.key === "ArrowLeft") return e.key;
+// ⚠️ PAIRED COPY — duplicated verbatim in storage.js. Edit both together;
+// tools/test-migration.js fails if they drift apart.
+// ---- BEGIN normalizeKeyCombo ----
+// ONE key-signature format for the whole extension. content.js matches against
+// exactly what popup.js and options.js record, so any divergence here silently
+// kills rules. The old content.js returned bare "ArrowRight"/"ArrowLeft" and
+// dropped every modifier: a shortcut captured as "Shift+ArrowRight" could never
+// fire, and "Ctrl+ArrowRight" hijacked the site's own shortcut (audit #11).
+function normalizeKeyCombo(e) {
+  let k = e.key;
+  if (["Control", "Shift", "Alt", "Meta"].includes(k)) return null; // modifier alone
+  if (k === " ") k = "Space";
+  if (k === "Escape") k = "Esc";
 
   const parts = [];
   if (e.ctrlKey) parts.push("Ctrl");
   if (e.altKey) parts.push("Alt");
   if (e.shiftKey) parts.push("Shift");
   if (e.metaKey) parts.push("Meta");
-
-  let k = e.key;
-  if (k === " ") k = "Space";
-  if (k === "Escape") k = "Esc";
-  if (["Control", "Shift", "Alt", "Meta"].includes(k)) return null;
-
   parts.push(k.length === 1 ? k.toUpperCase() : k);
   return parts.join("+");
 }
+// ---- END normalizeKeyCombo ----
 
 function normalizeMouseEvent(e) {
   const mapBtns = ["Mouse1", "Mouse2", "Mouse3", "Mouse4", "Mouse5"];
@@ -1922,7 +1927,7 @@ window.addEventListener("keydown", (e) => {
   const hoveredVideo = getVideoFromPointerPosition();
   if (!hoveredVideo) return;
 
-  const sig = normalizeKeyEvent(e);
+  const sig = normalizeKeyCombo(e);
   if (!sig) return;
 
   // 1. Per-site profile beats global; both are checked via lookupRemap.
