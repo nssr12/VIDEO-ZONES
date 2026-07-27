@@ -242,11 +242,19 @@ function resetBoost(video) {
 // boostSourceCheck() cannot see post-redirect URLs, so gate 1 has a real blind
 // spot. Rather than warn every user forever, we measure the graph we built: if the
 // element is definitely decoding audio and should be audible, yet our own output
-// is exactly zero across three consecutive frames, the source was tainted and our
-// routing is what silenced it.
-const BOOST_SILENCE_DELAY_MS = 1000;
-const BOOST_SILENCE_FRAMES = 3;
-let boostSilent = false; // sticky: taint cannot be undone without a reload
+// is exactly zero every time we look, the source was tainted and our routing is
+// what silenced it.
+//
+// The reads are SPACED, not consecutive animation frames. Three rAF ticks span
+// ~50ms, and legitimate content clears that easily — a pause between sentences, a
+// gap between scenes, or a fade-out is silent for far longer, which would fire a
+// false alarm on perfectly healthy audio. Spreading three reads over ~2s means a
+// false positive now requires two full seconds of absolute digital silence while
+// the decoder is still producing audio bytes.
+const BOOST_SILENCE_DELAY_MS = 1000; // let playback settle before the first read
+const BOOST_SILENCE_GAP_MS = 400;    // spacing between reads
+const BOOST_SILENCE_READS = 3;       // last read lands ~1.8s after the boost
+let boostSilent = false;             // sticky: taint cannot be undone without a reload
 
 function detectBoostSilence(video) {
   const entry = boostMap.get(video);
@@ -255,24 +263,26 @@ function detectBoostSilence(video) {
 
   setTimeout(async () => {
     const e = boostMap.get(video);
-    if (!e?.analyser || e.bypassed) return;
+    if (!e?.analyser) return;
 
-    // Only meaningful while the element should genuinely be producing sound.
-    // webkitAudioDecodedByteCount proves an audio track is actually being decoded,
-    // which rules out silent-by-nature videos.
-    const audible = () =>
-      !video.paused && !video.muted && video.volume > 0 &&
+    // Only meaningful while the element should genuinely be producing sound AND
+    // our analyser is still in the signal path. resetBoost() bypasses the gain and
+    // analyser, so a user dropping to 100% mid-check would starve the tap and read
+    // as pure silence. webkitAudioDecodedByteCount proves an audio track is really
+    // being decoded, which rules out silent-by-nature videos.
+    const measurable = () =>
+      !e.bypassed && !video.paused && !video.muted && video.volume > 0 &&
       video.webkitAudioDecodedByteCount > 0;
-    if (!audible()) return;
 
     const buf = new Float32Array(e.analyser.fftSize);
-    for (let i = 0; i < BOOST_SILENCE_FRAMES; i++) {
-      if (i > 0) await new Promise((r) => requestAnimationFrame(r));
-      if (!audible()) return;               // state changed mid-check
+    for (let i = 0; i < BOOST_SILENCE_READS; i++) {
+      if (i > 0) await new Promise((r) => setTimeout(r, BOOST_SILENCE_GAP_MS));
+      if (!measurable()) return;            // conditions changed — verdict unsafe
       e.analyser.getFloatTimeDomainData(buf);
       if (buf.some((s) => s !== 0)) return; // real audio — nothing wrong
     }
 
+    // All reads were pure zeros across ~2s of decoded audio.
     boostSilent = true;
     lastBoostFailure = "silent";
   }, BOOST_SILENCE_DELAY_MS);
