@@ -199,7 +199,13 @@ function normalizeActionArray(value) {
   return value ? [value] : [];
 }
 
+// True only when getSettings() found no `zones` key at all, i.e. a fresh install.
+// Seeding must key off THIS and never off "actions are empty" — a user who
+// deleted every binding on purpose had them restored on each visit (audit #23).
+let zonesWereMissing = false;
+
 function ensureZoneActions(settings) {
+  zonesWereMissing = !settings.zones;
   settings.zones ||= { enabled: true, fullscreenOnly: false, wheel: { map: {}, actions: {} } };
   settings.zones.fullscreenOnly = settings.zones.fullscreenOnly === true;
   // "player" (default) = grid covers the whole player frame incl. black bars
@@ -778,7 +784,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("fullscreenOnly").checked = !!zones.fullscreenOnly;
   $("gridFullFrame").checked = zones.gridCoverage !== "video";
 
-  if (Object.keys(actions).every((key) => !actions[key]?.length)) {
+  if (zonesWereMissing) {
     zones.wheel.actions = defaultZoneActions();
     await saveSettings(settings);
   }
@@ -799,9 +805,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("enabled").addEventListener("change", async () => {
     const s = await getSettings();
     s.zones.enabled = $("enabled").checked;
-    if (Object.keys(s.zones.wheel.actions).every((key) => !s.zones.wheel.actions[key]?.length)) {
-      s.zones.wheel.actions = defaultZoneActions();
-    }
+    if (zonesWereMissing) s.zones.wheel.actions = defaultZoneActions();
     await saveSettings(s);
     renderGrid(s.zones.wheel.actions);
   });

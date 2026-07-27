@@ -419,68 +419,33 @@ async function loadSiteProfile() {
 }
 
 // ✅ تضمن وجود إعدادات Zones حتى لو المستخدم ما فتح options.html
+// First-run zone bindings, in memory only. Mirrors defaultZoneActions() in
+// options.js — keep the two in sync.
+const FIRST_RUN_ZONES = {
+  enabled: true,
+  fullscreenOnly: false,
+  wheel: { map: {
+    "4": { up: ["ACTION:VOLUME:+4"], down: ["ACTION:VOLUME:-4"] },
+    "6": { up: ["ACTION:SEEK:+5"],   down: ["ACTION:SEEK:-5"] },
+    "7": { up: ["ACTION:SEEK:+1"],   down: ["ACTION:SEEK:-1"] }
+  } }
+};
+
+// READ-ONLY. This function used to write its defaults straight into
+// zones.wheel.map, bypassing zones.wheel.actions which is the source of truth
+// (audit #4). Deleting a zone's actions in the editor therefore did nothing: the
+// next page load put the old raw strings back, so the editor showed an empty zone
+// while the wheel kept firing — ghost bindings the user could never remove.
+// options.js is now the only writer of zone defaults.
+//
+// A missing `zones` key means a genuinely fresh install, so we hand back
+// FIRST_RUN_ZONES without persisting it. An existing-but-empty `zones` means the
+// user emptied it on purpose and is returned untouched.
 async function ensureZonesDefaults() {
   const data = await chrome.storage.sync.get({ settings: {} });
-  const settings = data.settings || {};
-  let changed = false;
-  const isTopFrame = window.top === window;
-
-  if (!settings.zones) {
-    settings.zones = {
-      enabled: true,
-      fullscreenOnly: false,
-      autoHideMs: 900,
-      wheel: {
-        preset: "grid3x3",
-        map: {}
-      }
-    };
-    changed = true;
-  }
-
-  // default enabled
-  const enabled = settings.zones.enabled !== false;
-  if (settings.zones.enabled !== enabled) {
-    settings.zones.enabled = enabled;
-    changed = true;
-  }
-
-  const fullscreenOnly = settings.zones.fullscreenOnly === true;
-  if (settings.zones.fullscreenOnly !== fullscreenOnly) {
-    settings.zones.fullscreenOnly = fullscreenOnly;
-    changed = true;
-  }
-
-  if (!settings.zones.wheel) {
-    settings.zones.wheel = { preset: "grid3x3", map: {} };
-    changed = true;
-  }
-  if (!settings.zones.wheel.map) {
-    settings.zones.wheel.map = {};
-    changed = true;
-  }
-
-  const wheelMap = settings.zones.wheel.map;
-
-  // Defaults (تقدر تغيرها من options)
-  if (!wheelMap["6"]) {
-    wheelMap["6"] = { up: "ACTION:SEEK:+5", down: "ACTION:SEEK:-5" };
-    changed = true;
-  }
-  if (!wheelMap["7"]) {
-    wheelMap["7"] = { up: "ACTION:SEEK:+1", down: "ACTION:SEEK:-1" };
-    changed = true;
-  }
-  if (!wheelMap["4"]) {
-    wheelMap["4"] = { up: "ACTION:VOLUME:+4", down: "ACTION:VOLUME:-4" };
-    changed = true;
-  }
-
-  if (changed && isTopFrame) {
-    await chrome.storage.sync.set({ settings });
-  }
-
-  return settings.zones;
+  const zones = (data.settings || {}).zones;
+  if (!zones) return structuredClone(FIRST_RUN_ZONES);
+  return zones;
 }
 
 async function loadBlockedHosts() {
