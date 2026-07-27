@@ -32,7 +32,24 @@ There is no test suite. Verify UI changes manually in the browser.
 | `content.js` | Single content script injected at `document_start` in all frames. Contains: zone detection, action runner, overlay, subtitle styling, YouTube caption automation, site-profile resolver |
 | `popup.html` / `popup.js` | Toolbar popup: global enable, per-site rules, blocked-site toggle, page status, manual injection, overlay duration slider |
 | `options.html` / `options.js` / `options.css` | Full settings page: zone editor, grid appearance, volume indicator, overlay timing, subtitles, blocked sites, backup/restore, settings guide |
+| `icons/` | Extension icons (16/32/48/128) referenced by `manifest.icons` + `action.default_icon` |
+| `tools/` | Dev-only scripts run with `node`, **never shipped** — see Packaging below |
 | `README.md` | User-facing Arabic readme |
+
+## Packaging
+
+There is no build step, so the publish zip is assembled by hand. Exclude these —
+they are development artefacts and must not reach the Chrome Web Store package:
+
+```
+tools/        # e.g. tools/make-icons.js — regenerates icons/*.png, needs only node's zlib
+AUDIT.md      # audit report
+AUDIT.html    # rendered audit view (already gitignored)
+.git/ .gitignore CLAUDE.md
+```
+
+Regenerate the icons after editing the generator: `node tools/make-icons.js icons`
+(output is deterministic — identical bytes for identical input).
 
 ## Storage schema (`chrome.storage.sync`)
 
