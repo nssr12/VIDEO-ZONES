@@ -285,6 +285,16 @@ function pairedBlock(file) {
     check("لا كتابة إطلاقاً", !s.log.some(([op]) => op === "set"), s.log);
   }
 
+  console.log("\n[8d] شظية أكبر من حد العنصر تُرفض برسالة لا بصمت");
+  {
+    const s = makeStore({ siteProfiles: { "big.com": { enabled: true, mappings: [{ from: "A", to: "x".repeat(9000) }] } } });
+    const r = await load(s).migrateSiteProfiles();
+    check("ok=false", r.ok === false, r);
+    check("رسالة عربية عن السبب", /8KB/.test(r.message || ""), r);
+    check("القديم باقٍ مصدر الحقيقة", !!s.dump().siteProfiles);
+    check("لم تُكتب شظية ناقصة", !("sp:big.com" in s.dump()), Object.keys(s.dump()));
+  }
+
   console.log("\n[9] مفتاح قديم مكسور (لاحقة عامة) يُبلَّغ عنه ولا يُحذف");
   {
     const s = makeStore({ siteProfiles: { "co.uk": { enabled: true, mappings: [{ from: "A", to: "1" }] } } });

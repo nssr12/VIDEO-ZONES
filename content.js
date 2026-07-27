@@ -419,68 +419,33 @@ async function loadSiteProfile() {
 }
 
 // ✅ تضمن وجود إعدادات Zones حتى لو المستخدم ما فتح options.html
+// First-run zone bindings, in memory only. Mirrors defaultZoneActions() in
+// options.js — keep the two in sync.
+const FIRST_RUN_ZONES = {
+  enabled: true,
+  fullscreenOnly: false,
+  wheel: { map: {
+    "4": { up: ["ACTION:VOLUME:+4"], down: ["ACTION:VOLUME:-4"] },
+    "6": { up: ["ACTION:SEEK:+5"],   down: ["ACTION:SEEK:-5"] },
+    "7": { up: ["ACTION:SEEK:+1"],   down: ["ACTION:SEEK:-1"] }
+  } }
+};
+
+// READ-ONLY. This function used to write its defaults straight into
+// zones.wheel.map, bypassing zones.wheel.actions which is the source of truth
+// (audit #4). Deleting a zone's actions in the editor therefore did nothing: the
+// next page load put the old raw strings back, so the editor showed an empty zone
+// while the wheel kept firing — ghost bindings the user could never remove.
+// options.js is now the only writer of zone defaults.
+//
+// A missing `zones` key means a genuinely fresh install, so we hand back
+// FIRST_RUN_ZONES without persisting it. An existing-but-empty `zones` means the
+// user emptied it on purpose and is returned untouched.
 async function ensureZonesDefaults() {
   const data = await chrome.storage.sync.get({ settings: {} });
-  const settings = data.settings || {};
-  let changed = false;
-  const isTopFrame = window.top === window;
-
-  if (!settings.zones) {
-    settings.zones = {
-      enabled: true,
-      fullscreenOnly: false,
-      autoHideMs: 900,
-      wheel: {
-        preset: "grid3x3",
-        map: {}
-      }
-    };
-    changed = true;
-  }
-
-  // default enabled
-  const enabled = settings.zones.enabled !== false;
-  if (settings.zones.enabled !== enabled) {
-    settings.zones.enabled = enabled;
-    changed = true;
-  }
-
-  const fullscreenOnly = settings.zones.fullscreenOnly === true;
-  if (settings.zones.fullscreenOnly !== fullscreenOnly) {
-    settings.zones.fullscreenOnly = fullscreenOnly;
-    changed = true;
-  }
-
-  if (!settings.zones.wheel) {
-    settings.zones.wheel = { preset: "grid3x3", map: {} };
-    changed = true;
-  }
-  if (!settings.zones.wheel.map) {
-    settings.zones.wheel.map = {};
-    changed = true;
-  }
-
-  const wheelMap = settings.zones.wheel.map;
-
-  // Defaults (تقدر تغيرها من options)
-  if (!wheelMap["6"]) {
-    wheelMap["6"] = { up: "ACTION:SEEK:+5", down: "ACTION:SEEK:-5" };
-    changed = true;
-  }
-  if (!wheelMap["7"]) {
-    wheelMap["7"] = { up: "ACTION:SEEK:+1", down: "ACTION:SEEK:-1" };
-    changed = true;
-  }
-  if (!wheelMap["4"]) {
-    wheelMap["4"] = { up: "ACTION:VOLUME:+4", down: "ACTION:VOLUME:-4" };
-    changed = true;
-  }
-
-  if (changed && isTopFrame) {
-    await chrome.storage.sync.set({ settings });
-  }
-
-  return settings.zones;
+  const zones = (data.settings || {}).zones;
+  if (!zones) return structuredClone(FIRST_RUN_ZONES);
+  return zones;
 }
 
 async function loadBlockedHosts() {
@@ -1589,21 +1554,38 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
-loadRulesForThisHost();
-loadSiteProfile();
-loadZoneSettings(); // ✅ مهم: تشغيل zones بعد refresh مباشرة
-loadOverlaySettings();
-loadBlockedHosts();
-loadSoundDisplaySettings();
-loadSubtitleSettings();
-startSubtitleTrackObserver();
-loadYtAutoQualitySettings().then(() => {
+// Every startup step goes through here so failure handling lives in ONE place.
+// Unhandled rejections used to spam the console of every open page after the
+// extension was reloaded, because each loader's chrome.storage call rejects with
+// "Extension context invalidated" (audit #37). That case is expected and stays
+// silent; anything else is still reported so real bugs are not buried.
+//
+// Audit #13 will collapse these ten separate storage reads into a single get().
+// Keeping each step as a `startup(label, fn)` call means that change rewrites the
+// bodies only — it never has to touch error handling again.
+function startup(label, run) {
+  return Promise.resolve().then(run).catch((err) => {
+    const msg = String(err?.message || err);
+    if (/context invalidated|Extension context|message port closed/i.test(msg)) return;
+    console.debug(`[VIDEO-ZONES] تعذّر تنفيذ ${label}:`, err);
+  });
+}
+
+startup("globalRules", loadRulesForThisHost);
+startup("siteProfile", loadSiteProfile);
+startup("zones", loadZoneSettings); // ✅ مهم: تشغيل zones بعد refresh مباشرة
+startup("overlay", loadOverlaySettings);
+startup("blockedHosts", loadBlockedHosts);
+startup("soundDisplay", loadSoundDisplaySettings);
+startup("subtitles", loadSubtitleSettings);
+startup("subtitleObserver", startSubtitleTrackObserver);
+startup("ytQuality", () => loadYtAutoQualitySettings().then(() => {
   startYtAutoQuality();
   triggerYtQuality();
-});
-loadYtShortsRedirectSetting().then(() => startYtShortsRedirect());
-loadCleanPlayerSettings();
-startBoostReapply();
+}));
+startup("ytShorts", () => loadYtShortsRedirectSetting().then(() => startYtShortsRedirect()));
+startup("cleanPlayer", loadCleanPlayerSettings);
+startup("boostReapply", startBoostReapply);
 
 function normalizeKeyEvent(e) {
   // نخلي ArrowRight/ArrowLeft يطلع كما هو

@@ -199,7 +199,13 @@ function normalizeActionArray(value) {
   return value ? [value] : [];
 }
 
+// True only when getSettings() found no `zones` key at all, i.e. a fresh install.
+// Seeding must key off THIS and never off "actions are empty" — a user who
+// deleted every binding on purpose had them restored on each visit (audit #23).
+let zonesWereMissing = false;
+
 function ensureZoneActions(settings) {
+  zonesWereMissing = !settings.zones;
   settings.zones ||= { enabled: true, fullscreenOnly: false, wheel: { map: {}, actions: {} } };
   settings.zones.fullscreenOnly = settings.zones.fullscreenOnly === true;
   // "player" (default) = grid covers the whole player frame incl. black bars
@@ -318,13 +324,72 @@ async function getSettings() {
   return settings;
 }
 
+// Failure is surfaced here rather than at each of the ~15 call sites, so no save
+// path can ever swallow a quota error. Returns true only when the write landed.
 async function saveSettings(settings) {
   rebuildWheelMap(settings);
-  await chrome.storage.sync.set({ settings });
+  const res = await safeSyncSet({ settings });
+  if (!res.ok) {
+    showToast("bad", `تعذّر الحفظ: ${res.message}`);
+    return false;
+  }
   const tabs = await chrome.tabs.query({});
   for (const t of tabs) {
     if (t.id) chrome.tabs.sendMessage(t.id, { type: "GVZ_RELOAD" }).catch(() => {});
   }
+  return true;
+}
+
+// migrateSiteProfiles refuses to overwrite a live shard, and keeps the entries it
+// skipped in the legacy `siteProfiles` key. Without this notice that leftover is
+// invisible: the user never learns an older copy is still stored. Nothing is ever
+// deleted automatically — removal is behind an explicit confirm.
+async function renderConflictNotice() {
+  const box = $("conflictNotice");
+  const list = $("conflictList");
+  if (!box || !list) return;
+
+  const { siteProfiles } = await chrome.storage.sync.get({ siteProfiles: null });
+  const hosts = siteProfiles && typeof siteProfiles === "object" ? Object.keys(siteProfiles) : [];
+  if (!hosts.length) { box.hidden = true; return; }
+
+  list.textContent = "";
+  for (const host of hosts) {
+    const li = document.createElement("li");
+    // textContent, never innerHTML: these strings come from storage
+    li.textContent = `${host} — ${(siteProfiles[host]?.mappings || []).length} قاعدة في النسخة القديمة`;
+    list.appendChild(li);
+  }
+  box.hidden = false;
+}
+
+async function discardLegacySiteProfiles() {
+  const { siteProfiles } = await chrome.storage.sync.get({ siteProfiles: null });
+  const hosts = siteProfiles && typeof siteProfiles === "object" ? Object.keys(siteProfiles) : [];
+  if (!hosts.length) { await renderConflictNotice(); return; }
+
+  if (!confirm(
+    `سيتم حذف النسخة القديمة نهائياً لـ ${hosts.length} نطاق:\n\n${hosts.join("\n")}\n\n` +
+    "قواعدك الحالية الفعّالة لن تتأثر. هل أنت متأكد؟"
+  )) return;
+
+  try {
+    await chrome.storage.sync.remove("siteProfiles");
+    showToast("ok", "حُذفت النسخة القديمة. قواعدك الحالية كما هي.");
+  } catch (err) {
+    showToast("bad", `تعذّر الحذف: ${syncErrorText(err)}`);
+  }
+  await renderConflictNotice();
+}
+
+let toastTimer = null;
+function showToast(kind, text) {
+  const el = $("toast");
+  if (!el) return;
+  el.textContent = text;
+  el.className = `toast show ${kind === "bad" ? "bad" : "ok"}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), kind === "bad" ? 6000 : 2200);
 }
 
 function defaultZoneActions() {
@@ -769,6 +834,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Idempotent, and a no-op read once the legacy key is gone. Runs from both
   // entry points so it happens whichever the user opens first.
   await migrateSiteProfiles().catch(() => {});
+  renderConflictNotice().catch(() => {});
+  $("conflictDiscard")?.addEventListener("click", discardLegacySiteProfiles);
 
   const settings = await getSettings();
   const zones = settings.zones;
@@ -778,7 +845,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("fullscreenOnly").checked = !!zones.fullscreenOnly;
   $("gridFullFrame").checked = zones.gridCoverage !== "video";
 
-  if (Object.keys(actions).every((key) => !actions[key]?.length)) {
+  if (zonesWereMissing) {
     zones.wheel.actions = defaultZoneActions();
     await saveSettings(settings);
   }
@@ -799,9 +866,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("enabled").addEventListener("change", async () => {
     const s = await getSettings();
     s.zones.enabled = $("enabled").checked;
-    if (Object.keys(s.zones.wheel.actions).every((key) => !s.zones.wheel.actions[key]?.length)) {
-      s.zones.wheel.actions = defaultZoneActions();
-    }
+    if (zonesWereMissing) s.zones.wheel.actions = defaultZoneActions();
     await saveSettings(s);
     renderGrid(s.zones.wheel.actions);
   });
@@ -1168,6 +1233,9 @@ async function importAllSettings(file) {
 
   // clear() before set() means a failed set leaves the user with NOTHING, so we
   // snapshot first and put it back if anything goes wrong (audit item #1).
+  // Deliberately NOT safeSyncSet: its guard measures storage as it is now, but we
+  // are about to clear it, so every check would be against a total that no longer
+  // exists. The snapshot restore below is this path's safety net instead.
   const snapshot = await chrome.storage.sync.get(null);
   try {
     await chrome.storage.sync.clear();
@@ -1176,7 +1244,7 @@ async function importAllSettings(file) {
     try {
       await chrome.storage.sync.clear();
       await chrome.storage.sync.set(snapshot);
-      setBackupStatus("bad", `فشل الاستيراد وأُعيدت إعداداتك السابقة: ${err?.message || err}`);
+      setBackupStatus("bad", `فشل الاستيراد وأُعيدت إعداداتك السابقة: ${syncErrorText(err)}`);
     } catch {
       setBackupStatus("bad", "فشل الاستيراد وتعذّرت الاستعادة — استورد ملف نسخة احتياطية فوراً");
     }

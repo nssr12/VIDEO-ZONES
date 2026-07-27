@@ -268,17 +268,10 @@ async function saveSiteProfile() {
   if (!enabled && cleaned.length === 0) {
     await chrome.storage.sync.remove(key);
   } else {
-    const value = { enabled, mappings: cleaned };
-    const limit = await syncWriteGuard(key, value);
-    if (limit) {
-      setStatus("bad", `تعذّر الحفظ: ${SYNC_LIMIT_TEXT[limit]}`);
-      return;
-    }
-    try {
-      await chrome.storage.sync.set({ [key]: value });
-    } catch (err) {
-      setStatus("bad", `تعذّر الحفظ: ${err?.message || err}`);
-      return;
+    const res = await safeSyncSet({ [key]: { enabled, mappings: cleaned } });
+    if (!res.ok) {
+      setStatus("bad", `تعذّر الحفظ: ${res.message}`);
+      return false;
     }
   }
 
@@ -289,6 +282,7 @@ async function saveSiteProfile() {
   if (tab?.id) {
     chrome.tabs.sendMessage(tab.id, { type: "RELOAD_SITE_PROFILE" }).catch(() => {});
   }
+  return true;
 }
 
 async function saveGlobalData() {
@@ -310,7 +304,11 @@ async function saveGlobalData() {
     mappings: cleaned
   };
 
-  await chrome.storage.sync.set({ globalSiteRules });
+  const res = await safeSyncSet({ globalSiteRules });
+  if (!res.ok) {
+    setStatus("bad", `تعذّر الحفظ: ${res.message}`);
+    return false;
+  }
 
   mappings = cleaned;
   renderList();
@@ -323,6 +321,7 @@ async function saveGlobalData() {
     }).catch(() => {});
     chrome.tabs.sendMessage(tab.id, { type: "RELOAD_SITE_RULES" }).catch(() => {});
   }
+  return true;
 }
 
 // -------- Sound Booster --------
@@ -522,17 +521,9 @@ async function saveBlockedSiteState() {
 
   // blockedHosts stays inside `settings` in sync; refuse the addition up front
   // rather than letting an oversized write fail silently.
-  if (shouldBlock) {
-    const limit = await syncWriteGuard("settings", settings);
-    if (limit) {
-      setStatus("bad", `تعذّر حظر الموقع: ${SYNC_LIMIT_TEXT[limit]}`);
-      return;
-    }
-  }
-  try {
-    await chrome.storage.sync.set({ settings });
-  } catch (err) {
-    setStatus("bad", `تعذّر الحفظ: ${err?.message || err}`);
+  const res = await safeSyncSet({ settings });
+  if (!res.ok) {
+    setStatus("bad", `${shouldBlock ? "تعذّر حظر الموقع" : "تعذّر الحفظ"}: ${res.message}`);
     return;
   }
 
@@ -555,7 +546,8 @@ async function saveSubtitlesToggle() {
     ...(settings.subtitles || {}),
     enabled: !!$("subtitlesEnabled")?.checked
   };
-  await chrome.storage.sync.set({ settings });
+  const res = await safeSyncSet({ settings });
+  if (!res.ok) { setStatus("bad", `تعذّر الحفظ: ${res.message}`); return; }
 
   const tabs = await chrome.tabs.query({});
   for (const t of tabs) {
@@ -578,7 +570,8 @@ async function saveFullscreenOnlyToggle() {
     ...(settings.zones || {}),
     fullscreenOnly: !!$("fullscreenOnly")?.checked
   };
-  await chrome.storage.sync.set({ settings });
+  const res = await safeSyncSet({ settings });
+  if (!res.ok) { setStatus("bad", `تعذّر الحفظ: ${res.message}`); return; }
 
   const tabs = await chrome.tabs.query({});
   for (const t of tabs) {
@@ -610,7 +603,8 @@ async function saveOverlayUI() {
     enabled: ms > 0 || Number(settings.overlay?.volumeAutoHideMs ?? 0) > 0
   };
 
-  await chrome.storage.sync.set({ settings });
+  const res = await safeSyncSet({ settings });
+  if (!res.ok) { setStatus("bad", `تعذّر الحفظ: ${res.message}`); return; }
 
   const tab = await getActiveTab();
   if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: "RELOAD_OVERLAY_SETTINGS" }).catch(() => {});
@@ -722,7 +716,8 @@ document.addEventListener("mousedown", (e) => {
   });
 
   $("siteSave").addEventListener("click", async () => {
-    await saveSiteProfile();
+    // الرسالة تتبع النتيجة الفعلية، وعند الفشل تظهر رسالة setStatus بدلها
+    if (await saveSiteProfile() !== true) return;
     $("siteSave").textContent = "تم الحفظ ✅";
     setTimeout(() => { $("siteSave").textContent = "حفظ قواعد الموقع"; }, 800);
   });
@@ -748,7 +743,7 @@ document.addEventListener("mousedown", (e) => {
   });
 
   $("save").addEventListener("click", async () => {
-    await saveGlobalData();
+    if (await saveGlobalData() !== true) return;
     $("save").textContent = "تم الحفظ ✅";
     setTimeout(() => {
       $("save").textContent = "حفظ الإعدادات";
