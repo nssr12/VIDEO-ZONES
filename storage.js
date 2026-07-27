@@ -145,6 +145,11 @@ async function migrateSiteProfiles() {
   // "co.uk". Such a key can never be matched again now that the derivation is
   // fixed, so we migrate it (never silently drop user data) but report it.
   const orphans = [];
+  // A shard that already exists with DIFFERENT content was written by the current
+  // popup, i.e. it is newer than this legacy blob. Overwriting it would destroy
+  // live user data, so we skip it and keep the legacy entry for reconciliation.
+  const conflicts = [];
+  const unresolved = {};
 
   for (const rawHost of hosts) {
     const profile = siteProfiles[rawHost];
@@ -163,7 +168,13 @@ async function migrateSiteProfiles() {
     const wanted = JSON.stringify(value);
 
     const existing = (await chrome.storage.sync.get(key))[key];
-    if (JSON.stringify(existing) === wanted) { migrated++; continue; } // already done
+    if (existing !== undefined) {
+      if (JSON.stringify(existing) === wanted) { migrated++; continue; } // already done
+      // Never clobber a live shard — skip it and keep the legacy entry.
+      conflicts.push(host);
+      unresolved[rawHost] = profile;
+      continue;
+    }
 
     const limit = await syncWriteGuard(key, value);
     if (limit) return { ok: false, reason: limit, host };
@@ -179,13 +190,26 @@ async function migrateSiteProfiles() {
     migrated++;
   }
 
-  // Every shard verified — only now is dropping the legacy blob safe.
-  await chrome.storage.sync.remove("siteProfiles");
+  if (conflicts.length) {
+    // Keep ONLY the entries we refused to migrate, so nothing is discarded
+    // silently. loadSiteProfile prefers the shard, so the live rules still win.
+    await chrome.storage.sync.set({ siteProfiles: unresolved });
+  } else {
+    // Every shard verified — only now is dropping the legacy blob safe.
+    await chrome.storage.sync.remove("siteProfiles");
+  }
+
   if (orphans.length) {
     console.warn(
       "[VIDEO-ZONES] قواعد مواقع مخزَّنة تحت لاحقة عامة ولن تُطابَق بعد إصلاح اشتقاق النطاق:",
       orphans, "— أعد إنشاءها من نافذة الإضافة على الموقع نفسه."
     );
   }
-  return { ok: true, migrated, orphans };
+  if (conflicts.length) {
+    console.warn(
+      "[VIDEO-ZONES] تعارض: هذه النطاقات لها قواعد حالية تختلف عن النسخة القديمة،",
+      conflicts, "— أُبقيت القواعد الحالية ولم تُطمس، والنسخة القديمة محفوظة في siteProfiles."
+    );
+  }
+  return { ok: true, migrated, orphans, conflicts };
 }

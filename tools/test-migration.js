@@ -256,6 +256,35 @@ function pairedBlock(file) {
     check("اكتملت بلا يتامى", r.ok && r.orphans.length === 0, r);
   }
 
+  console.log("\n[8b] شظية موجودة بمحتوى مختلف لا تُطمس أبداً");
+  {
+    const live = { enabled: true, mappings: [{ from: "Ctrl+L", to: "ACTION:TOGGLE_PIP" }] };
+    const s = makeStore({
+      siteProfiles: {
+        "amazon.sa": { enabled: true, mappings: [{ from: "ArrowUp", to: "ACTION:VOLUME:+4" }] },
+        "other.com": { enabled: true, mappings: [{ from: "ArrowDown", to: "ACTION:VOLUME:-4" }] }
+      },
+      "sp:amazon.sa": live       // قاعدة حيّة كتبها الـ popup بعد الهجرة الجزئية
+    });
+    const r = await load(s).migrateSiteProfiles();
+    const d = s.dump();
+    check("الشظية الحيّة لم تتغيّر بايت-بايت", JSON.stringify(d["sp:amazon.sa"]) === JSON.stringify(live), d["sp:amazon.sa"]);
+    check("أُدرجت في تقرير التعارضات", r.conflicts.includes("amazon.sa"), r.conflicts);
+    check("النطاق غير المتعارض هاجر", !!d["sp:other.com"]);
+    check("القديم بقي للمتعارض وحده", JSON.stringify(Object.keys(d.siteProfiles)) === JSON.stringify(["amazon.sa"]), d.siteProfiles);
+    check("النسخة القديمة للمتعارض محفوظة", d.siteProfiles["amazon.sa"].mappings[0].from === "ArrowUp");
+  }
+
+  console.log("\n[8c] شظية مطابقة ⇒ تخطٍّ بلا تعارض");
+  {
+    const same = { enabled: true, mappings: [{ from: "A", to: "ACTION:TOGGLE_PLAY" }] };
+    const s = makeStore({ siteProfiles: { "a.com": same }, "sp:a.com": same });
+    const r = await load(s).migrateSiteProfiles();
+    check("لا تعارض", r.ok && r.conflicts.length === 0, r);
+    check("حُذف القديم", !("siteProfiles" in s.dump()));
+    check("لا كتابة إطلاقاً", !s.log.some(([op]) => op === "set"), s.log);
+  }
+
   console.log("\n[9] مفتاح قديم مكسور (لاحقة عامة) يُبلَّغ عنه ولا يُحذف");
   {
     const s = makeStore({ siteProfiles: { "co.uk": { enabled: true, mappings: [{ from: "A", to: "1" }] } } });
