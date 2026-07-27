@@ -45,7 +45,8 @@ const BOOST_RESUME_TIMEOUT_MS = 400;
 
 // Most informative reason wins when several videos fail for different causes.
 const BOOST_REASON_PRIORITY = [
-  "cross_origin", "connected", "suspended", "unsupported", "failed", "no_src", "no_video"
+  "cross_origin", "connected", "suspended", "unsupported", "failed",
+  "media_error", "not_ready", "no_src", "no_video"
 ];
 
 function closeBoostCtx(ctx) {
@@ -58,7 +59,23 @@ function closeBoostCtx(ctx) {
 // blob:/data:/mediasource are same-origin by construction (MSE players land here).
 // A real cross-origin URL only passes when the element opted into CORS, because
 // a crossOrigin element that failed CORS would not have loaded at all.
+//
+// ⚠️ KNOWN BLIND SPOT — HTTP redirects.
+// currentSrc holds the URL the element *selected*, not the URL finally served.
+// A same-origin path that 302s to another origin therefore passes this gate while
+// the resource actually loaded is cross-origin, so the node is CORS-tainted and
+// outputs silence. We cannot see the post-redirect URL from a content script
+// (no response object, and the media fetch is opaque to us).
+// This is why the popup keeps a standing note telling the user that reloading the
+// page restores the audio — reload is the only recovery, since routing an element
+// through createMediaElementSource() can never be undone.
+//
+// readyState >= HAVE_CURRENT_DATA is required because before it currentSrc can
+// still be empty or provisional, which would let a real cross-origin resource
+// slip through gate 1 as "no_src" and get boosted on a later call.
 function boostSourceCheck(video) {
+  if (video.error) return "media_error";
+  if (video.readyState < 2) return "not_ready"; // HAVE_CURRENT_DATA
   const url = video.currentSrc || video.src || "";
   if (!url) return "no_src";
   if (/^(blob:|data:|mediasource:)/i.test(url)) return "ok";

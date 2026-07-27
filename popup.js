@@ -329,18 +329,32 @@ const BOOST_REASON_TEXT = {
   suspended:    "المتصفح منع تشغيل الصوت — انقر داخل الصفحة ثم حرّك المُنزلق مجدداً",
   connected:    "الفيديو موصول مسبقاً بمعالج صوت آخر (الموقع نفسه أو إضافة أخرى)",
   unsupported:  "المتصفح لا يدعم Web Audio في هذه الصفحة",
-  no_src:       "الفيديو لم يبدأ التحميل بعد — شغّله ثم أعد المحاولة",
+  media_error:  "الفيديو فشل تحميله — لا يمكن تعزيز صوته",
+  not_ready:    "الفيديو لم يُحمّل بعد — شغّله ثوانٍ ثم أعد المحاولة",
+  no_src:       "الفيديو بلا مصدر صالح",
   no_video:     "لا يوجد فيديو في هذه الصفحة",
+  blocked:      "هذا الموقع محظور في إعدادات الإضافة",
   failed:       "تعذّر تفعيل التعزيز على هذه الصفحة",
   no_content:   "الإضافة غير محقونة هنا — استخدم «تفعيل يدوي» أعلاه"
 };
 
-function setBoostNote(reason) {
+// Standing note while a boost is live. A same-origin URL that redirects to another
+// origin passes the content-script gate but is still CORS-tainted, and the only
+// recovery is a reload — createMediaElementSource() is irreversible.
+const BOOST_ACTIVE_HINT =
+  "التعزيز مفعّل. إذا انقطع الصوت تماماً فأعد تحميل الصفحة — يستعيده فوراً.";
+
+function setBoostNote(reason, kind) {
   const el = $("boostNote");
   if (!el) return;
+  el.classList.remove("show", "info");
   if (!reason) {
     el.textContent = "";
-    el.classList.remove("show");
+    return;
+  }
+  if (kind === "info") {
+    el.textContent = "ℹ️ " + reason;
+    el.classList.add("show", "info");
     return;
   }
   el.textContent = "⚠️ " + (BOOST_REASON_TEXT[reason] || BOOST_REASON_TEXT.failed);
@@ -431,7 +445,7 @@ async function sendBoost(pct, isFinal = false) {
   try {
     const res = await sendToVideoFrame(tab.id, { type: "SET_VOLUME_BOOST", pct });
     if (res?.ok) {
-      setBoostNote(null);
+      setBoostNote(pct > 100 ? BOOST_ACTIVE_HINT : null, "info");
       return;
     }
     setBoostNote(res?.reason || "failed");
