@@ -22,30 +22,150 @@ let subtitleTrackObserver = null;
 let ytAutoQuality = ""; // "" = auto (don't override)
 let ytShortsRedirect = true; // تحويل روابط Shorts إلى المشغّل العادي (watch)
 
-// Sound Booster — session-only, resets to 100% on page refresh
+// -------- Sound Booster — session-only, resets to 100% on page refresh --------
+//
+// ⚠️ createMediaElementSource() is IRREVERSIBLE. Once an element is routed into a
+// Web Audio graph its audio never returns to the native output path, and the
+// element can never be attached to a second context. So we never touch the
+// element until BOTH gates pass:
+//
+//   Gate 1 — source: a CORS-tainted MediaElementAudioSourceNode outputs pure
+//            silence by spec. Routing a cross-origin video would mute it forever.
+//   Gate 2 — context: a suspended AudioContext outputs nothing, and there is no
+//            way back. We require state === "running" before wiring anything.
+//
+// Every failure path closes its AudioContext so orphans can't accumulate.
 let boostPct = 100;
-const boostMap = new WeakMap(); // video → { ctx, gainNode }
+let lastBoostFailure = null;    // reason of the most recent failed attempt
+const boostMap = new WeakMap(); // video → { ctx, gain, src, bypassed }
 
-function applyBoostToVideo(video, pct) {
-  if (!boostMap.has(video)) {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const src = ctx.createMediaElementSource(video);
-      const gain = ctx.createGain();
-      src.connect(gain);
-      gain.connect(ctx.destination);
-      boostMap.set(video, { ctx, gain });
-    } catch { return; }
-  }
-  const entry = boostMap.get(video);
-  if (!entry) return;
-  entry.ctx.resume().catch(() => {});
-  entry.gain.gain.value = pct / 100;
+// resume() can stay PENDING forever when Chrome's autoplay policy blocks it,
+// so we never await it unbounded — we race it and then read the real state.
+const BOOST_RESUME_TIMEOUT_MS = 400;
+
+// Most informative reason wins when several videos fail for different causes.
+const BOOST_REASON_PRIORITY = [
+  "cross_origin", "connected", "suspended", "unsupported", "failed", "no_src", "no_video"
+];
+
+function closeBoostCtx(ctx) {
+  if (!ctx) return Promise.resolve();
+  try { return Promise.resolve(ctx.close()).catch(() => {}); }
+  catch { return Promise.resolve(); }
 }
 
-function applyBoostToAllVideos(pct) {
+// Gate 1 — is this media source safe to route through Web Audio?
+// blob:/data:/mediasource are same-origin by construction (MSE players land here).
+// A real cross-origin URL only passes when the element opted into CORS, because
+// a crossOrigin element that failed CORS would not have loaded at all.
+function boostSourceCheck(video) {
+  const url = video.currentSrc || video.src || "";
+  if (!url) return "no_src";
+  if (/^(blob:|data:|mediasource:)/i.test(url)) return "ok";
+  let origin;
+  try { origin = new URL(url, location.href).origin; } catch { return "cross_origin"; }
+  if (origin === location.origin) return "ok";
+  return video.crossOrigin ? "ok" : "cross_origin";
+}
+
+// → { ok: true } | { ok: false, reason }
+async function applyBoostToVideo(video, pct) {
+  if (!video) return { ok: false, reason: "no_video" };
+
+  // Already wired: just move the gain (and put the node back in the path if a
+  // previous resetBoost() bypassed it).
+  const existing = boostMap.get(video);
+  if (existing) {
+    try {
+      if (existing.bypassed) {
+        existing.src.disconnect();
+        existing.src.connect(existing.gain);
+        existing.bypassed = false;
+      }
+      existing.gain.gain.value = pct / 100;
+      return { ok: true };
+    } catch { return { ok: false, reason: "failed" }; }
+  }
+
+  // ---- Gate 1: source ----
+  const srcCheck = boostSourceCheck(video);
+  if (srcCheck !== "ok") return { ok: false, reason: srcCheck };
+
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  if (!Ctor) return { ok: false, reason: "unsupported" };
+
+  let ctx = null;
+  try {
+    ctx = new Ctor();
+
+    // ---- Gate 2: context actually running ----
+    await Promise.race([
+      Promise.resolve(ctx.resume()).catch(() => {}),
+      new Promise((r) => setTimeout(r, BOOST_RESUME_TIMEOUT_MS))
+    ]);
+    if (ctx.state !== "running") {
+      await closeBoostCtx(ctx);
+      return { ok: false, reason: "suspended" }; // element untouched
+    }
+
+    // ---- Both gates passed: the irreversible step ----
+    const src = ctx.createMediaElementSource(video);
+    const gain = ctx.createGain();
+    src.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.value = pct / 100;
+    boostMap.set(video, { ctx, gain, src, bypassed: false });
+    return { ok: true };
+  } catch (err) {
+    await closeBoostCtx(ctx); // never leave an orphan context behind
+    return { ok: false, reason: err?.name === "InvalidStateError" ? "connected" : "failed" };
+  }
+}
+
+// The closest thing to an undo that the spec allows: the element stays routed
+// through our context forever, but bypassing the gain node restores the original
+// loudness. applyBoostToVideo() re-inserts the node when the user boosts again.
+function resetBoost(video) {
+  const entry = boostMap.get(video);
+  if (!entry) return { ok: false, reason: "no_entry" };
+  try {
+    entry.gain.gain.value = 1;
+    entry.src.disconnect();
+    entry.src.connect(entry.ctx.destination);
+    entry.bypassed = true;
+    return { ok: true };
+  } catch { return { ok: false, reason: "failed" }; }
+}
+
+function pickBoostReason(reasons) {
+  for (const r of BOOST_REASON_PRIORITY) if (reasons.has(r)) return r;
+  return "failed";
+}
+
+async function applyBoostToAllVideos(pct) {
   boostPct = pct;
-  document.querySelectorAll("video").forEach((v) => applyBoostToVideo(v, pct));
+  const videos = document.querySelectorAll("video");
+  if (!videos.length) {
+    lastBoostFailure = "no_video";
+    return { ok: false, reason: "no_video" };
+  }
+
+  let okCount = 0;
+  const reasons = new Set();
+  for (const v of videos) {
+    // 100% = neutral: don't wire anything new, and bypass what's already wired.
+    if (pct === 100 && boostMap.has(v)) { resetBoost(v); okCount++; continue; }
+    const res = await applyBoostToVideo(v, pct);
+    if (res.ok) okCount++;
+    else reasons.add(res.reason);
+  }
+
+  if (okCount > 0) {
+    lastBoostFailure = null;
+    return { ok: true, count: okCount };
+  }
+  lastBoostFailure = pickBoostReason(reasons);
+  return { ok: false, reason: lastBoostFailure };
 }
 
 let lastFsAt = 0;
