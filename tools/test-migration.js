@@ -88,13 +88,51 @@ function pairedBlock(file) {
       ["news.bbc.co.uk:8080", "bbc.co.uk:8080"],
       ["192.168.1.5", "192.168.1.5"],
       ["192.168.1.5:8080", "192.168.1.5:8080"],
-      ["WWW.BBC.CO.UK", "bbc.co.uk"]
+      ["WWW.BBC.CO.UK", "bbc.co.uk"],
+      // المنطقة العربية والخليج
+      ["stc.com.sa", "stc.com.sa"],
+      ["sabb.com.sa", "sabb.com.sa"],
+      ["sub.stc.com.sa", "stc.com.sa"],
+      ["www.stc.com.sa", "stc.com.sa"],
+      ["amazon.sa", "amazon.sa"],          // .sa لاحقة مفردة: يبقى كما هو
+      ["ksu.edu.sa", "ksu.edu.sa"],
+      ["moh.gov.sa", "moh.gov.sa"],
+      ["etisalat.ae", "etisalat.ae"],      // .ae مفردة
+      ["du.co.ae", "du.co.ae"],
+      ["uaeu.ac.ae", "uaeu.ac.ae"],
+      ["zain.com.kw", "zain.com.kw"],
+      ["ooredoo.com.qa", "ooredoo.com.qa"],
+      ["batelco.com.bh", "batelco.com.bh"],
+      ["omantel.com.om", "omantel.com.om"],
+      ["zain.com.jo", "zain.com.jo"],
+      ["masrawy.com.eg", "masrawy.com.eg"]
     ];
     for (const [input, want] of cases) {
       const got = baseDomain(input);
       check(`${input} → ${want}`, got === want, `حصلنا على ${got}`);
     }
     check("bbc.co.uk ≠ theguardian.co.uk", baseDomain("bbc.co.uk") !== baseDomain("theguardian.co.uk"));
+    check("stc.com.sa ≠ sabb.com.sa", baseDomain("stc.com.sa") !== baseDomain("sabb.com.sa"));
+    check("لا موقع سعودي يشتقّ com.sa", baseDomain("stc.com.sa") !== "com.sa" && baseDomain("sabb.com.sa") !== "com.sa");
+  }
+
+  console.log("\n[0c] شظايا سعودية منفصلة على بيانات حقيقية");
+  {
+    const s = makeStore({
+      siteProfiles: {
+        "stc.com.sa":  { enabled: true, mappings: [{ from: "ArrowRight", to: "ACTION:SEEK:+30" }] },
+        "sabb.com.sa": { enabled: true, mappings: [{ from: "ArrowRight", to: "ACTION:SEEK:+5" }] },
+        "amazon.sa":   { enabled: true, mappings: [{ from: "Ctrl+K", to: "ACTION:TOGGLE_MUTE" }] },
+        "com.sa":      { enabled: true, mappings: [{ from: "ArrowLeft", to: "ACTION:SEEK:-10" }] }
+      }
+    });
+    const r = await load(s).migrateSiteProfiles();
+    const d = s.dump();
+    check("sp:stc.com.sa مستقلة", d["sp:stc.com.sa"]?.mappings[0].to === "ACTION:SEEK:+30", d["sp:stc.com.sa"]);
+    check("sp:sabb.com.sa مستقلة", d["sp:sabb.com.sa"]?.mappings[0].to === "ACTION:SEEK:+5", d["sp:sabb.com.sa"]);
+    check("لم تُدمجا في قواعد واحدة", d["sp:stc.com.sa"].mappings[0].to !== d["sp:sabb.com.sa"].mappings[0].to);
+    check("sp:amazon.sa كما هو", !!d["sp:amazon.sa"]);
+    check("com.sa أُبلغ عنه كيتيم", r.ok && r.orphans.includes("com.sa"), r.orphans);
   }
 
   console.log("\n[1] هجرة عادية");
