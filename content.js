@@ -45,7 +45,7 @@ const BOOST_RESUME_TIMEOUT_MS = 400;
 
 // Most informative reason wins when several videos fail for different causes.
 const BOOST_REASON_PRIORITY = [
-  "cross_origin", "connected", "suspended", "unsupported", "failed",
+  "cross_origin", "degraded", "connected", "suspended", "unsupported", "failed",
   "media_error", "not_ready", "no_src", "no_video"
 ];
 
@@ -90,6 +90,12 @@ function boostSourceCheck(video) {
 async function buildBoostGraph(video, pct) {
   const Ctor = window.AudioContext || window.webkitAudioContext;
   let ctx = null;
+  let src = null;
+  // Once createMediaElementSource() returns, the element is bound to ctx for the
+  // lifetime of the document. Closing ctx from that point on kills its audio
+  // permanently, so the cleanup path has to branch on this flag.
+  let srcCreated = false;
+
   try {
     ctx = new Ctor();
 
@@ -104,7 +110,9 @@ async function buildBoostGraph(video, pct) {
     }
 
     // ---- Both gates passed: the irreversible step ----
-    const src = ctx.createMediaElementSource(video);
+    src = ctx.createMediaElementSource(video);
+    srcCreated = true; // ⚠️ past this line ctx must NEVER be closed
+
     const gain = ctx.createGain();
     src.connect(gain);
     gain.connect(ctx.destination);
@@ -112,8 +120,23 @@ async function buildBoostGraph(video, pct) {
     boostMap.set(video, { ctx, gain, src, bypassed: false }); // replaces the pending marker
     return { ok: true };
   } catch (err) {
-    await closeBoostCtx(ctx); // never leave an orphan context behind
-    return { ok: false, reason: err?.name === "InvalidStateError" ? "connected" : "failed" };
+    if (!srcCreated) {
+      // Nothing is attached yet — closing is safe and prevents orphan contexts.
+      await closeBoostCtx(ctx);
+      return { ok: false, reason: err?.name === "InvalidStateError" ? "connected" : "failed" };
+    }
+
+    // The element is already routed through ctx and can never be detached.
+    // Closing here would silence the video for good, so we keep the context alive
+    // and wire the source straight to the output: audio survives at its natural
+    // level, just without boost. The entry is stored (degraded) so no later call
+    // retries on an element a second createMediaElementSource() would reject.
+    try {
+      src.disconnect();
+      src.connect(ctx.destination);
+    } catch {}
+    boostMap.set(video, { ctx, src, gain: null, bypassed: true, degraded: true });
+    return { ok: false, reason: "degraded" };
   }
 }
 
@@ -146,6 +169,10 @@ async function applyBoostToVideo(video, pct) {
       }
       return res;
     }
+    // Bound to our context but with no usable gain node — boosting it again is
+    // impossible until the page reloads.
+    if (existing.degraded) return { ok: false, reason: "degraded" };
+
     // Already wired: just move the gain (and put the node back in the path if a
     // previous resetBoost() bypassed it).
     try {
@@ -187,7 +214,8 @@ async function applyBoostToVideo(video, pct) {
 // loudness. applyBoostToVideo() re-inserts the node when the user boosts again.
 function resetBoost(video) {
   const entry = boostMap.get(video);
-  if (!entry || entry.pending) return { ok: false, reason: "no_entry" };
+  // A degraded entry is already bypassed and has no gain node to neutralise.
+  if (!entry || entry.pending || entry.degraded) return { ok: false, reason: "no_entry" };
   try {
     entry.gain.gain.value = 1;
     entry.src.disconnect();
