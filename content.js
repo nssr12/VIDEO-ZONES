@@ -121,6 +121,16 @@ async function buildBoostGraph(video, pct) {
 async function applyBoostToVideo(video, pct) {
   if (!video) return { ok: false, reason: "no_video" };
 
+  // 100% is the neutral floor: never build an irreversible graph just to reach a
+  // level the element can already produce. Anything at or below 100% belongs to
+  // ACTION:VOLUME, which stays the sole owner of video.volume / video.muted —
+  // the booster only ever writes gain.gain.value on its own node, so the two
+  // never fight over the same property.
+  if (pct <= 100) {
+    if (boostMap.has(video)) resetBoost(video);
+    return { ok: true };
+  }
+
   const existing = boostMap.get(video);
   if (existing) {
     // An attempt is already in flight for this element — join it instead of
@@ -230,8 +240,6 @@ async function applyBoostToAllVideos(pct) {
   let okCount = 0;
   const reasons = new Set();
   for (const v of videos) {
-    // 100% = neutral: don't wire anything new, and bypass what's already wired.
-    if (pct === 100 && boostMap.has(v)) { resetBoost(v); okCount++; continue; }
     const res = await applyBoostToVideo(v, pct);
     if (res.ok) okCount++;
     else reasons.add(res.reason);
@@ -1372,7 +1380,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     loadCleanPlayerSettings();
   }
   if (msg?.type === "SET_VOLUME_BOOST") {
-    const pct = Math.max(50, Math.min(600, Number(msg.pct) || 100));
+    // Floor is 100: the booster only amplifies. Attenuation is ACTION:VOLUME's job.
+    const pct = Math.max(100, Math.min(600, Number(msg.pct) || 100));
     // async: the popup needs the reason so it can explain a silent no-op
     applyBoostToAllVideos(pct).then(
       (res) => sendResponse(res),

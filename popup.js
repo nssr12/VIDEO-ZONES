@@ -406,15 +406,17 @@ async function loadBoostUI() {
   try {
     const res = await sendToVideoFrame(tab.id, { type: "GET_VOLUME_BOOST" });
     if (res?.pct != null) {
-      $("boostSlider").value = res.pct;
-      $("boostValue").textContent = res.pct + "%";
+      // A tab left open from before the 100% floor landed can still report < 100
+      const pct = Math.max(100, Math.min(600, Number(res.pct) || 100));
+      $("boostSlider").value = pct;
+      $("boostValue").textContent = pct + "%";
     }
     if (res?.reason) setBoostNote(res.reason);
   } catch {}
 }
 
 // ~120ms throttle: the range input fires on every 5% step, so one drag across
-// 50→600 used to emit ~110 messages.
+// 100→600 used to emit ~100 messages.
 const BOOST_THROTTLE_MS = 120;
 let boostTimer = null;
 let boostPending = null;
