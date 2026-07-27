@@ -362,8 +362,10 @@ function setBoostNote(reason, kind) {
 }
 
 // Broadcasting to every frame made each one build its own AudioContext and let a
-// random frame answer GET_VOLUME_BOOST. We resolve the frame holding the largest
-// visible video once, then talk only to it.
+// random frame answer GET_VOLUME_BOOST. We resolve the tab and the frame holding
+// the largest visible video ONCE when the popup opens, then every later message
+// is a single sendMessage — no tabs.query and no frame scan per slider step.
+let boostTabId = null;
 let boostFrameId = null;
 
 async function findVideoFrameId(tabId) {
@@ -393,18 +395,19 @@ async function findVideoFrameId(tabId) {
   }
 }
 
-function sendToVideoFrame(tabId, message) {
+function sendToVideoFrame(message) {
   return boostFrameId != null
-    ? chrome.tabs.sendMessage(tabId, message, { frameId: boostFrameId })
-    : chrome.tabs.sendMessage(tabId, message);
+    ? chrome.tabs.sendMessage(boostTabId, message, { frameId: boostFrameId })
+    : chrome.tabs.sendMessage(boostTabId, message);
 }
 
 async function loadBoostUI() {
   const tab = await getActiveTab();
   if (!tab?.id) return;
+  boostTabId = tab.id;
   boostFrameId = await findVideoFrameId(tab.id);
   try {
-    const res = await sendToVideoFrame(tab.id, { type: "GET_VOLUME_BOOST" });
+    const res = await sendToVideoFrame({ type: "GET_VOLUME_BOOST" });
     if (res?.pct != null) {
       // A tab left open from before the 100% floor landed can still report < 100
       const pct = Math.max(100, Math.min(600, Number(res.pct) || 100));
@@ -442,10 +445,9 @@ function flushBoostSend(pct) {
 }
 
 async function sendBoost(pct, isFinal = false) {
-  const tab = await getActiveTab();
-  if (!tab?.id) return;
+  if (boostTabId == null) return; // resolved once in loadBoostUI
   try {
-    const res = await sendToVideoFrame(tab.id, { type: "SET_VOLUME_BOOST", pct });
+    const res = await sendToVideoFrame({ type: "SET_VOLUME_BOOST", pct });
     if (res?.ok) {
       setBoostNote(pct > 100 ? BOOST_ACTIVE_HINT : null, "info");
       return;

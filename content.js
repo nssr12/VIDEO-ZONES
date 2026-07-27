@@ -207,7 +207,8 @@ function pickBoostReason(reasons) {
 // So we re-apply to the new element, and when that fails we drop back to 100%
 // so the reported value always matches what is actually audible.
 async function reapplyBoostTo(video) {
-  if (boostPct === 100) return;      // nothing to carry over
+  if (isBlockedHost()) return;
+  if (boostPct <= 100) return;       // nothing to carry over
   if (!video || boostMap.has(video)) return; // same element, gain already live
   const res = await applyBoostToVideo(video, boostPct);
   if (!res.ok) {
@@ -230,6 +231,13 @@ function startBoostReapply() {
 }
 
 async function applyBoostToAllVideos(pct) {
+  // A blocked site must stay untouched — routing its audio through Web Audio is
+  // exactly the kind of interference the block button promises to stop.
+  if (isBlockedHost()) {
+    lastBoostFailure = "blocked";
+    return { ok: false, reason: "blocked" };
+  }
+
   boostPct = pct;
   const videos = document.querySelectorAll("video");
   if (!videos.length) {
