@@ -1295,10 +1295,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     loadCleanPlayerSettings();
   }
   if (msg?.type === "SET_VOLUME_BOOST") {
-    applyBoostToAllVideos(Number(msg.pct) || 100);
+    const pct = Math.max(50, Math.min(600, Number(msg.pct) || 100));
+    // async: the popup needs the reason so it can explain a silent no-op
+    applyBoostToAllVideos(pct).then(
+      (res) => sendResponse(res),
+      () => sendResponse({ ok: false, reason: "failed" })
+    );
+    return true;
   }
   if (msg?.type === "GET_VOLUME_BOOST") {
-    sendResponse({ pct: boostPct });
+    sendResponse({ pct: boostPct, reason: lastBoostFailure });
     return true;
   }
 });
