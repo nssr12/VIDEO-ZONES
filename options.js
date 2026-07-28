@@ -553,16 +553,26 @@ function buildCleanPlayerList() {
 
 function renderCleanPlayer(cp) {
   $("cleanPlayerEnabled").checked = !!cp?.enabled;
+  syncCleanPlayerCaptionNote();
   for (const { key } of CLEAN_PLAYER_OPTIONS) {
     const el = $(`cp_${key}`);
     if (el) el.checked = !!cp?.items?.[key];
   }
 }
 
+// Mirrors captionAutomationActive() in content.js: the automation runs only when
+// subtitles are on AND a default language is set, and that is exactly when the
+// two buttons it clicks stay visible (audit #18).
+function syncCleanPlayerCaptionNote() {
+  const active = $("subEnabled").checked && $("subLang").value.trim() !== "";
+  $("cleanPlayerCaptionNote").hidden = !active;
+}
+
 function renderSubtitles(sub) {
   if (!sub) return;
   $("subEnabled").checked = !!sub.enabled;
   $("subLang").value = sub.defaultLang || "";
+  syncCleanPlayerCaptionNote();
   $("subFontSize").value = String(sub.fontSize);
   $("subFontSizeValue").textContent = `${sub.fontSize}px`;
   $("subColor").value = sub.color;
@@ -1011,6 +1021,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("volumeDuration").addEventListener("change", persistOverlayTiming);
 
   async function persistSubtitles() {
+    syncCleanPlayerCaptionNote(); // immediate, before the storage round-trip
     const s = await getSettings();
     s.subtitles = {
       enabled: $("subEnabled").checked,

@@ -477,6 +477,9 @@ async function loadSubtitleSettings() {
   };
   applySubtitleStyles();
   applySubtitleTrack();
+  // Turning the automation on or off flips the two button exemptions, so the
+  // Clean Player CSS has to be rebuilt here — no page reload (audit #18).
+  applyCleanPlayerCSS();
 }
 
 function applySubtitleStyles() {
@@ -1054,6 +1057,16 @@ const CLEAN_PLAYER_ITEMS = {
 let cleanPlayerSettings = { enabled: false, items: {} };
 let cleanPlayerStyleEl = null;
 
+// The two Clean Player items the caption automation clicks. Keys must stay in
+// sync with CLEAN_PLAYER_ITEMS above and CLEAN_PLAYER_OPTIONS in options.js.
+const CAPTION_AUTOMATION_BUTTONS = new Set(["subtitles_button", "settings_button"]);
+
+// Exactly the condition youtubeSetCaptionLanguage runs under: a language is only
+// selected when subtitles are on AND a default language is set.
+function captionAutomationActive() {
+  return !!(subtitleSettings.enabled && subtitleSettings.defaultLang);
+}
+
 // Embedded players also live on youtube-nocookie.com iframes
 function isYouTubeFamilyHost() {
   return /(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname);
@@ -1079,9 +1092,16 @@ function applyCleanPlayerCSS() {
   }
   if (!cleanPlayerSettings.enabled || !isYouTubeFamilyHost() || isBlockedHost()) return;
 
+  // The caption-language automation drives YouTube's menu by CLICKING these two
+  // buttons, and findVisibleYTMenuItem requires a non-zero rect — so hiding them
+  // killed the feature silently, one part of this extension breaking another
+  // (audit #18). Exempted automatically while the automation is on, and hidden
+  // again the moment it is switched off (loadSubtitleSettings re-applies).
+  const exempt = captionAutomationActive();
   const selectors = [];
   for (const [key, sels] of Object.entries(CLEAN_PLAYER_ITEMS)) {
     if (!cleanPlayerSettings.items[key]) continue;
+    if (exempt && CAPTION_AUTOMATION_BUTTONS.has(key)) continue;
     // html prefix raises specificity above YouTube's own rules (same trick as subtitles CSS)
     for (const sel of sels) selectors.push(`html ${sel}`);
   }
