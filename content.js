@@ -1360,9 +1360,27 @@ function handleZoneClick(e) {
   return ok;
 }
 
+// Chrome opens its autoscroll cursor on middle-button MOUSEDOWN, but the zone
+// path acts on auxclick — so the command ran and the scroll cursor appeared at
+// the same time. The generic remap path never had this because it preventDefaults
+// on mousedown (audit #12). Kill the default only: no action runs here, so the
+// binding still fires exactly once, on auxclick. And stay silent when the zone
+// has no middle binding, so the page keeps its own middle-click behaviour.
+function suppressMiddleClickDefault(e) {
+  if (e.button !== 1) return false;
+  if (!zonesActive()) return false;
+  const hit = getZoneAtEvent(e);
+  if (!hit) return false;
+  const actions = normalizeMappedActions(zoneSettings?.click?.map?.[String(hit.zone)]?.middle);
+  if (!actions.length) return false;
+  e.preventDefault();
+  return true;
+}
+
 window.addEventListener("click", handleZoneClick, true);
 window.addEventListener("auxclick", handleZoneClick, true);
 window.addEventListener("contextmenu", handleZoneClick, true);
+window.addEventListener("mousedown", suppressMiddleClickDefault, true);
 // -------------------------------------------------------------------------
 let overlaySettings = { enabled: true, autoHideMs: 900, volumeAutoHideMs: 900 };
 
