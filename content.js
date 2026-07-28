@@ -1382,11 +1382,10 @@ async function loadOverlaySettings() {
 }
 
 // -------- Overlay: Grid داخل الفيديو --------
-function injectOverlayCSS() {
-  if (document.getElementById("vz_overlay_css")) return;
-  const style = document.createElement("style");
-  style.id = "vz_overlay_css";
-  style.textContent = `
+// Held in a const because a document stylesheet never crosses a shadow boundary:
+// when the overlay is moved into a shadow root the same text has to be adopted
+// there too — see ensureOverlayStylesIn.
+const OVERLAY_CSS = `
     .vzWrap{
       position:fixed;
       pointer-events:none;
@@ -1432,6 +1431,12 @@ function injectOverlayCSS() {
     }
     .vzHidden{ display:none !important; }
   `;
+
+function injectOverlayCSS() {
+  if (document.getElementById("vz_overlay_css")) return;
+  const style = document.createElement("style");
+  style.id = "vz_overlay_css";
+  style.textContent = OVERLAY_CSS;
   document.documentElement.appendChild(style);
 }
 
@@ -1457,7 +1462,20 @@ function buildOverlayElement() {
   return el;
 }
 
-function preferredOverlayHost() {
+function preferredOverlayHost(video) {
+  // A video behind a shadow boundary gets its overlay inside that same root: it
+  // is the only tree that still paints when something in there goes fullscreen.
+  // document.fullscreenElement is no help — it is RETARGETED to the shadow host,
+  // an element that renders nothing without a <slot>, so an overlay appended to
+  // it gets no layout box at all. Only the root itself names the real element.
+  const root = video?.getRootNode?.();
+  if (root?.host) {
+    const fs = root.fullscreenElement;
+    // A fullscreen <video> is a replaced element: children are fallback content
+    // and never render. Nothing paints anywhere in that state — see audit #47.
+    return fs && fs !== video ? fs : root;
+  }
+
   // Inside fullscreen, the fullscreen element is the only thing the browser paints.
   // Outside, body is fine since we use position:fixed (viewport coords).
   if (document.fullscreenElement) return document.fullscreenElement;
@@ -1497,12 +1515,34 @@ function startOverlayTracking() {
 
 function attachOverlayToHost(host) {
   if (!vzOverlay || !host) return;
-  if (host.contains(vzOverlay)) {
-    vzOverlayHost = host;
-    return;
+  // NOT host.contains(): after a fullscreen round-trip the overlay can be parked
+  // inside any element under <body>, and contains() then answers "already here"
+  // so it is never moved back — invisible for the rest of the page's life.
+  // Only the direct parent decides (audit #46).
+  if (vzOverlay.parentNode !== host) {
+    host.appendChild(vzOverlay);
+    ensureOverlayStylesIn(host.getRootNode?.());
   }
-  host.appendChild(vzOverlay);
   vzOverlayHost = host;
+}
+
+// A document stylesheet never crosses a shadow boundary, so the overlay carries
+// its own copy into any shadow root it is moved into. The four gridAppearance
+// variables travel with it already — applyGridVars writes them inline on .vzWrap
+// — but their fallback values and the whole layout live in this sheet.
+const overlayStyledRoots = new WeakSet();
+function ensureOverlayStylesIn(root) {
+  if (!root?.host || overlayStyledRoots.has(root)) return; // light DOM: nothing to do
+  overlayStyledRoots.add(root);
+  try {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(OVERLAY_CSS);
+    root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+  } catch {
+    const style = document.createElement("style");
+    style.textContent = OVERLAY_CSS;
+    root.appendChild(style);
+  }
 }
 
 function teardownOverlay() {
@@ -1524,9 +1564,11 @@ function ensureVideoOverlay(video) {
   injectOverlayCSS();
 
   if (vzOverlayVideo === video && vzOverlay && video.isConnected) {
-    // Make sure it's still attached to the right host (fullscreen toggles, etc.)
-    const host = preferredOverlayHost();
-    if (host !== vzOverlayHost) attachOverlayToHost(host);
+    // Make sure it's still attached to the right host (fullscreen toggles, etc.).
+    // Unconditional on purpose: attachOverlayToHost is a no-op when the parent is
+    // already right, and comparing vzOverlayHost alone would miss a host tree that
+    // re-rendered our overlay away — routine for a Web Component.
+    attachOverlayToHost(preferredOverlayHost(video));
     positionOverlayToVideo();
     return;
   }
@@ -1537,13 +1579,13 @@ function ensureVideoOverlay(video) {
   vzHintEl = vzOverlay.querySelector(".vzHint");
   vzVolumeBadge = vzOverlay.querySelector(".vzVolume");
   vzOverlayVideo = video;
-  attachOverlayToHost(preferredOverlayHost());
+  attachOverlayToHost(preferredOverlayHost(video));
   positionOverlayToVideo();
 }
 
 document.addEventListener("fullscreenchange", () => {
   if (!vzOverlay || !vzOverlayVideo) return;
-  attachOverlayToHost(preferredOverlayHost());
+  attachOverlayToHost(preferredOverlayHost(vzOverlayVideo));
   positionOverlayToVideo();
 });
 
