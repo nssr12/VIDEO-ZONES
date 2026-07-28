@@ -988,7 +988,10 @@ async function loadYtShortsRedirectSetting() {
 }
 
 function maybeRedirectShorts() {
-  if (!ytShortsRedirect || !isYouTubeHost() || isBlockedHost()) return;
+  // Bound to the global enable: switching the extension off stops this too, with
+  // no exception (owner decision 4, audit #20). remappingEnabled() is the same
+  // gate the zones, keyboard and mouse paths use — one switch, everything stops.
+  if (!ytShortsRedirect || !remappingEnabled() || !isYouTubeHost() || isBlockedHost()) return;
   if (window.top !== window) return; // top frame only
   const m = /^\/shorts\/([A-Za-z0-9_-]+)/.exec(location.pathname);
   if (!m) return;
@@ -1804,17 +1807,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     });
     return true;
   }
+  // Switching the extension on from the popup applies the Shorts redirect right
+  // away, the same way switching it off stops it — no reload either way (#20).
   if (msg?.type === "SITE_RULES_UPDATED") {
     siteRules = msg.siteRules || { enabled: false, mappings: [] };
     buildMap();
     if (!remappingEnabled()) hideOverlayNow();
+    maybeRedirectShorts();
   }
   if (msg?.type === "RELOAD_SITE_RULES") {
-    loadRulesForThisHost();
+    loadRulesForThisHost().then(() => maybeRedirectShorts());
   }
   if (msg?.type === "RELOAD_SITE_PROFILE") {
     loadSiteProfile().then(() => {
       if (!remappingEnabled()) hideOverlayNow();
+      maybeRedirectShorts();
     });
   }
   // from Options page
@@ -1869,8 +1876,12 @@ function startup(label, run) {
   });
 }
 
-startup("globalRules", loadRulesForThisHost);
-startup("siteProfile", loadSiteProfile);
+// The Shorts redirect now consults the enable flags, so its first check has to
+// wait for them: at document_start siteRules/siteProfile are still false and it
+// would skip a redirect the user has switched on. Reusing the promises these
+// steps already return costs no extra storage read (audit #20).
+const globalRulesReady = startup("globalRules", loadRulesForThisHost);
+const siteProfileReady = startup("siteProfile", loadSiteProfile);
 startup("zones", loadZoneSettings); // ✅ مهم: تشغيل zones بعد refresh مباشرة
 startup("overlay", loadOverlaySettings);
 startup("blockedHosts", loadBlockedHosts);
@@ -1882,7 +1893,9 @@ startup("ytQuality", () => loadYtAutoQualitySettings().then(() => {
   startYtAutoQuality();
   triggerYtQuality();
 }));
-startup("ytShorts", () => loadYtShortsRedirectSetting().then(() => startYtShortsRedirect()));
+startup("ytShorts", () => Promise.all([
+  loadYtShortsRedirectSetting(), globalRulesReady, siteProfileReady
+]).then(() => startYtShortsRedirect()));
 startup("cleanPlayer", loadCleanPlayerSettings);
 startup("boostReapply", startBoostReapply);
 
