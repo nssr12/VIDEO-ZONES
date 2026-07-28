@@ -2103,14 +2103,43 @@ const NATIVE_FS_BUTTON_SELECTORS = [
   ".plyr__control[data-plyr='fullscreen']"     // Plyr
 ];
 
-function findNativeFullscreenButton(video) {
-  if (!video) return null;
-  // Search inside the player wrapper first, then fall back to a document-wide search.
-  const player = video.closest(KNOWN_PLAYER_WRAPPER_SELECTOR);
-  const scope = player || document;
+const FS_BUTTON_MAX_DEPTH = 8;
+
+function findFsButtonIn(scope) {
   for (const sel of NATIVE_FS_BUTTON_SELECTORS) {
     const btn = scope.querySelector(sel);
     if (btn) return btn;
+  }
+  return null;
+}
+
+// True once a scope holds a video other than ours — past that point any match
+// could belong to the neighbour, so the climb has to stop.
+function holdsAnotherVideo(scope, video) {
+  for (const other of scope.querySelectorAll("video")) {
+    if (other === video) continue;
+    const rect = other.getBoundingClientRect?.();
+    if (rect && rect.width > 0 && rect.height > 0) return true; // skip hidden/preloading
+  }
+  return false;
+}
+
+function findNativeFullscreenButton(video) {
+  if (!video) return null;
+  // The button must belong to THIS video's player. The old fallback searched the
+  // whole document and took whichever match came first in document order, so on a
+  // page with two players the command pressed the other one's button (audit #17).
+  const player = video.closest(KNOWN_PLAYER_WRAPPER_SELECTOR);
+  if (player) return findFsButtonIn(player);
+
+  // Unknown player: climb from the video and take the nearest ancestor holding a
+  // match. Never reaches <body>, so a sibling player's subtree is unreachable.
+  let node = video.parentElement;
+  for (let i = 0; i < FS_BUTTON_MAX_DEPTH && node && node !== document.body; i++) {
+    if (holdsAnotherVideo(node, video)) break;
+    const btn = findFsButtonIn(node);
+    if (btn) return btn;
+    node = node.parentElement;
   }
   return null;
 }
