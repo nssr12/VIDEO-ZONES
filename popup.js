@@ -27,21 +27,7 @@ const ACTIONS = [
   { label: "ACTION:TOGGLE_PIP = صورة داخل صورة", value: "ACTION:TOGGLE_PIP" }
 ];
 
-function normalizeComboFromEvent(e) {
-  const parts = [];
-  if (e.ctrlKey) parts.push("Ctrl");
-  if (e.altKey) parts.push("Alt");
-  if (e.shiftKey) parts.push("Shift");
-  if (e.metaKey) parts.push("Meta");
-
-  let k = e.key;
-  if (k === " ") k = "Space";
-  if (k === "Escape") k = "Esc";
-  if (["Control", "Shift", "Alt", "Meta"].includes(k)) return null;
-
-  parts.push(k.length === 1 ? k.toUpperCase() : k);
-  return parts.join("+");
-}
+// normalizeKeyCombo() يأتي من storage.js — لا تُعرِّف نسخة ثالثة (البند #11).
 
 function normalizeMouseFromEvent(e) {
   const map = ["Mouse1", "Mouse2", "Mouse3", "Mouse4", "Mouse5"];
@@ -627,7 +613,7 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
   e.stopPropagation();
 
-  const combo = normalizeComboFromEvent(e);
+  const combo = normalizeKeyCombo(e);
   if (!combo) return;
 
   $(captureTarget).value = combo;

@@ -477,6 +477,9 @@ async function loadSubtitleSettings() {
   };
   applySubtitleStyles();
   applySubtitleTrack();
+  // Turning the automation on or off flips the two button exemptions, so the
+  // Clean Player CSS has to be rebuilt here — no page reload (audit #18).
+  applyCleanPlayerCSS();
 }
 
 function applySubtitleStyles() {
@@ -797,6 +800,141 @@ function startSubtitleTrackObserver() {
   }, true);
 }
 
+// ⚠️ PAIRED COPY — duplicated verbatim in storage.js. Edit both together;
+// tools/test-migration.js fails if they drift apart.
+// ---- BEGIN gridAppearance ----
+// The exact look the in-video overlay had BEFORE Grid Appearance was wired up.
+// options.js must share these: it used to auto-fill a different set (opaque
+// #10131a) merely by being opened, which — once the setting actually reached the
+// overlay — turned the grid into a solid wall nobody had chosen.
+//
+// Colours are stored separately from their opacity because <input type="color">
+// cannot express alpha. Without that split, touching any colour field once made
+// the grid opaque with no way back from the UI.
+const GRID_APPEARANCE_DEFAULTS = Object.freeze({
+  cellBg: "#000000",
+  cellBgOpacity: 0,          // شفاف تماماً: لا خلفية إطلاقاً، كما كان
+  cellBorder: "#ffffff",
+  cellBorderOpacity: 0.32,   // نفس rgba(255,255,255,.32) القديمة
+  numberColor: "#ffffff",
+  numberOpacity: 1,          // الأرقام ظاهرة كما هي؛ 0 يخفيها من الـ DOM أصلاً
+  radius: 0
+});
+
+// ── استدلالية الهجرة ─────────────────────────────────────────────────────────
+// هذه القيم الأربع هي ما كانت options.js تكتبها في التخزين بمجرد **فتح** الصفحة،
+// قبل أن يلمس المستخدم أي حقل. فوجود أيٍّ منها مخزَّناً ليس دليل اختيار، ولذلك
+// نعامله كأنه غير مضبوط ونعيده لمظهر الـ overlay الأصلي.
+//
+// ⚠️ هذا استدلال لا يقين: مستخدم اختار #10131a عمداً — وهو لون داكن معقول —
+// سيُعامَل خطأً كأنه تعبئة تلقائية، فيرى شبكته شفافة بدل لونه. الأثر مقبول
+// لسببين: النتيجة هي المظهر الأصلي المألوف لا مظهراً غريباً، وإعادة ضبطه من
+// اللوحة تستغرق ثانيتين. البديل — احترام القيمة حرفياً — كان سيُبقي الجدار
+// المعتم على كل من فتح صفحة الإعدادات ولو مرة واحدة دون أن يختار شيئاً، وهو
+// العطب نفسه الذي يعالجه هذا الكود.
+//
+// الاستدلال يُطبَّق على الألوان الثلاثة فقط. أما radius فلا يُعاد إلا حين يكون
+// الكائن كله تعبئة تلقائية (isLegacyGridAutofill)، لأن 12px اختيار معقول
+// وأثره تجميلي بحت لا يحجب الفيديو.
+const GRID_APPEARANCE_LEGACY = Object.freeze({
+  cellBg: "#10131a", cellBorder: "#2a2f3a", numberColor: "#a3a3a3", radius: 12
+});
+
+// alpha 0 → "transparent", never "rgba(r,g,b,0)": the keyword is what the overlay
+// used originally, and it keeps the computed style honest for anyone inspecting it.
+function rgbaFrom(hex, alpha) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+  const a = Math.max(0, Math.min(1, Number(alpha)));
+  if (!m || !(a > 0)) return "transparent";
+  const n = parseInt(m[1], 16);
+  return a >= 1
+    ? `rgb(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255})`
+    : `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+// True when every field present matches what options.js auto-filled — i.e. the
+// user opened the page once and changed nothing.
+function isLegacyGridAutofill(g) {
+  if (!g || typeof g !== "object") return false;
+  const keys = Object.keys(GRID_APPEARANCE_LEGACY);
+  if (!keys.some((k) => g[k] !== undefined)) return false;
+  return keys.every((k) =>
+    g[k] === undefined || String(g[k]).toLowerCase() === String(GRID_APPEARANCE_LEGACY[k]).toLowerCase());
+}
+
+// Resolves stored settings into a complete appearance, migrating anything saved
+// before the opacity sliders existed: a colour that differs from the auto-fill was
+// chosen on purpose and keeps full opacity, everything else returns to the
+// original overlay look.
+function resolveGridAppearance(stored) {
+  const g = isLegacyGridAutofill(stored) ? null
+          : (stored && typeof stored === "object" ? stored : null);
+
+  const colour = (key) => {
+    const v = g?.[key];
+    if (typeof v !== "string" || !v) return GRID_APPEARANCE_DEFAULTS[key];
+    const legacy = String(GRID_APPEARANCE_LEGACY[key] || "").toLowerCase();
+    return v.toLowerCase() === legacy ? GRID_APPEARANCE_DEFAULTS[key] : v;
+  };
+  const opacity = (colourKey, opacityKey) => {
+    const saved = Number(g?.[opacityKey]);
+    if (Number.isFinite(saved)) return Math.max(0, Math.min(1, saved));
+    const c = g?.[colourKey];
+    const deliberate = typeof c === "string" && c &&
+      c.toLowerCase() !== String(GRID_APPEARANCE_LEGACY[colourKey]).toLowerCase();
+    return deliberate ? 1 : GRID_APPEARANCE_DEFAULTS[opacityKey];
+  };
+
+  const radius = Number(g?.radius);
+  return {
+    cellBg: colour("cellBg"),
+    cellBgOpacity: opacity("cellBg", "cellBgOpacity"),
+    cellBorder: colour("cellBorder"),
+    cellBorderOpacity: opacity("cellBorder", "cellBorderOpacity"),
+    numberColor: colour("numberColor"),
+    numberOpacity: opacity("numberColor", "numberOpacity"),
+    radius: Number.isFinite(radius) ? radius : GRID_APPEARANCE_DEFAULTS.radius
+  };
+}
+// ---- END gridAppearance ----
+
+let gridAppearance = resolveGridAppearance(null);
+
+function applyGridVars(el) {
+  if (!el) return;
+  el.style.setProperty("--vz-cell-bg", rgbaFrom(gridAppearance.cellBg, gridAppearance.cellBgOpacity));
+  el.style.setProperty("--vz-cell-border", rgbaFrom(gridAppearance.cellBorder, gridAppearance.cellBorderOpacity));
+  el.style.setProperty("--vz-num-color", rgbaFrom(gridAppearance.numberColor, gridAppearance.numberOpacity));
+  el.style.setProperty("--vz-cell-radius", `${gridAppearance.radius}px`);
+  syncZoneNumbers(el);
+}
+
+// Opacity 0 means the numbers are REMOVED, not painted invisibly: an element that
+// can never be seen has no business sitting in the overlay of every video, and it
+// doubles as the "no numbers" switch without needing a separate setting.
+function syncZoneNumbers(root) {
+  const grid = root?.querySelector?.(".vzGrid");
+  if (!grid) return;
+  const wanted = gridAppearance.numberOpacity > 0;
+  grid.querySelectorAll(".vzCell").forEach((cell, i) => {
+    const existing = cell.querySelector(".vzNum");
+    if (wanted && !existing) {
+      const num = document.createElement("div");
+      num.className = "vzNum";
+      num.textContent = ZONE_LABELS[i] || "";
+      cell.appendChild(num);
+    } else if (!wanted && existing) {
+      existing.remove();
+    }
+  });
+}
+
+async function loadGridAppearance() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  gridAppearance = resolveGridAppearance((data.settings || {}).gridAppearance);
+  applyGridVars(vzOverlay);
+}
+
 async function loadSoundDisplaySettings() {
   const data = await chrome.storage.sync.get({ settings: {} });
   const settings = data.settings || {};
@@ -850,7 +988,10 @@ async function loadYtShortsRedirectSetting() {
 }
 
 function maybeRedirectShorts() {
-  if (!ytShortsRedirect || !isYouTubeHost() || isBlockedHost()) return;
+  // Bound to the global enable: switching the extension off stops this too, with
+  // no exception (owner decision 4, audit #20). remappingEnabled() is the same
+  // gate the zones, keyboard and mouse paths use — one switch, everything stops.
+  if (!ytShortsRedirect || !remappingEnabled() || !isYouTubeHost() || isBlockedHost()) return;
   if (window.top !== window) return; // top frame only
   const m = /^\/shorts\/([A-Za-z0-9_-]+)/.exec(location.pathname);
   if (!m) return;
@@ -919,6 +1060,16 @@ const CLEAN_PLAYER_ITEMS = {
 let cleanPlayerSettings = { enabled: false, items: {} };
 let cleanPlayerStyleEl = null;
 
+// The two Clean Player items the caption automation clicks. Keys must stay in
+// sync with CLEAN_PLAYER_ITEMS above and CLEAN_PLAYER_OPTIONS in options.js.
+const CAPTION_AUTOMATION_BUTTONS = new Set(["subtitles_button", "settings_button"]);
+
+// Exactly the condition youtubeSetCaptionLanguage runs under: a language is only
+// selected when subtitles are on AND a default language is set.
+function captionAutomationActive() {
+  return !!(subtitleSettings.enabled && subtitleSettings.defaultLang);
+}
+
 // Embedded players also live on youtube-nocookie.com iframes
 function isYouTubeFamilyHost() {
   return /(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname);
@@ -944,9 +1095,16 @@ function applyCleanPlayerCSS() {
   }
   if (!cleanPlayerSettings.enabled || !isYouTubeFamilyHost() || isBlockedHost()) return;
 
+  // The caption-language automation drives YouTube's menu by CLICKING these two
+  // buttons, and findVisibleYTMenuItem requires a non-zero rect — so hiding them
+  // killed the feature silently, one part of this extension breaking another
+  // (audit #18). Exempted automatically while the automation is on, and hidden
+  // again the moment it is switched off (loadSubtitleSettings re-applies).
+  const exempt = captionAutomationActive();
   const selectors = [];
   for (const [key, sels] of Object.entries(CLEAN_PLAYER_ITEMS)) {
     if (!cleanPlayerSettings.items[key]) continue;
+    if (exempt && CAPTION_AUTOMATION_BUTTONS.has(key)) continue;
     // html prefix raises specificity above YouTube's own rules (same trick as subtitles CSS)
     for (const sel of sels) selectors.push(`html ${sel}`);
   }
@@ -1057,13 +1215,18 @@ function getZoneAtEvent(e) {
   return zone ? { video, zone } : null;
 }
 
-function findVideoAtPoint(x, y) {
-  if (typeof x !== "number" || typeof y !== "number") return null;
+// Web Components hide their <video> behind a shadow boundary that neither
+// elementsFromPoint nor querySelectorAll will cross, so such players were
+// invisible to the entire extension (audit #16).
+//
+// COST: the shadow walk runs ONLY after the plain document pass found nothing,
+// so the wheel path — the hot one — pays a single Array#filter over the hit stack
+// on ordinary pages and nothing more. Depth is capped so a pathological nesting
+// can never turn a wheel event into a tree walk. See tools/bench-shadow.js.
+const SHADOW_MAX_DEPTH = 5;
 
-  const stack = typeof document.elementsFromPoint === "function"
-    ? document.elementsFromPoint(x, y)
-    : [document.elementFromPoint(x, y)].filter(Boolean);
-
+// The original light-DOM scan, unchanged, factored out so the shadow walk reuses it.
+function videoFromStack(stack, x, y) {
   for (const el of stack) {
     if (!el) continue;
     if (el.tagName === "VIDEO") return el;
@@ -1087,8 +1250,43 @@ function findVideoAtPoint(x, y) {
       }
     }
   }
-
   return null;
+}
+
+// Descends host → shadowRoot.elementsFromPoint, breadth-first, depth-capped.
+function videoFromShadowStack(stack, x, y) {
+  // Allocate only if a shadow host is actually present — pages without Web
+  // Components (the overwhelming majority) then pay one cheap scan and nothing else.
+  let hosts = null;
+  for (const el of stack) {
+    if (el?.shadowRoot) (hosts ||= []).push(el);
+  }
+  if (!hosts) return null;
+
+  for (let depth = 0; depth < SHADOW_MAX_DEPTH && hosts.length; depth++) {
+    const next = [];
+    for (const host of hosts) {
+      const inner = host.shadowRoot.elementsFromPoint?.(x, y);
+      if (!inner?.length) continue;
+      const hit = videoFromStack(inner, x, y);
+      if (hit) return hit;
+      for (const el of inner) if (el?.shadowRoot) next.push(el);
+    }
+    hosts = next;
+  }
+  return null;
+}
+
+function findVideoAtPoint(x, y) {
+  if (typeof x !== "number" || typeof y !== "number") return null;
+
+  const stack = typeof document.elementsFromPoint === "function"
+    ? document.elementsFromPoint(x, y)
+    : [document.elementFromPoint(x, y)].filter(Boolean);
+
+  const direct = videoFromStack(stack, x, y);
+  if (direct) return direct;          // المسار الشائع: يخرج قبل أي عمل إضافي
+  return videoFromShadowStack(stack, x, y);
 }
 
 function getVideoUnderPointer(e) {
@@ -1153,25 +1351,52 @@ window.addEventListener("wheel", (e) => {
   if (e.stopImmediatePropagation) e.stopImmediatePropagation();
 }, { capture: true, passive: false });
 
+// ---- Precedence: one source of truth for who owns a mouse button ----
+// The most specific layer wins: zone binding > site rule > global rule. A zone
+// is a spot the user aimed at deliberately, so a rule that covers the whole
+// screen has no business overriding it. And when the specific layer wins the
+// general one must not run AT ALL — not before it and not after.
+//
+// This has to be consultable from handleMouse too, because the generic path acts
+// on MOUSEDOWN while the zone path acts on click/auxclick: the general rule was
+// dispatched first by timing alone, so both ran on one press (audit #48).
+const ZONE_TRIGGER_BY_BUTTON = { 0: "left", 1: "middle", 2: "right" };
+
+function zoneClickBinding(e) {
+  const which = ZONE_TRIGGER_BY_BUTTON[e.button];
+  if (!which) return null;
+  if (!zonesActive()) return null;
+  const hit = getZoneAtEvent(e);
+  if (!hit) return null;
+  const actions = normalizeMappedActions(zoneSettings?.click?.map?.[String(hit.zone)]?.[which]);
+  return actions.length ? { video: hit.video, zone: hit.zone, which, actions } : null;
+}
+
+// Same precedence for the keyboard: the square under the pointer owns the key
+// before any site or global rule gets a look at it.
+function zoneKeyBinding(video, sig) {
+  if (!zonesActive()) return null;
+  if (typeof lastPointer.x !== "number" || typeof lastPointer.y !== "number") return null;
+  const zone = getZoneNumber(zoneRectForVideo(video), lastPointer.x, lastPointer.y);
+  if (!zone) return null;
+  const actions = normalizeMappedActions(zoneSettings?.key?.map?.[String(zone)]?.[sig]);
+  return actions.length ? { zone, actions } : null;
+}
+
 // Zone-based click handler (left/middle/right click on a zone of a video)
 function handleZoneClick(e) {
-  if (!zonesActive()) return false;
-  const triggerByBtn = { 0: "left", 1: "middle", 2: "right" };
-  const which = triggerByBtn[e.button];
+  const which = ZONE_TRIGGER_BY_BUTTON[e.button];
   if (!which) return false;
   // Left/middle fire on click/auxclick; right fires on contextmenu
   if (which === "right" && e.type !== "contextmenu") return false;
   if (which !== "right" && e.type !== "click" && e.type !== "auxclick") return false;
 
-  const hit = getZoneAtEvent(e);
-  if (!hit) return false;
+  const bind = zoneClickBinding(e);
+  if (!bind) return false;
+  const { actions } = bind;
 
-  const entry = zoneSettings?.click?.map?.[String(hit.zone)];
-  const actions = normalizeMappedActions(entry?.[which]);
-  if (!actions.length) return false;
-
-  e.__videoUnderPointer = hit.video;
-  showOverlay(`Zone ${zoneLabel(hit.zone)} • ${which.toUpperCase()} CLICK → ${actions.join(" + ")}`);
+  e.__videoUnderPointer = bind.video;
+  showOverlay(`Zone ${zoneLabel(bind.zone)} • ${which.toUpperCase()} CLICK → ${actions.join(" + ")}`);
 
   let ok = false;
   for (const action of actions) ok = runAction(action, e) || ok;
@@ -1185,9 +1410,23 @@ function handleZoneClick(e) {
   return ok;
 }
 
+// Chrome opens its autoscroll cursor on middle-button MOUSEDOWN, but the zone
+// path acts on auxclick — so the command ran and the scroll cursor appeared at
+// the same time. The generic remap path never had this because it preventDefaults
+// on mousedown (audit #12). Kill the default only: no action runs here, so the
+// binding still fires exactly once, on auxclick. And stay silent when the zone
+// has no middle binding, so the page keeps its own middle-click behaviour.
+function suppressMiddleClickDefault(e) {
+  if (e.button !== 1) return false;
+  if (!zoneClickBinding(e)) return false;
+  e.preventDefault();
+  return true;
+}
+
 window.addEventListener("click", handleZoneClick, true);
 window.addEventListener("auxclick", handleZoneClick, true);
 window.addEventListener("contextmenu", handleZoneClick, true);
+window.addEventListener("mousedown", suppressMiddleClickDefault, true);
 // -------------------------------------------------------------------------
 let overlaySettings = { enabled: true, autoHideMs: 900, volumeAutoHideMs: 900 };
 
@@ -1207,11 +1446,10 @@ async function loadOverlaySettings() {
 }
 
 // -------- Overlay: Grid داخل الفيديو --------
-function injectOverlayCSS() {
-  if (document.getElementById("vz_overlay_css")) return;
-  const style = document.createElement("style");
-  style.id = "vz_overlay_css";
-  style.textContent = `
+// Held in a const because a document stylesheet never crosses a shadow boundary:
+// when the overlay is moved into a shadow root the same text has to be adopted
+// there too — see ensureOverlayStylesIn.
+const OVERLAY_CSS = `
     .vzWrap{
       position:fixed;
       pointer-events:none;
@@ -1223,8 +1461,23 @@ function injectOverlayCSS() {
       position:absolute; inset:0;
       display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr);
       direction:ltr;
+      container-type:size;            /* لتحجيم الأرقام نسبةً لحجم الشبكة */
     }
-    .vzCell{ border:1px solid rgba(255,255,255,.32); }
+    .vzCell{
+      border:1px solid var(--vz-cell-border, rgba(255,255,255,.32));
+      background:var(--vz-cell-bg, transparent);
+      border-radius:var(--vz-cell-radius, 0px);
+      display:flex; align-items:center; justify-content:center;
+    }
+    /* أرقام المربعات: داخل .vzGrid فتظهر وتختفي معها تلقائياً */
+    .vzNum{
+      pointer-events:none; user-select:none;
+      color:var(--vz-num-color, #fff);
+      font:700 14px/1 Arial, sans-serif;
+      font-size:clamp(9px, 6cqmin, 26px);
+      letter-spacing:1px; opacity:.9;
+      text-shadow:0 1px 4px rgba(0,0,0,.65);
+    }
     .vzHint{
       position:absolute; left:10px; bottom:10px;
       background:rgba(0,0,0,.7); color:#fff;
@@ -1242,6 +1495,12 @@ function injectOverlayCSS() {
     }
     .vzHidden{ display:none !important; }
   `;
+
+function injectOverlayCSS() {
+  if (document.getElementById("vz_overlay_css")) return;
+  const style = document.createElement("style");
+  style.id = "vz_overlay_css";
+  style.textContent = OVERLAY_CSS;
   document.documentElement.appendChild(style);
 }
 
@@ -1259,18 +1518,28 @@ function buildOverlayElement() {
   el.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
   el.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
   el.innerHTML = `
-    <div class="vzGrid vzHidden">
-      <div class="vzCell"></div><div class="vzCell"></div><div class="vzCell"></div>
-      <div class="vzCell"></div><div class="vzCell"></div><div class="vzCell"></div>
-      <div class="vzCell"></div><div class="vzCell"></div><div class="vzCell"></div>
-    </div>
+    <div class="vzGrid vzHidden">${'<div class="vzCell"></div>'.repeat(9)}</div>
     <div class="vzHint vzHidden">Zones</div>
     <div class="vzVolume vzHidden">100</div>
   `;
+  applyGridVars(el); // يزرع الأرقام بـ textContent بعد بناء الخلايا
   return el;
 }
 
-function preferredOverlayHost() {
+function preferredOverlayHost(video) {
+  // A video behind a shadow boundary gets its overlay inside that same root: it
+  // is the only tree that still paints when something in there goes fullscreen.
+  // document.fullscreenElement is no help — it is RETARGETED to the shadow host,
+  // an element that renders nothing without a <slot>, so an overlay appended to
+  // it gets no layout box at all. Only the root itself names the real element.
+  const root = video?.getRootNode?.();
+  if (root?.host) {
+    const fs = root.fullscreenElement;
+    // A fullscreen <video> is a replaced element: children are fallback content
+    // and never render. Nothing paints anywhere in that state — see audit #47.
+    return fs && fs !== video ? fs : root;
+  }
+
   // Inside fullscreen, the fullscreen element is the only thing the browser paints.
   // Outside, body is fine since we use position:fixed (viewport coords).
   if (document.fullscreenElement) return document.fullscreenElement;
@@ -1310,12 +1579,34 @@ function startOverlayTracking() {
 
 function attachOverlayToHost(host) {
   if (!vzOverlay || !host) return;
-  if (host.contains(vzOverlay)) {
-    vzOverlayHost = host;
-    return;
+  // NOT host.contains(): after a fullscreen round-trip the overlay can be parked
+  // inside any element under <body>, and contains() then answers "already here"
+  // so it is never moved back — invisible for the rest of the page's life.
+  // Only the direct parent decides (audit #46).
+  if (vzOverlay.parentNode !== host) {
+    host.appendChild(vzOverlay);
+    ensureOverlayStylesIn(host.getRootNode?.());
   }
-  host.appendChild(vzOverlay);
   vzOverlayHost = host;
+}
+
+// A document stylesheet never crosses a shadow boundary, so the overlay carries
+// its own copy into any shadow root it is moved into. The four gridAppearance
+// variables travel with it already — applyGridVars writes them inline on .vzWrap
+// — but their fallback values and the whole layout live in this sheet.
+const overlayStyledRoots = new WeakSet();
+function ensureOverlayStylesIn(root) {
+  if (!root?.host || overlayStyledRoots.has(root)) return; // light DOM: nothing to do
+  overlayStyledRoots.add(root);
+  try {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(OVERLAY_CSS);
+    root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+  } catch {
+    const style = document.createElement("style");
+    style.textContent = OVERLAY_CSS;
+    root.appendChild(style);
+  }
 }
 
 function teardownOverlay() {
@@ -1337,9 +1628,11 @@ function ensureVideoOverlay(video) {
   injectOverlayCSS();
 
   if (vzOverlayVideo === video && vzOverlay && video.isConnected) {
-    // Make sure it's still attached to the right host (fullscreen toggles, etc.)
-    const host = preferredOverlayHost();
-    if (host !== vzOverlayHost) attachOverlayToHost(host);
+    // Make sure it's still attached to the right host (fullscreen toggles, etc.).
+    // Unconditional on purpose: attachOverlayToHost is a no-op when the parent is
+    // already right, and comparing vzOverlayHost alone would miss a host tree that
+    // re-rendered our overlay away — routine for a Web Component.
+    attachOverlayToHost(preferredOverlayHost(video));
     positionOverlayToVideo();
     return;
   }
@@ -1350,13 +1643,13 @@ function ensureVideoOverlay(video) {
   vzHintEl = vzOverlay.querySelector(".vzHint");
   vzVolumeBadge = vzOverlay.querySelector(".vzVolume");
   vzOverlayVideo = video;
-  attachOverlayToHost(preferredOverlayHost());
+  attachOverlayToHost(preferredOverlayHost(video));
   positionOverlayToVideo();
 }
 
 document.addEventListener("fullscreenchange", () => {
   if (!vzOverlay || !vzOverlayVideo) return;
-  attachOverlayToHost(preferredOverlayHost());
+  attachOverlayToHost(preferredOverlayHost(vzOverlayVideo));
   positionOverlayToVideo();
 });
 
@@ -1514,17 +1807,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     });
     return true;
   }
+  // Switching the extension on from the popup applies the Shorts redirect right
+  // away, the same way switching it off stops it — no reload either way (#20).
   if (msg?.type === "SITE_RULES_UPDATED") {
     siteRules = msg.siteRules || { enabled: false, mappings: [] };
     buildMap();
     if (!remappingEnabled()) hideOverlayNow();
+    maybeRedirectShorts();
   }
   if (msg?.type === "RELOAD_SITE_RULES") {
-    loadRulesForThisHost();
+    loadRulesForThisHost().then(() => maybeRedirectShorts());
   }
   if (msg?.type === "RELOAD_SITE_PROFILE") {
     loadSiteProfile().then(() => {
       if (!remappingEnabled()) hideOverlayNow();
+      maybeRedirectShorts();
     });
   }
   // from Options page
@@ -1532,6 +1829,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     loadZoneSettings();
     loadBlockedHosts();
     loadSoundDisplaySettings();
+    loadGridAppearance();
   }
   if (msg?.type === "RELOAD_OVERLAY_SETTINGS") loadOverlaySettings();
   if (msg?.type === "RELOAD_SUBTITLES") loadSubtitleSettings();
@@ -1578,40 +1876,52 @@ function startup(label, run) {
   });
 }
 
-startup("globalRules", loadRulesForThisHost);
-startup("siteProfile", loadSiteProfile);
+// The Shorts redirect now consults the enable flags, so its first check has to
+// wait for them: at document_start siteRules/siteProfile are still false and it
+// would skip a redirect the user has switched on. Reusing the promises these
+// steps already return costs no extra storage read (audit #20).
+const globalRulesReady = startup("globalRules", loadRulesForThisHost);
+const siteProfileReady = startup("siteProfile", loadSiteProfile);
 startup("zones", loadZoneSettings); // ✅ مهم: تشغيل zones بعد refresh مباشرة
 startup("overlay", loadOverlaySettings);
 startup("blockedHosts", loadBlockedHosts);
 startup("soundDisplay", loadSoundDisplaySettings);
+startup("gridAppearance", loadGridAppearance);
 startup("subtitles", loadSubtitleSettings);
 startup("subtitleObserver", startSubtitleTrackObserver);
 startup("ytQuality", () => loadYtAutoQualitySettings().then(() => {
   startYtAutoQuality();
   triggerYtQuality();
 }));
-startup("ytShorts", () => loadYtShortsRedirectSetting().then(() => startYtShortsRedirect()));
+startup("ytShorts", () => Promise.all([
+  loadYtShortsRedirectSetting(), globalRulesReady, siteProfileReady
+]).then(() => startYtShortsRedirect()));
 startup("cleanPlayer", loadCleanPlayerSettings);
 startup("boostReapply", startBoostReapply);
 
-function normalizeKeyEvent(e) {
-  // نخلي ArrowRight/ArrowLeft يطلع كما هو
-  if (e.key === "ArrowRight" || e.key === "ArrowLeft") return e.key;
+// ⚠️ PAIRED COPY — duplicated verbatim in storage.js. Edit both together;
+// tools/test-migration.js fails if they drift apart.
+// ---- BEGIN normalizeKeyCombo ----
+// ONE key-signature format for the whole extension. content.js matches against
+// exactly what popup.js and options.js record, so any divergence here silently
+// kills rules. The old content.js returned bare "ArrowRight"/"ArrowLeft" and
+// dropped every modifier: a shortcut captured as "Shift+ArrowRight" could never
+// fire, and "Ctrl+ArrowRight" hijacked the site's own shortcut (audit #11).
+function normalizeKeyCombo(e) {
+  let k = e.key;
+  if (["Control", "Shift", "Alt", "Meta"].includes(k)) return null; // modifier alone
+  if (k === " ") k = "Space";
+  if (k === "Escape") k = "Esc";
 
   const parts = [];
   if (e.ctrlKey) parts.push("Ctrl");
   if (e.altKey) parts.push("Alt");
   if (e.shiftKey) parts.push("Shift");
   if (e.metaKey) parts.push("Meta");
-
-  let k = e.key;
-  if (k === " ") k = "Space";
-  if (k === "Escape") k = "Esc";
-  if (["Control", "Shift", "Alt", "Meta"].includes(k)) return null;
-
   parts.push(k.length === 1 ? k.toUpperCase() : k);
   return parts.join("+");
 }
+// ---- END normalizeKeyCombo ----
 
 function normalizeMouseEvent(e) {
   const mapBtns = ["Mouse1", "Mouse2", "Mouse3", "Mouse4", "Mouse5"];
@@ -1680,8 +1990,7 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
   if (t - lastFsAt < 450) return true;
   lastFsAt = t;
 
-  toggleFullscreen(video);
-  return true;
+  return toggleFullscreen(video);
 }
 
 
@@ -1699,12 +2008,20 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
     const video = findVideoLoose(e);
     if (!video) return false;
     const doc = document;
-    const pipEl = doc.pictureInPictureElement;
-    if (pipEl) {
-      doc.exitPictureInPicture?.().catch(()=>{});
-    } else {
-      video.requestPictureInPicture?.().catch(()=>{});
+    if (doc.pictureInPictureElement) {
+      const exit = doc.exitPictureInPicture?.();
+      if (!exit) return false;
+      Promise.resolve(exit).catch((err) =>
+        notifyVideoActionFailed(video, "تعذّر الخروج من صورة داخل صورة", err));
+      return true;
     }
+    // Sites opt out with disablePictureInPicture; requesting anyway always rejects.
+    if (typeof video.requestPictureInPicture !== "function" || video.disablePictureInPicture) {
+      notifyVideoActionFailed(video, "هذا الفيديو لا يدعم صورة داخل صورة");
+      return false;
+    }
+    Promise.resolve(video.requestPictureInPicture()).catch((err) =>
+      notifyVideoActionFailed(video, "المتصفح رفض صورة داخل صورة", err));
     return true;
   }
 
@@ -1819,11 +2136,9 @@ const NATIVE_FS_BUTTON_SELECTORS = [
   ".plyr__control[data-plyr='fullscreen']"     // Plyr
 ];
 
-function findNativeFullscreenButton(video) {
-  if (!video) return null;
-  // Search inside the player wrapper first, then fall back to a document-wide search.
-  const player = video.closest(KNOWN_PLAYER_WRAPPER_SELECTOR);
-  const scope = player || document;
+const FS_BUTTON_MAX_DEPTH = 8;
+
+function findFsButtonIn(scope) {
   for (const sel of NATIVE_FS_BUTTON_SELECTORS) {
     const btn = scope.querySelector(sel);
     if (btn) return btn;
@@ -1831,29 +2146,85 @@ function findNativeFullscreenButton(video) {
   return null;
 }
 
+// True once a scope holds a video other than ours — past that point any match
+// could belong to the neighbour, so the climb has to stop.
+function holdsAnotherVideo(scope, video) {
+  for (const other of scope.querySelectorAll("video")) {
+    if (other === video) continue;
+    const rect = other.getBoundingClientRect?.();
+    if (rect && rect.width > 0 && rect.height > 0) return true; // skip hidden/preloading
+  }
+  return false;
+}
+
+function findNativeFullscreenButton(video) {
+  if (!video) return null;
+  // The button must belong to THIS video's player. The old fallback searched the
+  // whole document and took whichever match came first in document order, so on a
+  // page with two players the command pressed the other one's button (audit #17).
+  const player = video.closest(KNOWN_PLAYER_WRAPPER_SELECTOR);
+  if (player) return findFsButtonIn(player);
+
+  // Unknown player: climb from the video and take the nearest ancestor holding a
+  // match. Never reaches <body>, so a sibling player's subtree is unreachable.
+  let node = video.parentElement;
+  for (let i = 0; i < FS_BUTTON_MAX_DEPTH && node && node !== document.body; i++) {
+    if (holdsAnotherVideo(node, video)) break;
+    const btn = findFsButtonIn(node);
+    if (btn) return btn;
+    node = node.parentElement;
+  }
+  return null;
+}
+
+// requestFullscreen / requestPictureInPicture return promises. A synchronous
+// try/catch cannot see their rejection, so a refusal surfaced only as
+// "Uncaught (in promise)" while runAction still returned true and preventDefault
+// swallowed the click — the user saw nothing happen and got no explanation
+// (audit #9, #33).
+//
+// preventDefault has to be decided synchronously, so the contract is:
+//   return false → we know the request is impossible, do NOT swallow the event
+//   return true  → a request was dispatched; if it later rejects we say so
+function notifyVideoActionFailed(video, text, err) {
+  if (err) console.debug(`[VIDEO-ZONES] ${text}:`, err);
+  if (video) ensureVideoOverlay(video);
+  showOverlay(`⚠️ ${text}`); // respects the user's overlay duration setting
+}
+
 function toggleFullscreen(video) {
   const doc = document;
   const v = video;
-  if (!v) return;
+  if (!v) return false;
 
   // Prefer clicking the site's own fullscreen button when available — this keeps
   // the site's player state in sync, so its F key / dblclick / native button still work.
   const nativeBtn = findNativeFullscreenButton(v);
   if (nativeBtn) {
-    try { nativeBtn.click(); return; } catch {}
+    try { nativeBtn.click(); return true; } catch {}
   }
 
   // خروج
   if (doc.fullscreenElement) {
-    doc.exitFullscreen?.().catch(()=>{});
-    return;
+    const exit = doc.exitFullscreen?.();
+    if (!exit) return false;
+    Promise.resolve(exit).catch((err) =>
+      notifyVideoActionFailed(v, "تعذّر الخروج من ملء الشاشة", err));
+    return true;
   }
 
   const container = pickFullscreenContainer(v);
   const req = container?.requestFullscreen || container?.webkitRequestFullscreen;
-  if (req) {
-    try { req.call(container); } catch {}
+  if (!req) return false; // no API at all: leave the event to the page
+  try {
+    Promise.resolve(req.call(container)).catch((err) =>
+      notifyVideoActionFailed(v, "المتصفح رفض ملء الشاشة", err));
+  } catch (err) {
+    // threw synchronously ⇒ nothing was dispatched
+    notifyVideoActionFailed(v, "المتصفح رفض ملء الشاشة", err);
+    return false;
   }
+  return true;
 }
 
 
@@ -1878,11 +2249,21 @@ function findVideoLoose(e) {
 
 
 
+// document.activeElement stops at the shadow host, so typing inside a Web
+// Component looked like "not typing" and the shortcuts fired mid-sentence
+// (audit #22). Runs on keydown only — nowhere near as hot as the wheel path.
 function shouldIgnoreKeyBecauseTyping() {
-  const el = document.activeElement;
-  if (!el) return false;
-  const tag = el.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+  let el = document.activeElement;
+  for (let depth = 0; el && depth <= SHADOW_MAX_DEPTH; depth++) {
+    const tag = el.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+    if (el.isContentEditable) return true;
+    if (el.getAttribute?.("role") === "textbox") return true;
+    const inner = el.shadowRoot?.activeElement;
+    if (!inner) return false;
+    el = inner;
+  }
+  return false;
 }
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "sync") return;
@@ -1891,6 +2272,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     loadOverlaySettings();
     loadBlockedHosts();
     loadSoundDisplaySettings();
+    loadGridAppearance();
     loadSubtitleSettings();
     loadYtAutoQualitySettings().then(() => triggerYtQuality());
     loadYtShortsRedirectSetting().then(() => maybeRedirectShorts());
@@ -1922,13 +2304,21 @@ window.addEventListener("keydown", (e) => {
   const hoveredVideo = getVideoFromPointerPosition();
   if (!hoveredVideo) return;
 
-  const sig = normalizeKeyEvent(e);
+  const sig = normalizeKeyCombo(e);
   if (!sig) return;
 
-  // 1. Per-site profile beats global; both are checked via lookupRemap.
-  const to = lookupRemap(sig);
-  if (to) {
-    const ok = to.startsWith("ACTION:") ? runAction(to, e) : false;
+  // 1. Zone binding is the most specific layer and wins outright — same rule the
+  //    mouse path follows via zoneClickBinding. This order used to be inverted:
+  //    a global rule silently shadowed a key bound to a square (audit #48).
+  const bind = zoneKeyBinding(hoveredVideo, sig);
+  if (bind) {
+    ensureVideoOverlay(hoveredVideo);
+    e.__videoUnderPointer = hoveredVideo;
+    showOverlay(`Zone ${zoneLabel(bind.zone)} • ${sig} → ${bind.actions.join(" + ")}`);
+
+    let ok = false;
+    for (const action of bind.actions) ok = runAction(action, e) || ok;
+    delete e.__videoUnderPointer;
     if (ok) {
       e.preventDefault();
       e.stopPropagation();
@@ -1936,27 +2326,14 @@ window.addEventListener("keydown", (e) => {
     return;
   }
 
-  // 2. Fall through to zone-based keyboard binding
-  if (!zonesActive()) return;
-  if (typeof lastPointer.x !== "number" || typeof lastPointer.y !== "number") return;
-  const rect = zoneRectForVideo(hoveredVideo);
-  const zone = getZoneNumber(rect, lastPointer.x, lastPointer.y);
-  if (!zone) return;
-
-  const zoneKeyMap = zoneSettings?.key?.map?.[String(zone)];
-  const actions = normalizeMappedActions(zoneKeyMap?.[sig]);
-  if (!actions.length) return;
-
-  ensureVideoOverlay(hoveredVideo);
-  e.__videoUnderPointer = hoveredVideo;
-  showOverlay(`Zone ${zoneLabel(zone)} • ${sig} → ${actions.join(" + ")}`);
-
-  let ok = false;
-  for (const action of actions) ok = runAction(action, e) || ok;
-  delete e.__videoUnderPointer;
-  if (ok) {
-    e.preventDefault();
-    e.stopPropagation();
+  // 2. Then the site profile, then the global rule — both via lookupRemap.
+  const to = lookupRemap(sig);
+  if (to) {
+    const ok = to.startsWith("ACTION:") ? runAction(to, e) : false;
+    if (ok) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   }
 }, true);
 
@@ -1964,6 +2341,11 @@ function handleMouse(e) {
   updatePointerFromEvent(e);
   if (isBlockedHost()) return;
   if (!remappingEnabled()) return;
+
+  // A zone binding owns this button here ⇒ the generic rule stays out entirely.
+  // Checked on mousedown too, which is the whole point: that is where this path
+  // used to fire the general action ahead of the zone one (audit #48).
+  if (zoneClickBinding(e)) return;
 
   const sig = normalizeMouseEvent(e); // Mouse1..Mouse5
   const to = lookupRemap(sig);
