@@ -1328,25 +1328,52 @@ window.addEventListener("wheel", (e) => {
   if (e.stopImmediatePropagation) e.stopImmediatePropagation();
 }, { capture: true, passive: false });
 
+// ---- Precedence: one source of truth for who owns a mouse button ----
+// The most specific layer wins: zone binding > site rule > global rule. A zone
+// is a spot the user aimed at deliberately, so a rule that covers the whole
+// screen has no business overriding it. And when the specific layer wins the
+// general one must not run AT ALL — not before it and not after.
+//
+// This has to be consultable from handleMouse too, because the generic path acts
+// on MOUSEDOWN while the zone path acts on click/auxclick: the general rule was
+// dispatched first by timing alone, so both ran on one press (audit #48).
+const ZONE_TRIGGER_BY_BUTTON = { 0: "left", 1: "middle", 2: "right" };
+
+function zoneClickBinding(e) {
+  const which = ZONE_TRIGGER_BY_BUTTON[e.button];
+  if (!which) return null;
+  if (!zonesActive()) return null;
+  const hit = getZoneAtEvent(e);
+  if (!hit) return null;
+  const actions = normalizeMappedActions(zoneSettings?.click?.map?.[String(hit.zone)]?.[which]);
+  return actions.length ? { video: hit.video, zone: hit.zone, which, actions } : null;
+}
+
+// Same precedence for the keyboard: the square under the pointer owns the key
+// before any site or global rule gets a look at it.
+function zoneKeyBinding(video, sig) {
+  if (!zonesActive()) return null;
+  if (typeof lastPointer.x !== "number" || typeof lastPointer.y !== "number") return null;
+  const zone = getZoneNumber(zoneRectForVideo(video), lastPointer.x, lastPointer.y);
+  if (!zone) return null;
+  const actions = normalizeMappedActions(zoneSettings?.key?.map?.[String(zone)]?.[sig]);
+  return actions.length ? { zone, actions } : null;
+}
+
 // Zone-based click handler (left/middle/right click on a zone of a video)
 function handleZoneClick(e) {
-  if (!zonesActive()) return false;
-  const triggerByBtn = { 0: "left", 1: "middle", 2: "right" };
-  const which = triggerByBtn[e.button];
+  const which = ZONE_TRIGGER_BY_BUTTON[e.button];
   if (!which) return false;
   // Left/middle fire on click/auxclick; right fires on contextmenu
   if (which === "right" && e.type !== "contextmenu") return false;
   if (which !== "right" && e.type !== "click" && e.type !== "auxclick") return false;
 
-  const hit = getZoneAtEvent(e);
-  if (!hit) return false;
+  const bind = zoneClickBinding(e);
+  if (!bind) return false;
+  const { actions } = bind;
 
-  const entry = zoneSettings?.click?.map?.[String(hit.zone)];
-  const actions = normalizeMappedActions(entry?.[which]);
-  if (!actions.length) return false;
-
-  e.__videoUnderPointer = hit.video;
-  showOverlay(`Zone ${zoneLabel(hit.zone)} • ${which.toUpperCase()} CLICK → ${actions.join(" + ")}`);
+  e.__videoUnderPointer = bind.video;
+  showOverlay(`Zone ${zoneLabel(bind.zone)} • ${which.toUpperCase()} CLICK → ${actions.join(" + ")}`);
 
   let ok = false;
   for (const action of actions) ok = runAction(action, e) || ok;
@@ -1368,11 +1395,7 @@ function handleZoneClick(e) {
 // has no middle binding, so the page keeps its own middle-click behaviour.
 function suppressMiddleClickDefault(e) {
   if (e.button !== 1) return false;
-  if (!zonesActive()) return false;
-  const hit = getZoneAtEvent(e);
-  if (!hit) return false;
-  const actions = normalizeMappedActions(zoneSettings?.click?.map?.[String(hit.zone)]?.middle);
-  if (!actions.length) return false;
+  if (!zoneClickBinding(e)) return false;
   e.preventDefault();
   return true;
 }
@@ -2222,10 +2245,18 @@ window.addEventListener("keydown", (e) => {
   const sig = normalizeKeyCombo(e);
   if (!sig) return;
 
-  // 1. Per-site profile beats global; both are checked via lookupRemap.
-  const to = lookupRemap(sig);
-  if (to) {
-    const ok = to.startsWith("ACTION:") ? runAction(to, e) : false;
+  // 1. Zone binding is the most specific layer and wins outright — same rule the
+  //    mouse path follows via zoneClickBinding. This order used to be inverted:
+  //    a global rule silently shadowed a key bound to a square (audit #48).
+  const bind = zoneKeyBinding(hoveredVideo, sig);
+  if (bind) {
+    ensureVideoOverlay(hoveredVideo);
+    e.__videoUnderPointer = hoveredVideo;
+    showOverlay(`Zone ${zoneLabel(bind.zone)} • ${sig} → ${bind.actions.join(" + ")}`);
+
+    let ok = false;
+    for (const action of bind.actions) ok = runAction(action, e) || ok;
+    delete e.__videoUnderPointer;
     if (ok) {
       e.preventDefault();
       e.stopPropagation();
@@ -2233,27 +2264,14 @@ window.addEventListener("keydown", (e) => {
     return;
   }
 
-  // 2. Fall through to zone-based keyboard binding
-  if (!zonesActive()) return;
-  if (typeof lastPointer.x !== "number" || typeof lastPointer.y !== "number") return;
-  const rect = zoneRectForVideo(hoveredVideo);
-  const zone = getZoneNumber(rect, lastPointer.x, lastPointer.y);
-  if (!zone) return;
-
-  const zoneKeyMap = zoneSettings?.key?.map?.[String(zone)];
-  const actions = normalizeMappedActions(zoneKeyMap?.[sig]);
-  if (!actions.length) return;
-
-  ensureVideoOverlay(hoveredVideo);
-  e.__videoUnderPointer = hoveredVideo;
-  showOverlay(`Zone ${zoneLabel(zone)} • ${sig} → ${actions.join(" + ")}`);
-
-  let ok = false;
-  for (const action of actions) ok = runAction(action, e) || ok;
-  delete e.__videoUnderPointer;
-  if (ok) {
-    e.preventDefault();
-    e.stopPropagation();
+  // 2. Then the site profile, then the global rule — both via lookupRemap.
+  const to = lookupRemap(sig);
+  if (to) {
+    const ok = to.startsWith("ACTION:") ? runAction(to, e) : false;
+    if (ok) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   }
 }, true);
 
@@ -2261,6 +2279,11 @@ function handleMouse(e) {
   updatePointerFromEvent(e);
   if (isBlockedHost()) return;
   if (!remappingEnabled()) return;
+
+  // A zone binding owns this button here ⇒ the generic rule stays out entirely.
+  // Checked on mousedown too, which is the whole point: that is where this path
+  // used to fire the general action ahead of the zone one (audit #48).
+  if (zoneClickBinding(e)) return;
 
   const sig = normalizeMouseEvent(e); // Mouse1..Mouse5
   const to = lookupRemap(sig);

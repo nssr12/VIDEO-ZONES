@@ -16,9 +16,9 @@ function slice(file, from, to) {
   return t.slice(a, b);
 }
 const SRC = "content.js";
-// One slice covers handleZoneClick + suppressMiddleClickDefault, so the two are
-// always tested against each other as the browser sees them.
-const CLICK = slice(SRC, "function handleZoneClick", 'window.addEventListener("click", handleZoneClick');
+// One slice covers the shared resolver + handleZoneClick + suppressMiddleClickDefault,
+// so all three are always tested against each other as the browser sees them.
+const CLICK = slice(SRC, "const ZONE_TRIGGER_BY_BUTTON", 'window.addEventListener("click", handleZoneClick');
 const NORMALIZE = slice(SRC, "function normalizeMappedActions", 'window.addEventListener("mousemove"');
 
 function makeWorld({ active = true, video = { tagName: "VIDEO" }, zone = 5, middle = ["ACTION:TOGGLE_PLAY"] } = {}) {
