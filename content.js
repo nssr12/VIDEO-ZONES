@@ -1962,33 +1962,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (!remappingEnabled()) hideOverlayNow();
     maybeRedirectShorts();
   }
-  if (msg?.type === "RELOAD_SITE_RULES") {
-    loadRulesForThisHost().then(() => maybeRedirectShorts());
-  }
-  if (msg?.type === "RELOAD_SITE_PROFILE") {
-    loadSiteProfile().then(() => {
-      if (!remappingEnabled()) hideOverlayNow();
-      maybeRedirectShorts();
-    });
-  }
-  // from Options page
-  if (msg?.type === "GVZ_RELOAD" || msg?.type === "RELOAD_ZONE_SETTINGS") {
-    loadZoneSettings();
-    loadBlockedHosts();
-    loadSoundDisplaySettings();
-    loadGridAppearance();
-  }
-  if (msg?.type === "RELOAD_OVERLAY_SETTINGS") loadOverlaySettings();
-  if (msg?.type === "RELOAD_SUBTITLES") loadSubtitleSettings();
-  if (msg?.type === "RELOAD_YT_QUALITY") {
-    loadYtAutoQualitySettings().then(() => triggerYtQuality());
-  }
-  if (msg?.type === "RELOAD_YT_SHORTS") {
-    loadYtShortsRedirectSetting().then(() => maybeRedirectShorts());
-  }
-  if (msg?.type === "RELOAD_CLEAN_PLAYER") {
-    loadCleanPlayerSettings();
-  }
+  // Every RELOAD_* now goes through the one applier — see requestReload (audit #14)
+  if (RELOAD_MESSAGE_TYPES.has(msg?.type)) requestReload();
   if (msg?.type === "SET_VOLUME_BOOST") {
     // Floor is 100: the booster only amplifies. Attenuation is ACTION:VOLUME's job.
     const pct = Math.max(100, Math.min(600, Number(msg.pct) || 100));
@@ -2085,6 +2060,56 @@ const startupRead = () => chrome.storage.sync.get({
   siteProfiles: {},
   [spKeyFor(baseDomain(location.host))]: null
 });
+
+// ---- ONE applier for both delivery channels (audit #14) ----
+// Every save fired an explicit RELOAD_* message AND storage.onChanged in every frame,
+// and both reloaded the same slices — each loader doing its own storage read, so the
+// whole load ran twice per frame per tab. Dropping a channel would put at risk the
+// instant apply this project treats as an acceptance condition, so instead BOTH feed
+// one applier:
+//   * requests in the same tick coalesce into a single pass,
+//   * the pass does ONE storage read for everything (as startup does),
+//   * and if what it reads is identical to what is already applied it does nothing —
+//     which is what makes the second channel free, whichever arrives first and even
+//     if the other never arrives at all.
+// Reloading every slice rather than the one named by the message is deliberate: the
+// read is already paid for, the loaders are pure transforms over it, and a per-slice
+// snapshot would be a correctness trap the moment two channels name different slices.
+const RELOAD_MESSAGE_TYPES = new Set([
+  "RELOAD_SITE_RULES", "RELOAD_SITE_PROFILE", "GVZ_RELOAD", "RELOAD_ZONE_SETTINGS",
+  "RELOAD_OVERLAY_SETTINGS", "RELOAD_SUBTITLES", "RELOAD_YT_QUALITY",
+  "RELOAD_YT_SHORTS", "RELOAD_CLEAN_PLAYER"
+]);
+let reloadScheduled = false;
+let lastAppliedSnapshot = null;
+
+function requestReload() {
+  // A frame that exited early (audit #13b) must NOT wake for a settings change. It
+  // reads the current values itself the moment a video appears, so it cannot miss
+  // one either — nothing here needs to remember the change on its behalf.
+  if (!startupBegun) return;
+  if (reloadScheduled) return;
+  reloadScheduled = true;
+  Promise.resolve().then(flushReload);
+}
+
+async function flushReload() {
+  reloadScheduled = false;
+  const data = await startupRead();
+  const snapshot = JSON.stringify(data);
+  if (snapshot === lastAppliedSnapshot) return; // the other channel already applied it
+  lastAppliedSnapshot = snapshot;
+
+  await Promise.all([
+    loadRulesForThisHost(data), loadSiteProfile(data), loadZoneSettings(data),
+    loadOverlaySettings(data), loadBlockedHosts(data), loadSoundDisplaySettings(data),
+    loadGridAppearance(data), loadSubtitleSettings(data), loadYtAutoQualitySettings(data),
+    loadYtShortsRedirectSetting(data), loadCleanPlayerSettings(data)
+  ]);
+  triggerYtQuality();
+  maybeRedirectShorts();
+  if (!remappingEnabled()) hideOverlayNow();
+}
 
 function runStartupSteps() {
   const read = startupRead();
@@ -2482,20 +2507,10 @@ function shouldIgnoreKeyBecauseTyping() {
 }
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "sync") return;
-  if (changes.settings) {
-    loadZoneSettings();
-    loadOverlaySettings();
-    loadBlockedHosts();
-    loadSoundDisplaySettings();
-    loadGridAppearance();
-    loadSubtitleSettings();
-    loadYtAutoQualitySettings().then(() => triggerYtQuality());
-    loadYtShortsRedirectSetting().then(() => maybeRedirectShorts());
-    loadCleanPlayerSettings();
-  }
-  if (changes.globalSiteRules) loadRulesForThisHost();
-  // Our own shard, or the legacy blob while it still exists
-  if (changes.siteProfiles || changes[spKeyFor(baseDomain(location.host))]) loadSiteProfile();
+  // Our own shard counts too, alongside the legacy blob while it still exists
+  const ours = changes.settings || changes.globalSiteRules || changes.siteProfiles ||
+               changes[spKeyFor(baseDomain(location.host))];
+  if (ours) requestReload();
 });
 /*chrome.tabs.query({active:true,currentWindow:true}, ([t])=>{
   chrome.tabs.sendMessage(t.id, {type:"RELOAD_OVERLAY_SETTINGS"});
