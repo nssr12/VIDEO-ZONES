@@ -191,10 +191,13 @@ const check = (name, cond, extra) => cond
 
   console.log("\n[5] كتلة البدء تستهلك قراءة واحدة فقط");
   {
-    const block = SRC.slice(SRC.indexOf("const startupRead"), SRC.indexOf('startup("boostReapply"'));
-    const gets = (block.match(/chrome\.storage\.sync\.get/g) || []).length;
-    check("استدعاء get واحد في كتلة البدء", gets === 1, gets);
-    const steps = (block.match(/startupRead\.then/g) || []).length;
+    // منذ #13ب انتقلت الكتلة داخل runStartupSteps، والقراءة تُنشأ عند البدء الفعلي
+    const block = SRC.slice(SRC.indexOf("function runStartupSteps"), SRC.indexOf('startup("boostReapply"'));
+    const calls = (block.match(/startupRead\(\)/g) || []).length;
+    check("استدعاء قراءة واحد في كتلة البدء", calls === 1, calls);
+    const gets = (SRC.match(/chrome\.storage\.sync\.get\(\{\s*\n\s*settings/g) || []).length;
+    check("وتعريف واحد للقراءة المشتركة", gets === 1, gets);
+    const steps = (block.match(/read\.then/g) || []).length;
     check(`وكل الخطوات القارئة تمرّ به (${steps} خطوة)`, steps >= 10, steps);
   }
 

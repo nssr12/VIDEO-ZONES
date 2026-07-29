@@ -44,6 +44,7 @@ function makeWorld({ zone = 5, zoneClick = null, zoneKey = null, site = null, gl
     zoneRectForVideo: () => ({ left: 0, top: 0, width: 640, height: 360 }),
     shouldLetNativeLinkHandlingRun: () => false,
     updatePointerFromEvent: () => {},
+    wakeIfVideoPresent: () => {}, // إطار نائم — لا شأن له بالأولوية (#13ب)
     ensureVideoOverlay: () => {},
     isBlockedHost: () => false,
     remappingEnabled: () => true,

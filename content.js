@@ -1473,6 +1473,7 @@ window.addEventListener("mousemove", updatePointerFromEvent, true);
 
 window.addEventListener("wheel", (e) => {
   updatePointerFromEvent(e);
+  wakeIfVideoPresent(); // إطار نائم قد يكون حصل على فيديو لا يُطلق أحداث وسائط
   if (!zonesActive()) return;
 
   const hit = getZoneAtEvent(e);
@@ -2027,34 +2028,91 @@ function startup(label, run) {
 // what its solo read would have returned. Failure is handled per step as before:
 // this promise rejecting makes every step reject, and startup() swallows the
 // expected "context invalidated" case for each.
-const startupRead = chrome.storage.sync.get({
+// content.js is injected into EVERY frame at document_start, and on a real page most
+// frames are ad / cookie-sync iframes that never hold a video: measured 121 of 122
+// contexts on aljazeera.net and 62 of 63 on cnn.com. Each of those used to do the
+// whole startup — a storage read, eight loaders, a stylesheet and a MutationObserver
+// — for a frame that has nothing to act on (audit #13b).
+//
+// Two frames must start eagerly no matter what, and both are already host-gated:
+//   * the Shorts redirect has to fire at document_start, BEFORE any video exists —
+//     waiting for one would defeat its whole purpose;
+//   * Clean Player CSS has to be in place before YouTube's player paints, or the
+//     chrome it hides flashes first.
+// Both are YouTube-family only, so exempting that host covers them exactly.
+function frameStartsEagerly() {
+  return isYouTubeFamilyHost();
+}
+
+let startupBegun = false;
+function beginStartup() {
+  if (startupBegun) return;
+  startupBegun = true;
+  runStartupSteps();
+}
+
+// Waking is EVENT-DRIVEN, never observed: a MutationObserver per frame would just
+// trade one cost for another. A <video> fires these as soon as it begins loading,
+// which covers lazy loading, a player injected after interaction, SPA navigation
+// inside the frame, and an ad slot replaced by real content. Capture phase because
+// media events do not bubble.
+const MEDIA_WAKE_EVENTS = ["loadedmetadata", "loadeddata", "canplay", "play", "durationchange"];
+
+function armLazyStartup() {
+  const wake = () => {
+    for (const ev of MEDIA_WAKE_EVENTS) document.removeEventListener(ev, wake, true);
+    beginStartup();
+  };
+  for (const ev of MEDIA_WAKE_EVENTS) document.addEventListener(ev, wake, true);
+  // Safety net for <video preload="none">, which fires nothing at all until it is
+  // touched: one querySelector at DOMContentLoaded, and the same cheap check from
+  // the deliberate input handlers we already have (see wakeIfVideoPresent).
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", wakeIfVideoPresent, { once: true });
+  }
+}
+
+// Called from the wheel / click / keydown paths. One querySelector on a deliberate
+// user action is nothing; it is never called once the frame has started.
+function wakeIfVideoPresent() {
+  if (startupBegun) return;
+  if (document.querySelector("video")) beginStartup();
+}
+
+const startupRead = () => chrome.storage.sync.get({
   settings: {},
   globalSiteRules: { enabled: false, mappings: [] },
   siteProfiles: {},
   [spKeyFor(baseDomain(location.host))]: null
 });
 
-// The Shorts redirect consults the enable flags, so its first check has to wait
-// for them: at document_start siteRules/siteProfile are still false and it would
-// skip a redirect the user has switched on (audit #20).
-const globalRulesReady = startup("globalRules", () => startupRead.then(loadRulesForThisHost));
-const siteProfileReady = startup("siteProfile", () => startupRead.then(loadSiteProfile));
-startup("zones", () => startupRead.then(loadZoneSettings)); // ✅ مهم: تشغيل zones بعد refresh مباشرة
-startup("overlay", () => startupRead.then(loadOverlaySettings));
-startup("blockedHosts", () => startupRead.then(loadBlockedHosts));
-startup("soundDisplay", () => startupRead.then(loadSoundDisplaySettings));
-startup("gridAppearance", () => startupRead.then(loadGridAppearance));
-startup("subtitles", () => startupRead.then(loadSubtitleSettings));
-startup("subtitleObserver", startSubtitleTrackObserver);
-startup("ytQuality", () => startupRead.then(loadYtAutoQualitySettings).then(() => {
-  startYtAutoQuality();
-  triggerYtQuality();
-}));
-startup("ytShorts", () => Promise.all([
-  startupRead.then(loadYtShortsRedirectSetting), globalRulesReady, siteProfileReady
-]).then(() => startYtShortsRedirect()));
-startup("cleanPlayer", () => startupRead.then(loadCleanPlayerSettings));
-startup("boostReapply", startBoostReapply);
+function runStartupSteps() {
+  const read = startupRead();
+  // The Shorts redirect consults the enable flags, so its first check has to wait
+  // for them: at document_start siteRules/siteProfile are still false and it would
+  // skip a redirect the user has switched on (audit #20).
+  const globalRulesReady = startup("globalRules", () => read.then(loadRulesForThisHost));
+  const siteProfileReady = startup("siteProfile", () => read.then(loadSiteProfile));
+  startup("zones", () => read.then(loadZoneSettings)); // ✅ مهم: تشغيل zones بعد refresh مباشرة
+  startup("overlay", () => read.then(loadOverlaySettings));
+  startup("blockedHosts", () => read.then(loadBlockedHosts));
+  startup("soundDisplay", () => read.then(loadSoundDisplaySettings));
+  startup("gridAppearance", () => read.then(loadGridAppearance));
+  startup("subtitles", () => read.then(loadSubtitleSettings));
+  startup("subtitleObserver", startSubtitleTrackObserver);
+  startup("ytQuality", () => read.then(loadYtAutoQualitySettings).then(() => {
+    startYtAutoQuality();
+    triggerYtQuality();
+  }));
+  startup("ytShorts", () => Promise.all([
+    read.then(loadYtShortsRedirectSetting), globalRulesReady, siteProfileReady
+  ]).then(() => startYtShortsRedirect()));
+  startup("cleanPlayer", () => read.then(loadCleanPlayerSettings));
+  startup("boostReapply", startBoostReapply);
+}
+
+if (frameStartsEagerly()) beginStartup();
+else armLazyStartup();
 
 // ⚠️ PAIRED COPY — duplicated verbatim in storage.js. Edit both together;
 // tools/test-migration.js fails if they drift apart.
@@ -2455,6 +2513,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // ✅ ArrowRight/Left: نمنع الافتراضي ونطبق 5 ثواني
 window.addEventListener("keydown", (e) => {
   updatePointerFromEvent(e);
+  wakeIfVideoPresent();
   if (isBlockedHost()) return;
   if (!remappingEnabled()) return;
   if (shouldIgnoreKeyBecauseTyping()) return;
@@ -2496,6 +2555,7 @@ window.addEventListener("keydown", (e) => {
 
 function handleMouse(e) {
   updatePointerFromEvent(e);
+  wakeIfVideoPresent();
   if (isBlockedHost()) return;
   if (!remappingEnabled()) return;
 
