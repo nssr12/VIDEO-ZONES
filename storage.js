@@ -96,6 +96,16 @@ function baseDomain(host) {
 }
 // ---- END baseDomain ----
 
+// One derivation of "is this host blocked", shared by every caller that has the host
+// and the list in hand. content.js keeps its own copy because a content script cannot
+// load this file — that pair is already guarded by tools/test-migration.js. What must
+// never exist is a THIRD derivation inside popup.js (audit #56, and the lesson of #5).
+function isHostBlocked(host, blockedHosts) {
+  if (!host || !Array.isArray(blockedHosts)) return false;
+  return blockedHosts.includes(baseDomain(host));
+}
+
+
 // ⚠️ PAIRED COPY — duplicated verbatim in content.js. Edit both together;
 // tools/test-migration.js fails if they drift apart.
 // ---- BEGIN normalizeKeyCombo ----
@@ -360,4 +370,105 @@ async function migrateSiteProfiles() {
     );
   }
   return { ok: true, migrated, orphans, conflicts };
+}
+
+
+// ── هجرة مخطط المربعات: wheel.map القديم ⇒ wheel.actions ─────────────────────
+// المخطط القديم كان يخزّن نصوص الأوامر الخام في zones.wheel.map، ومصدر الحقيقة
+// اليوم هو zones.wheel.actions. كان هذا التحويل يعيش داخل options.js وحدها، أي
+// أنه **لا يقع إلا لمن يفتح صفحة الإعدادات بيده** (البند #26). نُقل إلى هنا لا
+// لينتقل منطق إلى الـ service worker، بل ليصير للتحويل **نسخة واحدة** يستدعيها
+// background.js وصفحة الإعدادات معاً — فلا كتلة مقترنة ولا نسختان تتباعدان.
+//
+// makeId و normalizeActionArray و parseRuntimeAction انتقلت معه لأنها ما يتكوّن
+// منه التحويل وهي دوال خالصة بلا DOM. options.js لم تعد تعرّف أياً منها.
+function makeId() {
+  return `a_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeActionArray(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  return value ? [value] : [];
+}
+
+function parseRuntimeAction(action, key) {
+  if (!action) return null;
+
+  if (action === "ACTION:TOGGLE_PLAY") return { id: makeId(), type: "toggle_play", key };
+  if (action === "ACTION:TOGGLE_FULLSCREEN") return { id: makeId(), type: "toggle_fullscreen", key };
+  if (action === "ACTION:TOGGLE_MUTE") return { id: makeId(), type: "toggle_mute", key };
+  if (action === "ACTION:TOGGLE_PIP") return { id: makeId(), type: "toggle_pip", key };
+
+  if (action.startsWith("ACTION:SEEK:")) {
+    return { id: makeId(), type: "seek", unit: "second", value: action.split(":")[2], key };
+  }
+  if (action.startsWith("ACTION:VOLUME:")) {
+    return { id: makeId(), type: "volume", unit: "percent", value: action.split(":")[2], key };
+  }
+  if (action.startsWith("ACTION:SPEED:SET:")) {
+    return { id: makeId(), type: "speed_set", value: action.split(":")[3], key };
+  }
+  if (action.startsWith("ACTION:SPEED:")) {
+    return { id: makeId(), type: "speed", value: action.split(":")[2], key };
+  }
+
+  return null;
+}
+
+// يعدّل `settings` في مكانه ويُرجع true **فقط** حين حوّل شيئاً فعلاً، فيستطيع
+// المستدعي أن يتخطّى الكتابة كلياً: onInstalled يقع عند كل تحديث نسخة، ومن ليس
+// عنده بيانات قديمة يجب ألا يُكتب له شيء إطلاقاً.
+//
+// حارس `Array.isArray` هو ما يجعل التحويل idempotent وغير متصادم: المربع الذي
+// هاجر مرة يُتخطّى، ومن ذلك المربع الذي أفرغه المستخدم عمداً (البند #23).
+function migrateZoneActionsInto(settings) {
+  const wheel = settings?.zones?.wheel;
+  if (!wheel || typeof wheel !== "object") return false;
+
+  const legacyMap = wheel.map && typeof wheel.map === "object" ? wheel.map : {};
+  if (!wheel.actions || typeof wheel.actions !== "object") wheel.actions = {};
+  const actions = wheel.actions;
+
+  let changed = false;
+  for (let zone = 1; zone <= 9; zone++) {
+    const key = String(zone);
+    if (Array.isArray(actions[key])) continue;
+
+    const legacy = legacyMap[key] || {};
+    const built = [];
+
+    for (const action of normalizeActionArray(legacy.up)) {
+      const parsed = parseRuntimeAction(action, "up");
+      if (parsed) built.push(parsed);
+    }
+    for (const action of normalizeActionArray(legacy.down)) {
+      const parsed = parseRuntimeAction(action, "down");
+      if (parsed) built.push(parsed);
+    }
+
+    actions[key] = built;
+    changed = true;
+  }
+  return changed;
+}
+
+// نسخة التخزين من التحويل نفسه: تقرأ، تحوّل، ولا تكتب إلا إن تغيّر شيء.
+// التثبيت الجديد لا مفتاح `settings` عنده أصلاً ⇒ قراءة واحدة وصفر كتابة.
+async function migrateZoneActions() {
+  const { settings } = await chrome.storage.sync.get({ settings: null });
+  if (!settings || typeof settings !== "object") return { ok: true, migrated: 0 };
+  if (!migrateZoneActionsInto(settings)) return { ok: true, migrated: 0 };
+
+  const written = await safeSyncSet({ settings });
+  if (!written.ok) return { ok: false, reason: "write", message: written.message };
+  return { ok: true, migrated: 1 };
+}
+
+// مدخل الهجرة الوحيد. يستدعيه background.js عند التثبيت والتحديث فيهاجر من لم
+// يفتح صفحة الإعدادات قط (البند #26)، وتستدعيه صفحة الإعدادات أيضاً — وأيّهما
+// جاء ثانياً وجد العمل منتهياً فلم يكتب شيئاً.
+async function migrateAll() {
+  const profiles = await migrateSiteProfiles();
+  const zones = await migrateZoneActions();
+  return { ok: profiles.ok !== false && zones.ok !== false, profiles, zones };
 }

@@ -56,9 +56,9 @@ let editingActions = [];
 let editingActionIndex = null;
 let capturingActionId = null;
 
-function makeId() {
-  return `a_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
+// makeId() و normalizeActionArray() و parseRuntimeAction() تأتي من storage.js —
+// انتقلت إليها مع تحويل wheel.map ⇒ wheel.actions حين صار الـ service worker
+// يشغّل التحويل نفسه (البند #26). لا تُعِد تعريفها هنا.
 
 // Zone numbering 1..9 maps to a row/col grid label
 const ZONE_LABELS = ["A1", "A2", "A3", "B1", "B2", "B3", "C1", "C2", "C3"];
@@ -170,40 +170,14 @@ function keyBadgeLabel(key) {
   return `Key: ${key}`;
 }
 
-function parseRuntimeAction(action, key) {
-  if (!action) return null;
-
-  if (action === "ACTION:TOGGLE_PLAY") return { id: makeId(), type: "toggle_play", key };
-  if (action === "ACTION:TOGGLE_FULLSCREEN") return { id: makeId(), type: "toggle_fullscreen", key };
-  if (action === "ACTION:TOGGLE_MUTE") return { id: makeId(), type: "toggle_mute", key };
-  if (action === "ACTION:TOGGLE_PIP") return { id: makeId(), type: "toggle_pip", key };
-
-  if (action.startsWith("ACTION:SEEK:")) {
-    return { id: makeId(), type: "seek", unit: "second", value: action.split(":")[2], key };
-  }
-  if (action.startsWith("ACTION:VOLUME:")) {
-    return { id: makeId(), type: "volume", unit: "percent", value: action.split(":")[2], key };
-  }
-  if (action.startsWith("ACTION:SPEED:SET:")) {
-    return { id: makeId(), type: "speed_set", value: action.split(":")[3], key };
-  }
-  if (action.startsWith("ACTION:SPEED:")) {
-    return { id: makeId(), type: "speed", value: action.split(":")[2], key };
-  }
-
-  return null;
-}
-
-function normalizeActionArray(value) {
-  if (Array.isArray(value)) return value.filter(Boolean);
-  return value ? [value] : [];
-}
-
 // True only when getSettings() found no `zones` key at all, i.e. a fresh install.
 // Seeding must key off THIS and never off "actions are empty" — a user who
 // deleted every binding on purpose had them restored on each visit (audit #23).
 let zonesWereMissing = false;
 
+// تشكيل في الذاكرة لمحرّر الإعدادات، ثم **التحويل المشترك** من storage.js.
+// التحويل نفسه لا يعيش هنا: يشغّله background.js عند التثبيت والتحديث كذلك،
+// ونسخة واحدة منه هي ما يضمن أن المسارين يعطيان النتيجة نفسها (البند #26).
 function ensureZoneActions(settings) {
   zonesWereMissing = !settings.zones;
   settings.zones ||= { enabled: true, fullscreenOnly: false, wheel: { map: {}, actions: {} } };
@@ -214,25 +188,7 @@ function ensureZoneActions(settings) {
   settings.zones.wheel.map ||= {};
   settings.zones.wheel.actions ||= {};
 
-  for (let zone = 1; zone <= 9; zone++) {
-    const key = String(zone);
-    if (Array.isArray(settings.zones.wheel.actions[key])) continue;
-
-    const legacy = settings.zones.wheel.map[key] || {};
-    const actions = [];
-
-    for (const action of normalizeActionArray(legacy.up)) {
-      const parsed = parseRuntimeAction(action, "up");
-      if (parsed) actions.push(parsed);
-    }
-    for (const action of normalizeActionArray(legacy.down)) {
-      const parsed = parseRuntimeAction(action, "down");
-      if (parsed) actions.push(parsed);
-    }
-
-    settings.zones.wheel.actions[key] = actions;
-  }
-
+  migrateZoneActionsInto(settings);
   return settings;
 }
 
@@ -317,6 +273,8 @@ async function getSettings() {
   if (typeof s.bgOpacity !== "number") s.bgOpacity = 0.6;
   if (typeof s.fontFamily !== "string") s.fontFamily = "system-ui, -apple-system, sans-serif";
   if (typeof s.position !== "string") s.position = "bottom";
+  // مفعَّل افتراضياً: الغياب يعني "أخفِ" لا "أظهر" (#51)
+  if (typeof s.hideOnPreviews !== "boolean") s.hideOnPreviews = true;
   ensureZoneActions(settings);
   return settings;
 }
@@ -571,6 +529,7 @@ function syncCleanPlayerCaptionNote() {
 function renderSubtitles(sub) {
   if (!sub) return;
   $("subEnabled").checked = !!sub.enabled;
+  $("subHidePreviews").checked = sub.hideOnPreviews !== false;
   $("subLang").value = sub.defaultLang || "";
   syncCleanPlayerCaptionNote();
   $("subFontSize").value = String(sub.fontSize);
@@ -832,9 +791,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   fillActionTypeSelect();
   showSection("zonesSection");
 
-  // Idempotent, and a no-op read once the legacy key is gone. Runs from both
-  // entry points so it happens whichever the user opens first.
-  await migrateSiteProfiles().catch(() => {});
+  // Idempotent, and a no-op read once there is nothing legacy left. Runs from
+  // here AND from background.js on install/update (audit #26) — whichever gets
+  // there second finds the work done and writes nothing.
+  await migrateAll().catch(() => {});
   renderConflictNotice().catch(() => {});
   $("conflictDiscard")?.addEventListener("click", discardLegacySiteProfiles);
 
@@ -1025,6 +985,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const s = await getSettings();
     s.subtitles = {
       enabled: $("subEnabled").checked,
+      hideOnPreviews: $("subHidePreviews").checked,
       defaultLang: $("subLang").value.trim().toLowerCase(),
       fontSize: Number($("subFontSize").value),
       color: $("subColor").value,
@@ -1054,6 +1015,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
   $("subEnabled").addEventListener("change", persistSubtitles);
+  // ليس ضمن قائمة التفعيل التلقائي أعلاه: هذا إخفاء للترجمة لا إعداد تنسيق،
+  // فلا معنى لأن يُشغّل تنسيق الترجمة المخصص من تلقائه
+  $("subHidePreviews").addEventListener("change", persistSubtitles);
 
   $("ytQuality").addEventListener("change", async () => {
     const s = await getSettings();

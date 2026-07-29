@@ -39,18 +39,19 @@ function makeStore(initial) {
 }
 
 const CONTENT = slice("content.js", "const FIRST_RUN_ZONES", "async function loadBlockedHosts");
-// Wide enough to carry parseRuntimeAction + normalizeActionArray, which
-// ensureZoneActions calls when migrating a legacy wheel.map.
-const OPTIONS = slice("options.js", "function parseRuntimeAction", "function rebuildWheelMap");
+// التحويل نفسه انتقل إلى storage.js ليشاركه background.js (البند #26):
+// makeId + normalizeActionArray + parseRuntimeAction + migrateZoneActionsInto.
+const STORAGE = slice("storage.js", "function makeId", "// نسخة التخزين من التحويل");
+// وبقي في options.js التشكيل في الذاكرة وحده.
+const OPTIONS = slice("options.js", "let zonesWereMissing", "function rebuildWheelMap");
 
 function load(store) {
   const ctx = {
     chrome: { storage: { sync: store.api } },
-    structuredClone, console,
-    makeId: () => "id_test"   // options.js defines it far above the slice
+    structuredClone, console
   };
   vm.createContext(ctx);
-  vm.runInContext(CONTENT + "\n" + OPTIONS, ctx);
+  vm.runInContext(CONTENT + "\n" + STORAGE + "\n" + OPTIONS, ctx);
   return ctx;
 }
 

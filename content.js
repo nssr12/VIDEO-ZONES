@@ -406,10 +406,10 @@ function remappingEnabled() {
 // Once migration removes the legacy key this read carries the shard alone.
 function spKeyFor(host) { return `sp:${host}`; }
 
-async function loadSiteProfile() {
+async function loadSiteProfile(pre) {
   const host = baseDomain(location.host);
   const key = spKeyFor(host);
-  const data = await chrome.storage.sync.get([key, "siteProfiles"]);
+  const data = pre || await chrome.storage.sync.get([key, "siteProfiles"]);
   const profile = data[key] || data.siteProfiles?.[host];
   siteProfile = {
     enabled: !!profile?.enabled,
@@ -441,17 +441,29 @@ const FIRST_RUN_ZONES = {
 // A missing `zones` key means a genuinely fresh install, so we hand back
 // FIRST_RUN_ZONES without persisting it. An existing-but-empty `zones` means the
 // user emptied it on purpose and is returned untouched.
-async function ensureZonesDefaults() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+// Audit #13: content.js runs at document_start in EVERY frame, and eleven separate
+// storage reads per frame meant a page with 30 ad iframes paid 330 of them. Startup
+// now does ONE read and hands the result to every loader. Each loader still reads on
+// its own when something else calls it — a RELOAD_* message or storage.onChanged —
+// so passing nothing keeps the old behaviour exactly.
+function settingsRead(pre) {
+  return pre || chrome.storage.sync.get({ settings: {} });
+}
+
+async function ensureZonesDefaults(pre) {
+  const data = await settingsRead(pre);
   const zones = (data.settings || {}).zones;
   if (!zones) return structuredClone(FIRST_RUN_ZONES);
   return zones;
 }
 
-async function loadBlockedHosts() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadBlockedHosts(pre) {
+  const data = await settingsRead(pre);
   const settings = data.settings || {};
   blockedHosts = Array.isArray(settings.blockedHosts) ? settings.blockedHosts : [];
+  // Blocking a site must also drop the track observer, and unblocking must bring it
+  // back — the two loaders resolve independently, so each converges the state (#21).
+  syncSubtitleTrackObserver();
 }
 
 function hexToRgb(hex) {
@@ -461,12 +473,13 @@ function hexToRgb(hex) {
   return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
 }
 
-async function loadSubtitleSettings() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadSubtitleSettings(pre) {
+  const data = await settingsRead(pre);
   const s = data.settings || {};
   const sub = s.subtitles || {};
   subtitleSettings = {
     enabled: !!sub.enabled,
+    hideOnPreviews: sub.hideOnPreviews !== false, // مفعَّل افتراضياً (#51)
     defaultLang: String(sub.defaultLang || "").toLowerCase(),
     fontSize: Number(sub.fontSize || 22),
     color: sub.color || "#ffffff",
@@ -480,6 +493,39 @@ async function loadSubtitleSettings() {
   // Turning the automation on or off flips the two button exemptions, so the
   // Clean Player CSS has to be rebuilt here — no page reload (audit #18).
   applyCleanPlayerCSS();
+  // ...and creates or disconnects the track observer, likewise with no reload (#21)
+  syncSubtitleTrackObserver();
+}
+
+// Caption size used to be absolute px, so the same number that reads well on a
+// 1280px watch player buried a 300px player in text. YouTube's homepage hover
+// preview uses the SAME #movie_player / .html5-video-player element as the watch
+// page — verified in Chrome, no class or id tells them apart — so SIZE is the only
+// reliable discriminator, and that means measuring the player.
+//
+// Same technique as the zone numbers: container query units with clamp. The user's
+// setting stays one number and is reinterpreted as "the size at a reference-width
+// player", so nothing in the UI changes and no stored value migrates.
+// YouTube's homepage/search hover preview. Verified live in Chrome: the element is
+// div#inline-preview-player and it ALSO carries .html5-video-player, so the known
+// wrapper list already covers it — named here explicitly so a future YouTube change
+// that drops the class cannot silently take the query container away with it.
+const YT_PREVIEW_PLAYER_SELECTOR = "#inline-preview-player";
+const CAPTION_REFERENCE_PLAYER_W = 1280;
+// YouTube's OWN caption padding, measured live on a watch page with no extension
+// present, at five player sizes: padding is `0 .25em` on .ytp-caption-segment and
+// the ratio to font-size is 0.25 horizontally and 0 vertically at every size — it
+// is em in YouTube's stylesheet, so constant by construction. We adopt those exact
+// numbers rather than inventing our own: YouTube's box is the reference that looks
+// balanced at every size (audit #53).
+const CAPTION_PAD_Y = 0;
+const CAPTION_PAD_X = 0.25; // typical default YouTube watch player
+function relativeCaptionFont(fontSize) {
+  const px = Math.max(1, Number(fontSize) || 22);
+  const perCqw = (px * 100 / CAPTION_REFERENCE_PLAYER_W).toFixed(3);
+  // Floor keeps a tiny preview legible instead of invisible; ceiling stops a
+  // 4K fullscreen player from rendering absurd text.
+  return `clamp(${Math.max(9, px * 0.45).toFixed(1)}px, ${perCqw}cqw, ${(px * 2).toFixed(1)}px)`;
 }
 
 function applySubtitleStyles() {
@@ -491,25 +537,57 @@ function applySubtitleStyles() {
     subtitleStyleEl.remove();
     subtitleStyleEl = null;
   }
-  if (isBlockedHost() || !subtitleSettings.enabled) return;
+  if (isBlockedHost()) return;
+
+  // Hiding captions on hover previews is its OWN setting: someone who turned the
+  // custom styling off still gets it, so it is built before the styling block and
+  // the early return below only skips the styling (audit #51).
+  const previewCss = subtitleSettings.hideOnPreviews ? `
+    /* Homepage / search hover previews only. #inline-preview-player is the preview
+       player itself (verified live in Chrome) and ytd-video-preview is its wrapper;
+       neither exists on the watch page, in theater mode or in fullscreen, so this
+       cannot reach any of them. Hides YouTube's own caption container, not just our
+       styling — the point is not to see captions there at all. */
+    html #inline-preview-player .ytp-caption-window-container,
+    html #inline-preview-player .caption-window,
+    html ytd-video-preview .ytp-caption-window-container,
+    html ytd-video-preview .caption-window {
+      display:none !important;
+    }
+  ` : "";
+
+  if (!subtitleSettings.enabled) {
+    if (previewCss) injectSubtitleCss(previewCss);
+    return;
+  }
 
   const { fontSize, color, bgColor, bgOpacity, fontFamily, position } = subtitleSettings;
   const bgRgba = `rgba(${hexToRgb(bgColor)},${Math.max(0, Math.min(1, bgOpacity))})`;
+  const relFont = relativeCaptionFont(fontSize);
   const posCss =
     position === "top" ? "top:8%;bottom:auto;" :
     position === "middle" ? "top:50%;bottom:auto;transform:translateY(-50%);" :
     "bottom:8%;top:auto;";
 
   const css = `
+    /* The query container the sizes above are measured against. inline-size only —
+       the weakest containment that still exposes cqw — and scoped to known player
+       wrappers so no page-level element is ever contained. */
+    html :is(${KNOWN_PLAYER_WRAPPER_SELECTOR}, ${YT_PREVIEW_PLAYER_SELECTOR}) {
+      container-type: inline-size !important;
+    }
+
     /* Native HTML5 cues (works on most generic <video><track> setups) */
     html video::cue {
+      /* Native cues are rendered by the browser inside the <video> box, out of
+         reach of any container we could establish, so this one stays absolute. */
       font-size:${fontSize}px !important;
       color:${color} !important;
       background-color:${bgRgba} !important;
       background:${bgRgba} !important;
       font-family:${fontFamily} !important;
       line-height:1.35 !important;
-      padding:2px 6px !important;
+      padding:${CAPTION_PAD_Y}em ${CAPTION_PAD_X}em !important;
       text-shadow:none !important;
     }
 
@@ -519,16 +597,53 @@ function applySubtitleStyles() {
     html .ytp-caption-window-container .ytp-caption-segment,
     html .ytp-caption-window-container span,
     html .caption-visual-line *,
-    html .captions-text * {
+    html .captions-text *,
+    html .caption-window {
       font-size:${fontSize}px !important;
       color:${color} !important;
+      font-family:${fontFamily} !important;
+      text-shadow:none !important;
+      fill:${color} !important;
+    }
+
+    /* THE BOX — exactly ONE carrier: the caption window as a whole.
+       Measured live: YouTube paints its box on .ytp-caption-segment and NOTHING
+       else in the chain carries a background. We were painting on THREE nested
+       spans at once (.captions-text, .caption-visual-line, .ytp-caption-segment),
+       so a 0.6 alpha stacked to 0.936, the horizontal padding tripled to ~24px a
+       side, and every line became its own box of a different width — a ragged,
+       unbalanced block instead of one tidy one (audit #53). The owner's call: one
+       box around the whole window, in YouTube's own proportions. */
+    html .caption-window {
       background-color:${bgRgba} !important;
       background:${bgRgba} !important;
       background-image:none !important;
-      font-family:${fontFamily} !important;
-      padding:2px 8px !important;
-      text-shadow:none !important;
-      fill:${color} !important;
+      padding:${CAPTION_PAD_Y}em ${CAPTION_PAD_X}em !important;
+    }
+    /* Nothing inside the window may paint a box — including YouTube's own inline
+       background on the segment, which is why transparent is stated explicitly. */
+    html .ytp-caption-window-container span,
+    html .caption-visual-line *,
+    html .captions-text *,
+    html .ytp-caption-segment {
+      background-color:transparent !important;
+      background:transparent !important;
+      background-image:none !important;
+      padding:0 !important;
+    }
+    html .ytp-caption-window-container {
+      /* YouTube has TWO colour settings: "background colour" (the text box) and
+         "window colour" (the block behind the whole caption window). We only ever
+         styled the first, so a user with a window colour set saw OUR box inside
+         THEIR window — a wide slab in a colour this extension never chose, which
+         survived disabling the extension and read as our bug (audit #52). While
+         custom styling is on we own the look, so the window goes fully transparent
+         and the background setting below is the only visible background. Nothing is
+         persisted: switching custom styling off drops this sheet and YouTube's own
+         window colour comes straight back. */
+      background-color:transparent !important;
+      background:transparent !important;
+      background-image:none !important;
     }
     html .ytp-caption-window-container,
     html .caption-window {
@@ -549,14 +664,43 @@ function applySubtitleStyles() {
     html .player-timedtext .player-timedtext-text-container * {
       font-size:${fontSize}px !important;
       color:${color} !important;
-      background-color:${bgRgba} !important;
-      background:${bgRgba} !important;
       font-family:${fontFamily} !important;
       text-shadow:none !important;
+    }
+    /* one carrier here too — descendants inherit no box, so alpha cannot stack */
+    html .player-timedtext-text-container {
+      background-color:${bgRgba} !important;
+      background:${bgRgba} !important;
+      padding:${CAPTION_PAD_Y}em ${CAPTION_PAD_X}em !important;
     }
     html .player-timedtext {
       ${posCss}
       z-index:60 !important;
+    }
+
+    /* STRUCTURAL GUARD (audit #50). Everything above is the absolute fallback the
+       user already knows. The relative size lives inside @container, and a
+       container query CANNOT match when no ancestor query container exists — so a
+       future YouTube rename that stops the container from being established makes
+       captions fall back to the old fixed size instead of resolving cqw against the
+       viewport, which measured 32.7px on a 1900px window: BIGGER than the fallback
+       and silently wrong. Measured with the guard: no container -> ${fontSize}px. */
+    @container (min-width: 0px) {
+      html .ytp-caption-segment,
+      html .captions-text .ytp-caption-segment,
+      html .ytp-caption-window-container .ytp-caption-segment,
+      html .ytp-caption-window-container span,
+      html .caption-visual-line *,
+      html .captions-text *,
+      html .caption-window,
+      html .player-timedtext-text-container,
+      html .player-timedtext-text-container span,
+      html .player-timedtext .player-timedtext-text-container *,
+      html .jw-text-track-cue,
+      html .jw-text-track-display,
+      html .jw-text-track-display * {
+        font-size:${relFont} !important;
+      }
     }
 
     /* JW Player / generic */
@@ -565,12 +709,19 @@ function applySubtitleStyles() {
     html .jw-text-track-display * {
       font-size:${fontSize}px !important;
       color:${color} !important;
+      font-family:${fontFamily} !important;
+    }
+    html .jw-text-track-cue {
       background-color:${bgRgba} !important;
       background:${bgRgba} !important;
-      font-family:${fontFamily} !important;
+      padding:${CAPTION_PAD_Y}em ${CAPTION_PAD_X}em !important;
     }
   `;
 
+  injectSubtitleCss(previewCss + css);
+}
+
+function injectSubtitleCss(css) {
   subtitleStyleEl = document.createElement("style");
   subtitleStyleEl.id = "vz_subtitles_css";
   subtitleStyleEl.textContent = css;
@@ -765,10 +916,33 @@ function enableMatchingTextTrack(video, lang) {
   return foundMatch;
 }
 
-function startSubtitleTrackObserver() {
-  if (subtitleTrackObserver) return;
+// True exactly when the observer has any work to do. Kept in one place so the
+// create path and the disconnect path can never drift apart.
+function subtitleTrackWatchWanted() {
+  return !!(subtitleSettings.enabled && subtitleSettings.defaultLang) && !isBlockedHost();
+}
+
+// Audit #21: the observer used to be created unconditionally with the guard INSIDE
+// the callback, so the browser collected and delivered mutations even to someone who
+// had turned subtitles off entirely, and it was never disconnected. Now it exists
+// only while it is wanted, and loadSubtitleSettings calls this on every change so
+// both directions apply with no reload.
+//
+// SCOPE: body, not documentElement. It cannot be narrowed to a caption container or
+// a player wrapper, because what it hunts for is a newly added <video> — which
+// appears BEFORE either of those exists. body is the real available win: measured
+// over 20s, <head> churn alone accounted for 32 of 227 callbacks on a YouTube watch
+// page and 48 of 104 on aljazeera.net.
+function syncSubtitleTrackObserver() {
+  const wanted = subtitleTrackWatchWanted();
+  if (wanted === !!subtitleTrackObserver) return; // already in the right state
+
+  if (!wanted) {
+    subtitleTrackObserver.disconnect();
+    subtitleTrackObserver = null;
+    return;
+  }
   subtitleTrackObserver = new MutationObserver((mutations) => {
-    if (!subtitleSettings.enabled || !subtitleSettings.defaultLang) return;
     for (const m of mutations) {
       for (const node of m.addedNodes) {
         if (node?.nodeType !== 1) continue;
@@ -782,7 +956,16 @@ function startSubtitleTrackObserver() {
       }
     }
   });
-  subtitleTrackObserver.observe(document.documentElement, { childList: true, subtree: true });
+  // body is null only if this runs before the parser reached it; documentElement is
+  // the fallback so the watch is never silently skipped.
+  subtitleTrackObserver.observe(document.body || document.documentElement,
+    { childList: true, subtree: true });
+}
+
+// Registered ONCE from startup. The two document listeners below are cheap and
+// guard themselves, so they stay put; only the observer comes and goes.
+function startSubtitleTrackObserver() {
+  syncSubtitleTrackObserver();
 
   // SPA navigation on YouTube: each new video is a new attempt
   document.addEventListener("yt-navigate-finish", () => {
@@ -929,14 +1112,14 @@ function syncZoneNumbers(root) {
   });
 }
 
-async function loadGridAppearance() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadGridAppearance(pre) {
+  const data = await settingsRead(pre);
   gridAppearance = resolveGridAppearance((data.settings || {}).gridAppearance);
   applyGridVars(vzOverlay);
 }
 
-async function loadSoundDisplaySettings() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadSoundDisplaySettings(pre) {
+  const data = await settingsRead(pre);
   const settings = data.settings || {};
   const sound = settings.soundDisplay || soundDisplaySettings;
   soundDisplaySettings = {
@@ -954,32 +1137,71 @@ async function loadSoundDisplaySettings() {
   }
 }
 
-async function loadYtAutoQualitySettings() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadYtAutoQualitySettings(pre) {
+  const data = await settingsRead(pre);
   ytAutoQuality = (data.settings || {}).ytAutoQuality || "";
 }
 
 // yt_quality_main.js runs in the page's main world (declared in manifest.json).
 // We communicate with it via CustomEvent — content scripts cannot call YouTube's player API directly.
+// De-duplication key, same idea as ytCaptionAttemptKey: one attempt per video per
+// requested quality. Without it every loadedmetadata — and a watch page fires several,
+// one per ad and one per content video — re-triggered the whole poll (audit #19).
+let ytQualityAttemptKey = null;
+let lastYtQualityResult = null;
+
+// Reported to the popup ONLY when there is a real gap between what was asked for
+// and what the video could give. Success stays silent on purpose: a line that shows
+// every time is a line the user learns to ignore — the lesson from the permanent blue
+// notice in S1. Returns null on auto quality, during an ad, and off YouTube, because
+// none of those is a failure to tell anyone about.
+function ytQualityGap() {
+  if (!isYouTubeHost() || !ytAutoQuality) return null;
+  const r = lastYtQualityResult;
+  if (!r || typeof r.result !== "string" || !r.result.startsWith("fallback:")) return null;
+  return { requested: r.requested, applied: r.result.slice("fallback:".length) };
+}
+
 function triggerYtQuality() {
   if (!isYouTubeHost() || !ytAutoQuality) return;
+  const key = `${location.pathname}${location.search}|${ytAutoQuality}`;
+  if (key === ytQualityAttemptKey) return; // same video, same quality: already tried
+  ytQualityAttemptKey = key;
   window.dispatchEvent(new CustomEvent("__vz_setq__", { detail: { q: ytAutoQuality } }));
 }
 
 function startYtAutoQuality() {
   if (!isYouTubeHost()) return;
+  // Leaving the video cancels a poll still running for it. Without this the old
+  // poll survives the navigation and sets the previous video's quality on the new
+  // one — the MAIN world listens for yt-navigate-start too, this is the belt.
+  document.addEventListener("yt-navigate-start", () => {
+    ytQualityAttemptKey = null;
+    window.dispatchEvent(new CustomEvent("__vz_cancelq__"));
+  }, true);
   document.addEventListener("yt-navigate-finish", () => {
+    ytQualityAttemptKey = null;
     setTimeout(() => triggerYtQuality(), 800);
   }, true);
   document.addEventListener("loadedmetadata", (e) => {
     if (e.target?.tagName !== "VIDEO") return;
     triggerYtQuality();
   }, true);
+  // The MAIN world reports what actually happened. Today this only records it —
+  // a requested quality that the video does not offer still fails silently to the
+  // user, and surfacing that is a separate decision, not part of this item.
+  window.addEventListener("__vz_setq_done__", (e) => {
+    lastYtQualityResult = e.detail || null;
+    const r = lastYtQualityResult?.result;
+    if (r && r !== "set" && r !== "cancelled" && r !== "ad") {
+      console.debug(`[VIDEO-ZONES] جودة يوتيوب «${lastYtQualityResult.requested}»: ${r}`);
+    }
+  });
 }
 
 // -------- Shorts → المشغّل العادي --------
-async function loadYtShortsRedirectSetting() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadYtShortsRedirectSetting(pre) {
+  const data = await settingsRead(pre);
   const s = data.settings || {};
   // Refresh blockedHosts from the same read so the first redirect check
   // can't run before loadBlockedHosts() resolves
@@ -1075,8 +1297,8 @@ function isYouTubeFamilyHost() {
   return /(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname);
 }
 
-async function loadCleanPlayerSettings() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadCleanPlayerSettings(pre) {
+  const data = await settingsRead(pre);
   const s = data.settings || {};
   // Same-read refresh of blockedHosts (see loadYtShortsRedirectSetting)
   if (Array.isArray(s.blockedHosts)) blockedHosts = s.blockedHosts;
@@ -1133,8 +1355,8 @@ let zoneSettings = { enabled: true, wheel: { map: {} } };
 
 
 
-async function loadZoneSettings() {
-  const zones = await ensureZonesDefaults(); //  يضمن وجود الإعدادات حتى بدون فتح options
+async function loadZoneSettings(pre) {
+  const zones = await ensureZonesDefaults(pre); //  يضمن وجود الإعدادات حتى بدون فتح options
   zoneSettings = zones || zoneSettings;
 
   zoneSettings.enabled = zoneSettings.enabled !== false; // default true
@@ -1327,6 +1549,7 @@ window.addEventListener("mousemove", updatePointerFromEvent, true);
 
 window.addEventListener("wheel", (e) => {
   updatePointerFromEvent(e);
+  wakeIfVideoPresent(); // إطار نائم قد يكون حصل على فيديو لا يُطلق أحداث وسائط
   if (!zonesActive()) return;
 
   const hit = getZoneAtEvent(e);
@@ -1430,8 +1653,8 @@ window.addEventListener("mousedown", suppressMiddleClickDefault, true);
 // -------------------------------------------------------------------------
 let overlaySettings = { enabled: true, autoHideMs: 900, volumeAutoHideMs: 900 };
 
-async function loadOverlaySettings() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadOverlaySettings(pre) {
+  const data = await settingsRead(pre);
   const s = data.settings || {};
   const o = s.overlay || {};
   const grid = Number(o.autoHideMs ?? 900);
@@ -1494,6 +1717,15 @@ const OVERLAY_CSS = `
       opacity:.98;
     }
     .vzHidden{ display:none !important; }
+    /* البند #47 — لا تنطبق إلا حين تُضاف السمة، أي في حالة واحدة: عنصر ملء
+       الشاشة هو <video> نفسه. أنماط المتصفح الافتراضية لـ [popover] تفرض
+       inset:0 و margin:auto وإطاراً وحشواً وخلفية — تُصفَّر كلها هنا فيبقى
+       شكل الـ overlay كما هو بالضبط. left/top/width/height سطرية فتغلب. */
+    .vzWrap[popover]{
+      inset:auto; margin:0; border:0; padding:0;
+      background:transparent; color:inherit; overflow:visible;
+    }
+    .vzWrap::backdrop{ background:transparent; pointer-events:none; }
   `;
 
 function injectOverlayCSS() {
@@ -1526,24 +1758,78 @@ function buildOverlayElement() {
   return el;
 }
 
+// مصدر واحد لـ«ما هو عنصر ملء الشاشة بالنسبة لهذا الفيديو».
+// داخل جذر ظل تُقرأ من الجذر لا من المستند: `document.fullscreenElement`
+// **يُعاد استهدافه** إلى مضيف الظل، وهو عنصر لا يُرسم له صندوق بلا `<slot>`
+// (البند #46). الجذر وحده يسمّي العنصر الحقيقي.
+function fullscreenElementFor(video) {
+  const root = video?.getRootNode?.();
+  return (root?.host ? root.fullscreenElement : document.fullscreenElement) || null;
+}
+
 function preferredOverlayHost(video) {
+  const root = video?.getRootNode?.();
+  // A fullscreen <video> is a replaced element: children are fallback content and
+  // never render, so it can never host the overlay. In that one case we leave the
+  // overlay in its normal home and setOverlayTopLayer raises it instead (#47).
+  const fs = fullscreenElementFor(video);
+  const container = fs && fs !== video ? fs : null;
+
   // A video behind a shadow boundary gets its overlay inside that same root: it
   // is the only tree that still paints when something in there goes fullscreen.
-  // document.fullscreenElement is no help — it is RETARGETED to the shadow host,
-  // an element that renders nothing without a <slot>, so an overlay appended to
-  // it gets no layout box at all. Only the root itself names the real element.
-  const root = video?.getRootNode?.();
-  if (root?.host) {
-    const fs = root.fullscreenElement;
-    // A fullscreen <video> is a replaced element: children are fallback content
-    // and never render. Nothing paints anywhere in that state — see audit #47.
-    return fs && fs !== video ? fs : root;
-  }
+  if (root?.host) return container || root;
 
   // Inside fullscreen, the fullscreen element is the only thing the browser paints.
   // Outside, body is fine since we use position:fixed (viewport coords).
-  if (document.fullscreenElement) return document.fullscreenElement;
-  return document.body || document.documentElement;
+  return container || document.body || document.documentElement;
+}
+
+// ── البند #47: التحصين للطبقة العليا ─────────────────────────────────────────
+// حين يكون عنصر ملء الشاشة هو `<video>` نفسه لا يُرسم الـ overlay في أي مكان:
+// الطبقة العليا وحدها تُرسم، و`<video>` عنصر مُستبدَل فأبناؤه محتوى بديل لا
+// يُعرض. `popover` يرفع العنصر إلى الطبقة العليا نفسها فيُرسم فوق الفيديو.
+//
+// **manual لا auto عمداً**: الـ auto يُغلق بـ Esc وبالنقر خارجه، ويطرد أي
+// popover آخر مفتوح على الصفحة. الـ manual لا يفعل شيئاً من ذلك، ولا يأخذ
+// التركيز لأن الـ overlay بلا `autofocus` وبلا عنصر قابل للتركيز أصلاً.
+//
+// **ولا أثر على المسار الحالي إطلاقاً**: السمة لا تُضاف إلا في هذه الحالة
+// وحدها، وبدونها لا تنطبق أنماط المتصفح لـ `[popover]` فلا يتغيّر شيء. القياس
+// الميداني على ثمانية مواقع يقول إن الحالة لا تقع اليوم — تحصين لا إصلاح.
+const OVERLAY_CAN_POPOVER =
+  typeof HTMLElement === "function" && typeof HTMLElement.prototype.showPopover === "function";
+
+// الحالة **الوحيدة** التي لا يُرسم فيها الـ overlay بلا الطبقة العليا.
+function overlayNeedsTopLayer(video) {
+  return !!video && fullscreenElementFor(video) === video;
+}
+
+function isPopoverOpen(el) {
+  try { return el.matches(":popover-open"); } catch { return false; }
+}
+
+function setOverlayTopLayer(on) {
+  if (!vzOverlay) return;
+
+  if (!on) {
+    // المسار العادي يخرج من هنا بلا لمس أي شيء: السمة لم تُضَف أصلاً.
+    if (!vzOverlay.hasAttribute("popover")) return;
+    try { if (isPopoverOpen(vzOverlay)) vzOverlay.hidePopover(); } catch {}
+    vzOverlay.removeAttribute("popover");
+    return;
+  }
+
+  if (!OVERLAY_CAN_POPOVER) return;
+  if (!vzOverlay.hasAttribute("popover")) vzOverlay.setAttribute("popover", "manual");
+  if (isPopoverOpen(vzOverlay)) return;
+  try {
+    vzOverlay.showPopover();
+  } catch {
+    // درس البند #50: الاحتياطي الصامت يجب ألا يكون **أسوأ** مما كان.
+    // `[popover]` بلا فتح يعني `display:none` — أي إخفاء الـ overlay في كل
+    // الحالات لا في هذه وحدها. فإن تعذّر الرفع تُزال السمة فوراً.
+    vzOverlay.removeAttribute("popover");
+  }
 }
 
 function positionOverlayToVideo() {
@@ -1588,6 +1874,10 @@ function attachOverlayToHost(host) {
     ensureOverlayStylesIn(host.getRootNode?.());
   }
   vzOverlayHost = host;
+  // بعد الإلحاق دائماً، ومن هنا وحده: هذه الدالة هي ممرّ كل مسارات الإلحاق
+  // الثلاثة (إنشاء · إعادة استخدام · fullscreenchange)، ونقل العنصر في الـ DOM
+  // يُغلق أي popover مفتوح فيلزم إعادة فتحه بعد كل نقلة (#47).
+  setOverlayTopLayer(overlayNeedsTopLayer(vzOverlayVideo));
 }
 
 // A document stylesheet never crosses a shadow boundary, so the overlay carries
@@ -1786,8 +2076,8 @@ function baseDomain(host) {
 }
 // ---- END baseDomain ----
 
-async function loadRulesForThisHost() {
-  const data = await chrome.storage.sync.get({
+async function loadRulesForThisHost(pre) {
+  const data = pre || await chrome.storage.sync.get({
     globalSiteRules: { enabled: false, mappings: [] }
   });
   siteRules = data.globalSiteRules || { enabled: false, mappings: [] };
@@ -1797,13 +2087,24 @@ async function loadRulesForThisHost() {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "GVZ_STATUS") {
+    // A frame that exited early (#13b) answers "not-started" and NEVER wakes for a
+    // message. Waking on messages would undo #13b outright: opening the popup would
+    // start all 122 frames measured on a news page. It answered with its untouched
+    // startup defaults instead, which is how it came to report a blocked, enabled
+    // extension as stopped (audit #56).
+    if (!startupBegun) {
+      sendResponse({ ok: false, reason: "not-started" });
+      return true;
+    }
+    // ONLY what the frame alone can know. Whether the extension is enabled and
+    // whether the site is blocked are facts the popup owns — storage and the tab URL
+    // — so asking a frame for them was the original mistake; the sleeping frame just
+    // made it visible (#56).
     sendResponse({
       ok: true,
-      blocked: isBlockedHost(),
-      globalEnabled: !!siteRules.enabled,
-      siteProfileEnabled: !!siteProfile.enabled,
+      hasVideo: !!document.querySelector("video"),
       hasVideoUnderPointer: !!getVideoFromPointerPosition(),
-      host: baseDomain(location.host)
+      ytQualityGap: ytQualityGap()
     });
     return true;
   }
@@ -1815,33 +2116,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (!remappingEnabled()) hideOverlayNow();
     maybeRedirectShorts();
   }
-  if (msg?.type === "RELOAD_SITE_RULES") {
-    loadRulesForThisHost().then(() => maybeRedirectShorts());
-  }
-  if (msg?.type === "RELOAD_SITE_PROFILE") {
-    loadSiteProfile().then(() => {
-      if (!remappingEnabled()) hideOverlayNow();
-      maybeRedirectShorts();
-    });
-  }
-  // from Options page
-  if (msg?.type === "GVZ_RELOAD" || msg?.type === "RELOAD_ZONE_SETTINGS") {
-    loadZoneSettings();
-    loadBlockedHosts();
-    loadSoundDisplaySettings();
-    loadGridAppearance();
-  }
-  if (msg?.type === "RELOAD_OVERLAY_SETTINGS") loadOverlaySettings();
-  if (msg?.type === "RELOAD_SUBTITLES") loadSubtitleSettings();
-  if (msg?.type === "RELOAD_YT_QUALITY") {
-    loadYtAutoQualitySettings().then(() => triggerYtQuality());
-  }
-  if (msg?.type === "RELOAD_YT_SHORTS") {
-    loadYtShortsRedirectSetting().then(() => maybeRedirectShorts());
-  }
-  if (msg?.type === "RELOAD_CLEAN_PLAYER") {
-    loadCleanPlayerSettings();
-  }
+  // Every RELOAD_* now goes through the one applier — see requestReload (audit #14)
+  if (RELOAD_MESSAGE_TYPES.has(msg?.type)) requestReload();
   if (msg?.type === "SET_VOLUME_BOOST") {
     // Floor is 100: the booster only amplifies. Attenuation is ACTION:VOLUME's job.
     const pct = Math.max(100, Math.min(600, Number(msg.pct) || 100));
@@ -1876,28 +2152,146 @@ function startup(label, run) {
   });
 }
 
-// The Shorts redirect now consults the enable flags, so its first check has to
-// wait for them: at document_start siteRules/siteProfile are still false and it
-// would skip a redirect the user has switched on. Reusing the promises these
-// steps already return costs no extra storage read (audit #20).
-const globalRulesReady = startup("globalRules", loadRulesForThisHost);
-const siteProfileReady = startup("siteProfile", loadSiteProfile);
-startup("zones", loadZoneSettings); // ✅ مهم: تشغيل zones بعد refresh مباشرة
-startup("overlay", loadOverlaySettings);
-startup("blockedHosts", loadBlockedHosts);
-startup("soundDisplay", loadSoundDisplaySettings);
-startup("gridAppearance", loadGridAppearance);
-startup("subtitles", loadSubtitleSettings);
-startup("subtitleObserver", startSubtitleTrackObserver);
-startup("ytQuality", () => loadYtAutoQualitySettings().then(() => {
-  startYtAutoQuality();
+// ONE read for the whole startup (audit #13). Every key any loader needs is
+// requested here with that loader's own default, so each of them sees exactly
+// what its solo read would have returned. Failure is handled per step as before:
+// this promise rejecting makes every step reject, and startup() swallows the
+// expected "context invalidated" case for each.
+// content.js is injected into EVERY frame at document_start, and on a real page most
+// frames are ad / cookie-sync iframes that never hold a video: measured 121 of 122
+// contexts on aljazeera.net and 62 of 63 on cnn.com. Each of those used to do the
+// whole startup — a storage read, eight loaders, a stylesheet and a MutationObserver
+// — for a frame that has nothing to act on (audit #13b).
+//
+// Two frames must start eagerly no matter what, and both are already host-gated:
+//   * the Shorts redirect has to fire at document_start, BEFORE any video exists —
+//     waiting for one would defeat its whole purpose;
+//   * Clean Player CSS has to be in place before YouTube's player paints, or the
+//     chrome it hides flashes first.
+// Both are YouTube-family only, so exempting that host covers them exactly.
+function frameStartsEagerly() {
+  return isYouTubeFamilyHost();
+}
+
+let startupBegun = false;
+function beginStartup() {
+  if (startupBegun) return;
+  startupBegun = true;
+  runStartupSteps();
+}
+
+// Waking is EVENT-DRIVEN, never observed: a MutationObserver per frame would just
+// trade one cost for another. A <video> fires these as soon as it begins loading,
+// which covers lazy loading, a player injected after interaction, SPA navigation
+// inside the frame, and an ad slot replaced by real content. Capture phase because
+// media events do not bubble.
+const MEDIA_WAKE_EVENTS = ["loadedmetadata", "loadeddata", "canplay", "play", "durationchange"];
+
+function armLazyStartup() {
+  const wake = () => {
+    for (const ev of MEDIA_WAKE_EVENTS) document.removeEventListener(ev, wake, true);
+    beginStartup();
+  };
+  for (const ev of MEDIA_WAKE_EVENTS) document.addEventListener(ev, wake, true);
+  // Safety net for <video preload="none">, which fires nothing at all until it is
+  // touched: one querySelector at DOMContentLoaded, and the same cheap check from
+  // the deliberate input handlers we already have (see wakeIfVideoPresent).
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", wakeIfVideoPresent, { once: true });
+  }
+}
+
+// Called from the wheel / click / keydown paths. One querySelector on a deliberate
+// user action is nothing; it is never called once the frame has started.
+function wakeIfVideoPresent() {
+  if (startupBegun) return;
+  if (document.querySelector("video")) beginStartup();
+}
+
+const startupRead = () => chrome.storage.sync.get({
+  settings: {},
+  globalSiteRules: { enabled: false, mappings: [] },
+  siteProfiles: {},
+  [spKeyFor(baseDomain(location.host))]: null
+});
+
+// ---- ONE applier for both delivery channels (audit #14) ----
+// Every save fired an explicit RELOAD_* message AND storage.onChanged in every frame,
+// and both reloaded the same slices — each loader doing its own storage read, so the
+// whole load ran twice per frame per tab. Dropping a channel would put at risk the
+// instant apply this project treats as an acceptance condition, so instead BOTH feed
+// one applier:
+//   * requests in the same tick coalesce into a single pass,
+//   * the pass does ONE storage read for everything (as startup does),
+//   * and if what it reads is identical to what is already applied it does nothing —
+//     which is what makes the second channel free, whichever arrives first and even
+//     if the other never arrives at all.
+// Reloading every slice rather than the one named by the message is deliberate: the
+// read is already paid for, the loaders are pure transforms over it, and a per-slice
+// snapshot would be a correctness trap the moment two channels name different slices.
+const RELOAD_MESSAGE_TYPES = new Set([
+  "RELOAD_SITE_RULES", "RELOAD_SITE_PROFILE", "GVZ_RELOAD", "RELOAD_ZONE_SETTINGS",
+  "RELOAD_OVERLAY_SETTINGS", "RELOAD_SUBTITLES", "RELOAD_YT_QUALITY",
+  "RELOAD_YT_SHORTS", "RELOAD_CLEAN_PLAYER"
+]);
+let reloadScheduled = false;
+let lastAppliedSnapshot = null;
+
+function requestReload() {
+  // A frame that exited early (audit #13b) must NOT wake for a settings change. It
+  // reads the current values itself the moment a video appears, so it cannot miss
+  // one either — nothing here needs to remember the change on its behalf.
+  if (!startupBegun) return;
+  if (reloadScheduled) return;
+  reloadScheduled = true;
+  Promise.resolve().then(flushReload);
+}
+
+async function flushReload() {
+  reloadScheduled = false;
+  const data = await startupRead();
+  const snapshot = JSON.stringify(data);
+  if (snapshot === lastAppliedSnapshot) return; // the other channel already applied it
+  lastAppliedSnapshot = snapshot;
+
+  await Promise.all([
+    loadRulesForThisHost(data), loadSiteProfile(data), loadZoneSettings(data),
+    loadOverlaySettings(data), loadBlockedHosts(data), loadSoundDisplaySettings(data),
+    loadGridAppearance(data), loadSubtitleSettings(data), loadYtAutoQualitySettings(data),
+    loadYtShortsRedirectSetting(data), loadCleanPlayerSettings(data)
+  ]);
   triggerYtQuality();
-}));
-startup("ytShorts", () => Promise.all([
-  loadYtShortsRedirectSetting(), globalRulesReady, siteProfileReady
-]).then(() => startYtShortsRedirect()));
-startup("cleanPlayer", loadCleanPlayerSettings);
-startup("boostReapply", startBoostReapply);
+  maybeRedirectShorts();
+  if (!remappingEnabled()) hideOverlayNow();
+}
+
+function runStartupSteps() {
+  const read = startupRead();
+  // The Shorts redirect consults the enable flags, so its first check has to wait
+  // for them: at document_start siteRules/siteProfile are still false and it would
+  // skip a redirect the user has switched on (audit #20).
+  const globalRulesReady = startup("globalRules", () => read.then(loadRulesForThisHost));
+  const siteProfileReady = startup("siteProfile", () => read.then(loadSiteProfile));
+  startup("zones", () => read.then(loadZoneSettings)); // ✅ مهم: تشغيل zones بعد refresh مباشرة
+  startup("overlay", () => read.then(loadOverlaySettings));
+  startup("blockedHosts", () => read.then(loadBlockedHosts));
+  startup("soundDisplay", () => read.then(loadSoundDisplaySettings));
+  startup("gridAppearance", () => read.then(loadGridAppearance));
+  startup("subtitles", () => read.then(loadSubtitleSettings));
+  startup("subtitleObserver", startSubtitleTrackObserver);
+  startup("ytQuality", () => read.then(loadYtAutoQualitySettings).then(() => {
+    startYtAutoQuality();
+    triggerYtQuality();
+  }));
+  startup("ytShorts", () => Promise.all([
+    read.then(loadYtShortsRedirectSetting), globalRulesReady, siteProfileReady
+  ]).then(() => startYtShortsRedirect()));
+  startup("cleanPlayer", () => read.then(loadCleanPlayerSettings));
+  startup("boostReapply", startBoostReapply);
+}
+
+if (frameStartsEagerly()) beginStartup();
+else armLazyStartup();
 
 // ⚠️ PAIRED COPY — duplicated verbatim in storage.js. Edit both together;
 // tools/test-migration.js fails if they drift apart.
@@ -2267,20 +2661,10 @@ function shouldIgnoreKeyBecauseTyping() {
 }
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "sync") return;
-  if (changes.settings) {
-    loadZoneSettings();
-    loadOverlaySettings();
-    loadBlockedHosts();
-    loadSoundDisplaySettings();
-    loadGridAppearance();
-    loadSubtitleSettings();
-    loadYtAutoQualitySettings().then(() => triggerYtQuality());
-    loadYtShortsRedirectSetting().then(() => maybeRedirectShorts());
-    loadCleanPlayerSettings();
-  }
-  if (changes.globalSiteRules) loadRulesForThisHost();
-  // Our own shard, or the legacy blob while it still exists
-  if (changes.siteProfiles || changes[spKeyFor(baseDomain(location.host))]) loadSiteProfile();
+  // Our own shard counts too, alongside the legacy blob while it still exists
+  const ours = changes.settings || changes.globalSiteRules || changes.siteProfiles ||
+               changes[spKeyFor(baseDomain(location.host))];
+  if (ours) requestReload();
 });
 /*chrome.tabs.query({active:true,currentWindow:true}, ([t])=>{
   chrome.tabs.sendMessage(t.id, {type:"RELOAD_OVERLAY_SETTINGS"});
@@ -2298,6 +2682,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // ✅ ArrowRight/Left: نمنع الافتراضي ونطبق 5 ثواني
 window.addEventListener("keydown", (e) => {
   updatePointerFromEvent(e);
+  wakeIfVideoPresent();
   if (isBlockedHost()) return;
   if (!remappingEnabled()) return;
   if (shouldIgnoreKeyBecauseTyping()) return;
@@ -2339,6 +2724,7 @@ window.addEventListener("keydown", (e) => {
 
 function handleMouse(e) {
   updatePointerFromEvent(e);
+  wakeIfVideoPresent();
   if (isBlockedHost()) return;
   if (!remappingEnabled()) return;
 

@@ -66,21 +66,21 @@
             <label>لون خلفية المربعات
               <input id="gridCellBg" type="color" />
             </label>
-            <label>شفافية خلفية المربعات
+            <label>تعتيم خلفية المربعات
               <input id="gridCellBgOpacity" type="range" min="0" max="100" step="1" />
               <span class="rangeValue" id="gridCellBgOpacityValue">0%</span>
             </label>
             <label>لون حدود المربعات
               <input id="gridCellBorder" type="color" />
             </label>
-            <label>شفافية حدود المربعات
+            <label>تعتيم حدود المربعات
               <input id="gridCellBorderOpacity" type="range" min="0" max="100" step="1" />
               <span class="rangeValue" id="gridCellBorderOpacityValue">32%</span>
             </label>
             <label>لون رقم المربع
               <input id="gridNumberColor" type="color" />
             </label>
-            <label>شفافية رقم المربع
+            <label>تعتيم رقم المربع
               <input id="gridNumberOpacity" type="range" min="0" max="100" step="1" />
               <span class="rangeValue" id="gridNumberOpacityValue">100%</span>
             </label>
@@ -91,7 +91,7 @@
             <div class="hint" style="margin:0">
               اللون وحده لا يظهر حتى ترفع شفافيته. الافتراضي: خلفية شفافة تماماً
               وحدود بيضاء خفيفة — وهو مظهر الشبكة الأصلي داخل الفيديو.<br/>
-              اجعل شفافية الرقم <b>0%</b> لإخفاء أرقام المربعات تماماً.
+              اجعل تعتيم الرقم <b>0%</b> لإخفاء أرقام المربعات تماماً.
             </div>
             <div>
               <button id="gridAppearanceReset" class="btnGhost">إعادة مظهر الشبكة للافتراضي</button>
@@ -209,6 +209,13 @@
               <input id="subEnabled" type="checkbox" />
               <span>تفعيل تنسيق الترجمة المخصص</span>
             </label>
+            <div class="hint" style="margin:-6px 0 0">عند تفعيله يتجاوز التنسيق المخصص «لون النافذة» في إعدادات ترجمة يوتيوب ويجعلها شفافة، فيصير «لون الخلفية» هنا هو المصدر الوحيد للخلفية. إطفاؤه يعيد لون النافذة كما ضبطته في يوتيوب.</div>
+
+            <label class="toggle" style="text-transform:none;letter-spacing:0">
+              <input id="subHidePreviews" type="checkbox" />
+              <span>إخفاء الترجمة في معاينات الصفحة الرئيسية</span>
+            </label>
+            <div class="hint" style="margin:-6px 0 0">تُخفى الترجمة نفسها لا تنسيقها فقط، وفي المعاينات وحدها — صفحة المشاهدة ووضع المسرح وملء الشاشة لا تتأثر.</div>
 
             <label>اللغة الافتراضية (كود مثل ar / en / es)
               <input id="subLang" type="text" placeholder="ar" style="text-transform:lowercase" />
@@ -232,7 +239,7 @@
               <input id="subBgColor" type="color" />
             </label>
 
-            <label>شفافية الخلفية
+            <label>تعتيم الخلفية
               <input id="subBgOpacity" type="range" min="0" max="100" step="5" />
               <span class="rangeValue" id="subBgOpacityValue">60%</span>
             </label>

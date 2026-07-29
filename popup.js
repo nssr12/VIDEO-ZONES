@@ -91,6 +91,26 @@ async function getActiveTab() {
   return tab;
 }
 
+// Same labels the options dropdown shows, so the two never describe the one setting
+// differently. Anything unknown falls back to the raw code rather than guessing.
+const YT_QUALITY_LABELS = {
+  hd4320: "8K — 4320p", hd2160: "4K — 2160p", hd1440: "1440p — QHD",
+  hd1080: "1080p — Full HD", hd720: "720p — HD", large: "480p",
+  medium: "360p", small: "240p", tiny: "144p"
+};
+const qualityLabel = (q) => YT_QUALITY_LABELS[q] || String(q || "");
+
+// Shown ONLY when the content script reports a real gap. It stays hidden on success,
+// on auto quality, during an ad and off YouTube — content.js decides all four, so the
+// popup has one rule: render what it is given, hide when given nothing.
+function setYtQualityGap(gap) {
+  const el = $("ytQualityGap");
+  if (!el) return;
+  if (!gap) { el.hidden = true; el.textContent = ""; return; }
+  el.textContent = `الجودة المطلوبة ${qualityLabel(gap.requested)} غير متاحة في هذا الفيديو — طُبِّقت ${qualityLabel(gap.applied)}`;
+  el.hidden = false;
+}
+
 function setStatus(kind, text) {
   const el = $("statusValue");
   if (!el) return;
@@ -116,41 +136,81 @@ function isRestrictedUrl(url) {
   return !url || /^(chrome|edge|about|brave|opera|vivaldi|moz-extension|chrome-extension):/i.test(url);
 }
 
+// Reads from storage what the popup already owns: whether the extension is enabled
+// for this host and whether the host is blocked. Both used to be asked of a content
+// script — a frame cannot know them better than storage does, and a sleeping frame
+// answered from defaults (audit #56). baseDomain and isHostBlocked come from
+// storage.js; no third derivation lives here.
+async function readHostGates(host) {
+  const data = await chrome.storage.sync.get({
+    settings: {}, globalSiteRules: { enabled: false, mappings: [] },
+    siteProfiles: {}, [spKey(host || "")]: null
+  });
+  const settings = data.settings || {};
+  const profile = data[spKey(host || "")] || data.siteProfiles?.[host] || null;
+  return {
+    blocked: isHostBlocked(host, settings.blockedHosts),
+    globalEnabled: !!data.globalSiteRules?.enabled,
+    siteProfileEnabled: !!profile?.enabled
+  };
+}
+
 async function checkPageStatus() {
   const tab = await getActiveTab();
   const url = tab?.url || "";
 
   if (isRestrictedUrl(url)) {
+    setYtQualityGap(null);
     setStatus("bad", "هذه الصفحة محمية من المتصفح ولا يمكن تشغيل الإضافة عليها");
     return;
   }
 
-  try {
-    const res = await chrome.tabs.sendMessage(tab.id, { type: "GVZ_STATUS" });
-    if (!res?.ok) {
-      setStatus("warn", "الصفحة مفتوحة لكن لم يصلنا رد واضح من الإضافة");
-      return;
-    }
-    if (res.blocked) {
-      setStatus("warn", "الإضافة محظورة على هذا الموقع");
-      return;
-    }
-    if (!res.globalEnabled && !res.siteProfileEnabled) {
-      setStatus("warn", "الإضافة متوقفة (لا قواعد عامة ولا قواعد للموقع)");
-      return;
-    }
-    if (res.siteProfileEnabled && !res.globalEnabled) {
-      setStatus("ok", "تشتغل بقواعد هذا الموقع فقط");
-      return;
-    }
-    if (res.siteProfileEnabled && res.globalEnabled) {
-      setStatus("ok", "الإضافة شغالة (قواعد الموقع تفوز على العامة)");
-      return;
-    }
-    setStatus("ok", "الإضافة شغالة على هذه الصفحة");
-  } catch {
-    setStatus("bad", "الإضافة غير محقونة في هذه الصفحة. استخدم التفعيل اليدوي");
+  // Decided here, from storage — no frame is consulted and none can contradict it.
+  const gates = await readHostGates(hostFromUrl(url));
+  if (gates.blocked) {
+    setYtQualityGap(null);
+    setStatus("warn", "الإضافة محظورة على هذا الموقع");
+    return;
   }
+  if (!gates.globalEnabled && !gates.siteProfileEnabled) {
+    setYtQualityGap(null);
+    setStatus("warn", "الإضافة متوقفة (لا قواعد عامة ولا قواعد للموقع)");
+    return;
+  }
+
+  // Only now is a frame asked, and only about what it alone knows. Same resolver the
+  // booster uses, so "which frame are we talking about" has one answer (audit #56).
+  let res = null;
+  try {
+    const frameId = await findVideoFrameId(tab.id);
+    res = frameId != null
+      ? await chrome.tabs.sendMessage(tab.id, { type: "GVZ_STATUS" }, { frameId })
+      : await chrome.tabs.sendMessage(tab.id, { type: "GVZ_STATUS" }, { frameId: 0 });
+  } catch {
+    setYtQualityGap(null);
+    setStatus("bad", "الإضافة غير محقونة في هذه الصفحة. استخدم التفعيل اليدوي");
+    return;
+  }
+
+  setYtQualityGap(res?.ok ? res.ytQualityGap : null);
+
+  // "no video here" and "the extension is stopped" are different states and must never
+  // be reported as one. A not-started answer means the script IS injected — the frame
+  // simply has nothing to act on yet.
+  if (!res?.ok || !res.hasVideo) {
+    setStatus("warn", "الإضافة شغالة لكن لا فيديو في هذه الصفحة");
+    return;
+  }
+
+  if (gates.siteProfileEnabled && !gates.globalEnabled) {
+    setStatus("ok", "تشتغل بقواعد هذا الموقع فقط");
+    return;
+  }
+  if (gates.siteProfileEnabled && gates.globalEnabled) {
+    setStatus("ok", "الإضافة شغالة (قواعد الموقع تفوز على العامة)");
+    return;
+  }
+  setStatus("ok", "الإضافة شغالة على هذه الصفحة");
 }
 
 async function activateOnCurrentPage() {
@@ -395,10 +455,13 @@ async function findVideoFrameId(tabId) {
   }
 }
 
+// NEVER broadcasts. A frameId-less send is the exact construct audit #24 names: it
+// lets every frame build its own AudioContext and lets an arbitrary one answer
+// GET_VOLUME_BOOST. With no resolved frame there is simply no video to boost, so the
+// right move is to refuse the send, not to shout at every frame.
 function sendToVideoFrame(message) {
-  return boostFrameId != null
-    ? chrome.tabs.sendMessage(boostTabId, message, { frameId: boostFrameId })
-    : chrome.tabs.sendMessage(boostTabId, message);
+  if (boostFrameId == null) return Promise.reject(new Error("no-video-frame"));
+  return chrome.tabs.sendMessage(boostTabId, message, { frameId: boostFrameId });
 }
 
 // The cached frameId goes stale if the page navigates while the popup stays open
@@ -410,10 +473,19 @@ async function sendBoostMessage(message) {
   } catch (err) {
     if (boostTabId == null) throw err;
     const fresh = await findVideoFrameId(boostTabId);
-    if (fresh === boostFrameId) throw err; // same frame — genuinely unreachable
+    // null would downgrade the retry into a broadcast, which is the bug itself
+    if (fresh == null || fresh === boostFrameId) throw err;
     boostFrameId = fresh;
     return await sendToVideoFrame(message);
   }
+}
+
+// A slider that slides with nothing behind it is worse than one that says why.
+function setBoostAvailable(available) {
+  const slider = $("boostSlider");
+  if (!slider) return;
+  slider.disabled = !available;
+  slider.title = available ? "" : "لا فيديو في هذه الصفحة";
 }
 
 async function loadBoostUI() {
@@ -421,6 +493,13 @@ async function loadBoostUI() {
   if (!tab?.id) return;
   boostTabId = tab.id;
   boostFrameId = await findVideoFrameId(tab.id);
+  setBoostAvailable(boostFrameId != null);
+  if (boostFrameId == null) {
+    $("boostSlider").value = 100;
+    $("boostValue").textContent = "100%";
+    setBoostNote("no_video");
+    return;
+  }
   try {
     const res = await sendToVideoFrame({ type: "GET_VOLUME_BOOST" });
     if (res?.pct != null) {
@@ -486,8 +565,7 @@ async function sendBoost(pct, isFinal = false) {
 async function loadBlockedSiteUI() {
   const data = await chrome.storage.sync.get({ settings: {} });
   const settings = data.settings || {};
-  const blockedHosts = Array.isArray(settings.blockedHosts) ? settings.blockedHosts : [];
-  const isBlocked = !!currentHost && blockedHosts.includes(currentHost);
+  const isBlocked = isHostBlocked(currentHost, settings.blockedHosts);
   $("blockSiteBtn").classList.toggle("blocked", isBlocked);
   $("blockSiteBtn").title = isBlocked ? "الموقع محظور — اضغط للسماح" : "اضغط لمنع هذا الموقع";
 }
