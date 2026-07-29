@@ -78,7 +78,16 @@ function build(spec, scale) {
 
 function load(spec, scale) {
   const nodes = build(spec, scale);
-  const doc = { body: nodes[nodes.length - 1], documentElement: nodes[nodes.length - 1] };
+  // كتلة #58 كومِت ب تسجّل مستمعَي خروج وتحقن ورقة أنماط عند التحميل،
+  // فالمستند المزيّف يلزمه هذا القدر — ولا يُستعمل في فحوص هذا الملف.
+  const last = nodes[nodes.length - 1];
+  const doc = {
+    body: last, documentElement: last, head: { appendChild() {} },
+    fullscreenElement: null,
+    addEventListener() {}, getElementById: () => null,
+    createElement: () => ({ id: "", textContent: "" }),
+    querySelectorAll: () => []
+  };
   const ctx = { document: doc, console };
   vm.createContext(ctx);
   vm.runInContext(KNOWN + "\n" + PICK, ctx);
@@ -239,6 +248,37 @@ console.log("\n[7] الحكم القاطع يسبق السكور ويأتي بع
   check("ثم السكور", iScore > -1);
   check("body و documentElement مستثنيان من المشي",
     /el!==document\.body&&el!==document\.documentElement/.test(s));
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ⚠️⚠️⚠️  تثبيت عطب معروف — البند #59  (قرار المالك 20)
+//
+//        **فشل هذا التثبيت يعني أن #59 أُصلح، فحدّثه ولا تُصلح الاختبار.**
+//
+// الحالة أ (فيديو ابن مباشر لـ`body`) لا سلف لها يشبه مشغّلاً، فالحكم القاطع في
+// #58 لا يمسّها بنيوياً وتسقط إلى السكور — وهناك تُحسم بفارق ≈0.1 نقطة فتنقلب
+// بين مقاسَي إطار عرض (`VIDEO` على 1440×900 و`BODY` على 900×700).
+//
+// هذا التثبيت **يبرهن أن العطب ما زال قائماً** كي لا يُخلط لاحقاً بفشل جديد.
+// البرهان الميداني عليه في `tools/repro-58-fullscreen.mjs` (فحص الحتمية).
+// مجموعة الاختبارات تبقى **خضراء دائماً**: الأحمر يعني «كسرتَ شيئاً الآن».
+// ═════════════════════════════════════════════════════════════════════════════
+if (READY) {
+console.log("\n[8] تثبيت #59 — عطب معروف، لا يُرمَّم الاختبار بدل إصلاحه");
+{
+  const shape = SHAPES.find((s) => s.key.startsWith("أ"));
+  const a = load(shape.spec, 1);
+  check("لا حكم قاطع للحالة أ — الحكم لا يمسّها بنيوياً",
+    a.ctx.nearestPlayerAncestor(a.video) === null);
+  check("فتسقط إلى السكور، والسكور هو موضع #59",
+    typeof a.ctx.pickFullscreenContainer === "function");
+  // النصّ نفسه محروس: من يحذف التنبيه يُسقط الاختبار
+  const SELF = fs.readFileSync("tools/test-container-choice.js", "utf8");
+  check("تنبيه «حدّثه ولا تُصلح الاختبار» موجود نصّاً",
+    /فشل هذا التثبيت يعني أن #59 أُصلح، فحدّثه ولا تُصلح الاختبار/.test(SELF));
+  check("والعطب مُدرَج في موضع العطب المعروفة الواحد",
+    fs.readFileSync("tools/KNOWN-DEFECTS.md", "utf8").includes("#59"));
+}
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);

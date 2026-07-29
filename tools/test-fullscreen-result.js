@@ -14,14 +14,18 @@ function slice(file, from, to) {
 // يشمل notifyVideoActionFailed لأن toggleFullscreen يعتمد عليه
 const SRC = slice("content.js", "function notifyVideoActionFailed", "\nfunction findVideoLoose");
 
+const ctxCleared = { n: 0 };
 function load({ doc, nativeBtn = null, container = {} }) {
   const failures = [];
+  ctxCleared.n = 0;
   const ctx = {
     document: doc,
     console: { debug() {} },
     findNativeFullscreenButton: () => nativeBtn,
     pickFullscreenContainer: () => container,
     ensureVideoOverlay() {},
+    // #58 كومِت ب: toggleFullscreen تسجّل ما كبّرناه وتُصفّره عند الرفض
+    clearFsFillMarks() { ctxCleared.n++; },
     showOverlay: (t) => failures.push(t),
     Promise, setTimeout
   };

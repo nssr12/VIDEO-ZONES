@@ -234,9 +234,17 @@ window.__after = () => {
     videoRect: [Math.round(r.width), Math.round(r.height)],
     screen: [sw, sh],
     areaPct: Math.round((r.width * r.height) / (sw * sh) * 100),
-    fills: !!(r.width >= sw - 2 || r.height >= sh - 2)
+    fills: !!(r.width >= sw - 2 || r.height >= sh - 2),
+    // #58 كومِت ب: هل وسمت البوابة، وهل حُقنت ورقة الأنماط؟
+    stamped: document.querySelectorAll("[data-vz-fs]").length > 0 &&
+             document.querySelectorAll("video[data-vz-fs-video]").length > 0,
+    marks: document.querySelectorAll("[data-vz-fs],[data-vz-fs-video]").length,
+    cssInjected: !!document.getElementById("vz_fs_fill_css")
   };
 };
+
+// بعد الخروج: لا سمة تبقى على الـ DOM
+window.__marksAfterExit = () => document.querySelectorAll("[data-vz-fs],[data-vz-fs-video]").length;
 
 window.__exit = () => (document.fullscreenElement ? document.exitFullscreen() : Promise.resolve());
 `;
@@ -333,21 +341,32 @@ for (let i = 0; i < count; i++) {
   await sleep(1100);
   const after = await evalJs("window.__after()");
   await evalJs("window.__exit()");
-  await sleep(500);
+  await sleep(600);
+  const leftover = await evalJs("window.__marksAfterExit()");
 
   console.log(setup.name);
   console.log(`  pickFullscreenContainer → ${before.container}${before.containerIsVideo ? "   ← الفيديو نفسه" : ""}`);
   console.log(`  زر أصلي (مسار #17)      → ${before.nativeBtn}`);
   console.log(`  fullscreenElement       → ${after.fsElement}${after.fsIsVideo ? "   ← الفيديو نفسه" : ""}`);
   console.log(`  مقاس الفيديو قبل ⇒ بعد  → ${before.videoRect.join("×")} ⇒ ${after.videoRect.join("×")}   (${after.areaPct}% من الشاشة)`);
+  console.log(`  البوابة (#58ب)          → ${after.stamped ? "وسمت" : "**رفضت**"}   ·   CSS محقونة: ${after.cssInjected ? "نعم" : "لا"}   ·   سمات بعد الخروج: ${leftover}`);
   console.log(`  ${after.fills ? "✅ الفيديو يملأ الشاشة" : "❌ الفيديو بقي بمقاسه — شاشة سوداء حوله"}`);
   console.log("");
-  rows.push({ name: setup.name, ok: after.fills, fs: after.fsElement, pct: after.areaPct });
+  rows.push({ name: setup.name, ok: after.fills, fs: after.fsElement, pct: after.areaPct,
+              stamped: after.stamped, leftover });
 }
 
 console.log("=== الخلاصة ===");
 for (const r of rows) {
-  console.log(`  ${r.ok ? "✅" : "❌"} ${pad(r.name.slice(0, 66), 68)} fsEl=${pad(r.fs, 20)} ${r.pct}%`);
+  console.log(`  ${r.ok ? "✅" : "❌"} ${pad(r.name.slice(0, 58), 60)} ${pad(r.stamped ? "وُسِمت" : "رُفضت", 8)} fsEl=${pad(r.fs, 20)} ${r.pct}%`);
 }
+const stamped = rows.filter((r) => r.stamped);
+const leftovers = rows.filter((r) => r.leftover > 0);
+console.log("");
+console.log(`=== عدّ البوابة: وُسِمت ${stamped.length} · رُفضت ${rows.length - stamped.length} ===`);
+console.log(`    الموسومة: ${stamped.map((r) => r.name.split(" — ")[0]).join(" · ") || "لا شيء"}`);
+console.log(`    سمات باقية بعد الخروج: ${leftovers.length === 0 ? "صفر في كل البنيات ✅" : leftovers.map((r) => r.name.split(" — ")[0] + "=" + r.leftover).join(" · ") + " ❌"}`);
+console.log("");
+console.log("⚠️ اقرأ tools/KNOWN-DEFECTS.md قبل تفسير أي ❌ أعلاه.");
 console.log("");
 chrome.kill(); srv.close(); process.exit(0);
