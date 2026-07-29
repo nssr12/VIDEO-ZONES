@@ -292,6 +292,39 @@ const rows = [];
 const count = await evalJs("window.__cases.length");
 if (typeof count !== "number") { console.log("تعذّر التحميل:", JSON.stringify(count)); chrome.kill(); srv.close(); process.exit(1); }
 
+// ── الحتمية: نفس العنصر المختار على مقاسي إطار عرض (شرط قبول المالك في #58) ──
+// السكور القديم كان يحسم بفارق ≈0.1 نقطة، فينقلب العنصر بين مقاسين. أي بنية
+// تنقلب هنا هي بنية يحكمها السكور لا الحكم القاطع — أي مجال البند #59.
+const deter = [];
+for (const [w, h] of [[1440, 900], [900, 700]]) {
+  if (winId) await cdp("Browser.setWindowBounds", { windowId: winId, bounds: { width: w, height: h } });
+  await sleep(900);
+  const picks = [];
+  for (let i = 0; i < count; i++) {
+    await evalJs(`window.__setup(${i})`);
+    await sleep(450);
+    const b = await evalJs("window.__before()");
+    picks.push(b.container);
+  }
+  deter.push({ size: `${w}×${h}`, picks });
+}
+console.log("=== الحتمية عبر مقاسي إطار عرض ===");
+{
+  const names = [];
+  for (let i = 0; i < count; i++) names.push((await evalJs(`window.__cases[${i}].name`)).split(" — ")[0]);
+  let flips = 0;
+  for (let i = 0; i < count; i++) {
+    const a = deter[0].picks[i], b = deter[1].picks[i];
+    const ok = a === b;
+    if (!ok) flips++;
+    console.log(`  ${ok ? "✅" : "❌"} ${names[i].padEnd(4)} ${deter[0].size}: ${String(a).padEnd(34)} ${deter[1].size}: ${b}`);
+  }
+  console.log(`  ⇒ ${flips === 0 ? "كل البنيات حتمية" : `${flips} بنية غير حتمية — يحكمها السكور (البند #59)`}`);
+}
+console.log("");
+if (winId) await cdp("Browser.setWindowBounds", { windowId: winId, bounds: { width: W, height: H } });
+await sleep(900);
+
 for (let i = 0; i < count; i++) {
   const setup = await evalJs(`window.__setup(${i})`);
   await sleep(700);

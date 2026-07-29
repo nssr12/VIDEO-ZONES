@@ -61,9 +61,40 @@
     return best;
   };
 
+  // ---- مرآة البند #58: تعريف «يملأ» + الحكم القاطع ----
+  const VZ_FILL_RATIO = 0.95;
+  const FS_CONTAINER_MAX_DEPTH = 8;
+
+  const videoFillsElement = (video, el) => {
+    const v = video && video.getBoundingClientRect && video.getBoundingClientRect();
+    const r = el && el.getBoundingClientRect && el.getBoundingClientRect();
+    if (!v || !r || r.width <= 0 || r.height <= 0) return false;
+    return v.width / r.width >= VZ_FILL_RATIO && v.height / r.height >= VZ_FILL_RATIO;
+  };
+
+  const looksLikePlayer = (el) => {
+    if (!el || el.nodeType !== 1) return false;
+    if (el.matches && el.matches(KNOWN_PLAYER_WRAPPER_SELECTOR)) return true;
+    const cls = (el.className || "").toString();
+    const role = (el.getAttribute && el.getAttribute("role")) || "";
+    return /player|video|controls|overlay|container/i.test(cls + " " + role);
+  };
+
+  const nearestPlayerAncestor = (video) => {
+    let el = video && video.parentElement;
+    for (let i = 0; i < FS_CONTAINER_MAX_DEPTH && el && el !== document.body && el !== document.documentElement; i++) {
+      if (looksLikePlayer(el) && videoFillsElement(video, el)) return el;
+      el = el.parentElement;
+    }
+    return null;
+  };
+
   const pickContainer = (video) => {
     const known = video.closest(KNOWN_PLAYER_WRAPPER_SELECTOR);
     if (known && known.requestFullscreen) return { el: known, via: "known-wrapper" };
+
+    const nearest = nearestPlayerAncestor(video);
+    if (nearest && nearest.requestFullscreen) return { el: nearest, via: "nearest-player (#58)" };
 
     const videoRect = video.getBoundingClientRect();
     const videoArea = Math.max(1, videoRect.width * videoRect.height);

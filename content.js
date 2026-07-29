@@ -2463,6 +2463,51 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
   return false;
 }
 
+// ── البند #58: تعريف واحد لـ«الفيديو يملأ هذا العنصر» ────────────────────────
+// يشترك فيه حكم اختيار الحاوية أدناه **وبوابة قاعدة الـ CSS** — رقمان يتباعدان
+// مع الوقت أسوأ من رقم واحد، فلا تُكرّر 0.95 في أي موضع آخر.
+const VZ_FILL_RATIO = 0.95;
+const FS_CONTAINER_MAX_DEPTH = 8;   // نفس عمق مرشّحي السكور أدناه بالضبط
+
+function videoFillsElement(video, el) {
+  const v = video?.getBoundingClientRect?.();
+  const r = el?.getBoundingClientRect?.();
+  if (!v || !r || r.width <= 0 || r.height <= 0) return false;
+  return v.width / r.width >= VZ_FILL_RATIO && v.height / r.height >= VZ_FILL_RATIO;
+}
+
+// «يشبه مشغّلاً»: اتحاد الاستدلالين — محدّد الحاويات المعروفة أو أصناف المشغّل.
+// ⚠️ التعبير النمطي مكرّر نصّاً داخل كتلة السكور أدناه **عن قصد**، لأن قرار
+// المالك في #58 نصّ على أن السكور لا يُعدَّل بحرف. النسختان محروستان نصّياً في
+// tools/test-container-choice.js فلا تتباعدان.
+function looksLikePlayer(el) {
+  if (!el || el.nodeType !== 1) return false;
+  if (el.matches?.(KNOWN_PLAYER_WRAPPER_SELECTOR)) return true;
+  const cls = (el.className || "").toString();
+  const role = el.getAttribute?.("role") || "";
+  return /player|video|controls|overlay|container/i.test(cls + " " + role);
+}
+
+// حكم قاطع يسبق السكور: **أقرب** سلف يشبه مشغّلاً ويملؤه الفيديو هو الحاوية،
+// ويتوقّف المشي عنده. الأقرب يفوز لا الأعلى سكوراً — وهو «الأخصّ يفوز» نفسه
+// المطبَّق في أولويات الإدخال (#48).
+//
+// المبرّر مقيس على d.tube: كانت حاوية تخطيط الصفحة `.md:container` تفوز على
+// المشغّل الحقيقي `.dtube-player-wrapper` بفارق **0.1037 نقطة** (7.9537 مقابل
+// 7.8500)، أي بقرعة لا بحكم — والقرعة انقلبت فعلاً في بنية أخرى لمجرّد اختلاف
+// مقاس إطار العرض. المعادلة الغامضة لا تُعدَّل، بل يُسبَق إليها بحكم قاطع.
+//
+// `body` و`documentElement` خارج المشي: ليسا مشغّلاً في أي حال، وتكبير `<body>`
+// عطب مستقل مسجَّل بالرقم #59.
+function nearestPlayerAncestor(video) {
+  let el = video?.parentElement;
+  for (let i = 0; i < FS_CONTAINER_MAX_DEPTH && el && el !== document.body && el !== document.documentElement; i++) {
+    if (looksLikePlayer(el) && videoFillsElement(video, el)) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
 function pickFullscreenContainer(video) {
   if (!video) return null;
 
@@ -2471,6 +2516,10 @@ function pickFullscreenContainer(video) {
   // continue to work after we toggle fullscreen.
   const knownPlayer = video.closest(KNOWN_PLAYER_WRAPPER_SELECTOR);
   if (knownPlayer && knownPlayer.requestFullscreen) return knownPlayer;
+
+  // #58 — الحكم القاطع قبل السكور. لم يتحقّق؟ يسقط إلى السكور القائم بلا تعديل حرف.
+  const nearest = nearestPlayerAncestor(video);
+  if (nearest && nearest.requestFullscreen) return nearest;
 
   const videoRect = video.getBoundingClientRect();
   const videoArea = Math.max(1, videoRect.width * videoRect.height);
