@@ -310,7 +310,9 @@ for (const [w, h] of [[1440, 900], [900, 700]]) {
   const picks = [];
   for (let i = 0; i < count; i++) {
     await evalJs(`window.__setup(${i})`);
-    await sleep(450);
+    // ⚠️ 450ms لم تكن تكفي: body بعد textContent="" يبقى بارتفاع 0 لحظةً،
+    // فيُرفض بحارس المستطيل الصفري ويفوز VIDEO — انقلاب **مصطنع** لا حقيقي.
+    await sleep(1100);
     const b = await evalJs("window.__before()");
     picks.push(b.container);
   }
