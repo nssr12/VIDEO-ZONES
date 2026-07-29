@@ -506,7 +506,14 @@ async function loadSubtitleSettings(pre) {
 // wrapper list already covers it — named here explicitly so a future YouTube change
 // that drops the class cannot silently take the query container away with it.
 const YT_PREVIEW_PLAYER_SELECTOR = "#inline-preview-player";
-const CAPTION_REFERENCE_PLAYER_W = 1280; // typical default YouTube watch player
+const CAPTION_REFERENCE_PLAYER_W = 1280;
+// Padding was the one fixed-px dimension left in our rules. In em it rides the
+// font-size — which is itself relative to the player — so the caption box stops
+// being oversized on a small player. The values are the old 2/8 and 2/6 px divided
+// by the default 22px, so at the reference size the box is byte-identical.
+const CAPTION_PAD_Y = (2 / 22).toFixed(3);
+const CAPTION_PAD_X = (8 / 22).toFixed(3);
+const CAPTION_PAD_X_CUE = (6 / 22).toFixed(3); // typical default YouTube watch player
 function relativeCaptionFont(fontSize) {
   const px = Math.max(1, Number(fontSize) || 22);
   const perCqw = (px * 100 / CAPTION_REFERENCE_PLAYER_W).toFixed(3);
@@ -574,7 +581,7 @@ function applySubtitleStyles() {
       background:${bgRgba} !important;
       font-family:${fontFamily} !important;
       line-height:1.35 !important;
-      padding:2px 6px !important;
+      padding:${CAPTION_PAD_Y}em ${CAPTION_PAD_X_CUE}em !important;
       text-shadow:none !important;
     }
 
@@ -591,12 +598,24 @@ function applySubtitleStyles() {
       background:${bgRgba} !important;
       background-image:none !important;
       font-family:${fontFamily} !important;
-      padding:2px 8px !important;
+      padding:${CAPTION_PAD_Y}em ${CAPTION_PAD_X}em !important;
       text-shadow:none !important;
       fill:${color} !important;
     }
     html .ytp-caption-window-container,
     html .caption-window {
+      /* YouTube has TWO colour settings: "background colour" (the text box) and
+         "window colour" (the block behind the whole caption window). We only ever
+         styled the first, so a user with a window colour set saw OUR box inside
+         THEIR window — a wide slab in a colour this extension never chose, which
+         survived disabling the extension and read as our bug (audit #52). While
+         custom styling is on we own the look, so the window goes fully transparent
+         and the background setting below is the only visible background. Nothing is
+         persisted: switching custom styling off drops this sheet and YouTube's own
+         window colour comes straight back. */
+      background-color:transparent !important;
+      background:transparent !important;
+      background-image:none !important;
       ${posCss}
       left:50% !important; right:auto !important;
       transform:translateX(-50%)${position === "middle" ? " translateY(-50%)" : ""} !important;
