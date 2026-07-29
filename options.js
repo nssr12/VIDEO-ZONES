@@ -317,6 +317,8 @@ async function getSettings() {
   if (typeof s.bgOpacity !== "number") s.bgOpacity = 0.6;
   if (typeof s.fontFamily !== "string") s.fontFamily = "system-ui, -apple-system, sans-serif";
   if (typeof s.position !== "string") s.position = "bottom";
+  // مفعَّل افتراضياً: الغياب يعني "أخفِ" لا "أظهر" (#51)
+  if (typeof s.hideOnPreviews !== "boolean") s.hideOnPreviews = true;
   ensureZoneActions(settings);
   return settings;
 }
@@ -571,6 +573,7 @@ function syncCleanPlayerCaptionNote() {
 function renderSubtitles(sub) {
   if (!sub) return;
   $("subEnabled").checked = !!sub.enabled;
+  $("subHidePreviews").checked = sub.hideOnPreviews !== false;
   $("subLang").value = sub.defaultLang || "";
   syncCleanPlayerCaptionNote();
   $("subFontSize").value = String(sub.fontSize);
@@ -1025,6 +1028,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const s = await getSettings();
     s.subtitles = {
       enabled: $("subEnabled").checked,
+      hideOnPreviews: $("subHidePreviews").checked,
       defaultLang: $("subLang").value.trim().toLowerCase(),
       fontSize: Number($("subFontSize").value),
       color: $("subColor").value,
@@ -1054,6 +1058,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
   $("subEnabled").addEventListener("change", persistSubtitles);
+  // ليس ضمن قائمة التفعيل التلقائي أعلاه: هذا إخفاء للترجمة لا إعداد تنسيق،
+  // فلا معنى لأن يُشغّل تنسيق الترجمة المخصص من تلقائه
+  $("subHidePreviews").addEventListener("change", persistSubtitles);
 
   $("ytQuality").addEventListener("change", async () => {
     const s = await getSettings();

@@ -476,6 +476,7 @@ async function loadSubtitleSettings(pre) {
   const sub = s.subtitles || {};
   subtitleSettings = {
     enabled: !!sub.enabled,
+    hideOnPreviews: sub.hideOnPreviews !== false, // مفعَّل افتراضياً (#51)
     defaultLang: String(sub.defaultLang || "").toLowerCase(),
     fontSize: Number(sub.fontSize || 22),
     color: sub.color || "#ffffff",
@@ -523,7 +524,29 @@ function applySubtitleStyles() {
     subtitleStyleEl.remove();
     subtitleStyleEl = null;
   }
-  if (isBlockedHost() || !subtitleSettings.enabled) return;
+  if (isBlockedHost()) return;
+
+  // Hiding captions on hover previews is its OWN setting: someone who turned the
+  // custom styling off still gets it, so it is built before the styling block and
+  // the early return below only skips the styling (audit #51).
+  const previewCss = subtitleSettings.hideOnPreviews ? `
+    /* Homepage / search hover previews only. #inline-preview-player is the preview
+       player itself (verified live in Chrome) and ytd-video-preview is its wrapper;
+       neither exists on the watch page, in theater mode or in fullscreen, so this
+       cannot reach any of them. Hides YouTube's own caption container, not just our
+       styling — the point is not to see captions there at all. */
+    html #inline-preview-player .ytp-caption-window-container,
+    html #inline-preview-player .caption-window,
+    html ytd-video-preview .ytp-caption-window-container,
+    html ytd-video-preview .caption-window {
+      display:none !important;
+    }
+  ` : "";
+
+  if (!subtitleSettings.enabled) {
+    if (previewCss) injectSubtitleCss(previewCss);
+    return;
+  }
 
   const { fontSize, color, bgColor, bgOpacity, fontFamily, position } = subtitleSettings;
   const bgRgba = `rgba(${hexToRgb(bgColor)},${Math.max(0, Math.min(1, bgOpacity))})`;
@@ -637,6 +660,10 @@ function applySubtitleStyles() {
     }
   `;
 
+  injectSubtitleCss(previewCss + css);
+}
+
+function injectSubtitleCss(css) {
   subtitleStyleEl = document.createElement("style");
   subtitleStyleEl.id = "vz_subtitles_css";
   subtitleStyleEl.textContent = css;
