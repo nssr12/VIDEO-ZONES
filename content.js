@@ -2463,6 +2463,123 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
   return false;
 }
 
+// ── البند #58: تعريف واحد لـ«الفيديو يملأ هذا العنصر» ────────────────────────
+// يشترك فيه حكم اختيار الحاوية أدناه **وبوابة قاعدة الـ CSS** — رقمان يتباعدان
+// مع الوقت أسوأ من رقم واحد، فلا تُكرّر 0.95 في أي موضع آخر.
+const VZ_FILL_RATIO = 0.95;
+const FS_CONTAINER_MAX_DEPTH = 8;   // نفس عمق مرشّحي السكور أدناه بالضبط
+
+function videoFillsElement(video, el) {
+  const v = video?.getBoundingClientRect?.();
+  const r = el?.getBoundingClientRect?.();
+  if (!v || !r || r.width <= 0 || r.height <= 0) return false;
+  return v.width / r.width >= VZ_FILL_RATIO && v.height / r.height >= VZ_FILL_RATIO;
+}
+
+// «يشبه مشغّلاً»: اتحاد الاستدلالين — محدّد الحاويات المعروفة أو أصناف المشغّل.
+// ⚠️ التعبير النمطي مكرّر نصّاً داخل كتلة السكور أدناه **عن قصد**، لأن قرار
+// المالك في #58 نصّ على أن السكور لا يُعدَّل بحرف. النسختان محروستان نصّياً في
+// tools/test-container-choice.js فلا تتباعدان.
+function looksLikePlayer(el) {
+  if (!el || el.nodeType !== 1) return false;
+  if (el.matches?.(KNOWN_PLAYER_WRAPPER_SELECTOR)) return true;
+  const cls = (el.className || "").toString();
+  const role = el.getAttribute?.("role") || "";
+  return /player|video|controls|overlay|container/i.test(cls + " " + role);
+}
+
+// حكم قاطع يسبق السكور: **أقرب** سلف يشبه مشغّلاً ويملؤه الفيديو هو الحاوية،
+// ويتوقّف المشي عنده. الأقرب يفوز لا الأعلى سكوراً — وهو «الأخصّ يفوز» نفسه
+// المطبَّق في أولويات الإدخال (#48).
+//
+// المبرّر مقيس على d.tube: كانت حاوية تخطيط الصفحة `.md:container` تفوز على
+// المشغّل الحقيقي `.dtube-player-wrapper` بفارق **0.1037 نقطة** (7.9537 مقابل
+// 7.8500)، أي بقرعة لا بحكم — والقرعة انقلبت فعلاً في بنية أخرى لمجرّد اختلاف
+// مقاس إطار العرض. المعادلة الغامضة لا تُعدَّل، بل يُسبَق إليها بحكم قاطع.
+//
+// `body` و`documentElement` خارج المشي: ليسا مشغّلاً في أي حال، وتكبير `<body>`
+// عطب مستقل مسجَّل بالرقم #59.
+function nearestPlayerAncestor(video) {
+  let el = video?.parentElement;
+  for (let i = 0; i < FS_CONTAINER_MAX_DEPTH && el && el !== document.body && el !== document.documentElement; i++) {
+    if (looksLikePlayer(el) && videoFillsElement(video, el)) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+// ── البند #58 كومِت ب: تمديد الفيديو داخل الحاوية التي كبّرناها نحن ──────────
+// السبب الثاني في #58: الحاوية صحيحة لكن الفيديو **غير نسبيّ** داخلها (مقاس ثابت
+// أو سطريّ)، فيبقى على مقاسه وسط حاوية بمقاس الشاشة. البنيات المعنية ثلاث فقط:
+// ج (حاوية عادية + فيديو ثابت) · د (حاوية معروفة + فيديو ثابت) · ز (فيديو سطريّ).
+//
+// **بوابة قياس لا قاعدة عامة**: القاعدة لا تُطبَّق إلا إن كان الفيديو **لا يملأ
+// فعلاً** العنصر الذي كبّرناه — بنفس `VZ_FILL_RATIO` لا برقم ثانٍ. فمن يعمل اليوم
+// لا يُلمس: على d.tube بعد كومِت أ صارت الحاوية هي المشغّل والفيديو يملؤه، فالبوابة
+// **ترفض** ولا تُضاف سمة ولا يُحقن حرف CSS. وعلى يوتيوب المسار لا يصل هنا أصلاً.
+//
+// **والسمة لعنصرين نحن كبّرناهما نحن**: مسار الزر الأصلي يخرج قبل التسجيل فلا سمة
+// فيه إطلاقاً، ولا سمة إن كان المكبَّر هو `<video>` نفسه (لا معنى للقاعدة حينها).
+const VZ_FS_ATTR = "data-vz-fs";
+const VZ_FS_VIDEO_ATTR = "data-vz-fs-video";
+
+// العنصران اللذان طلبنا ملء الشاشة لهما. يُصفَّران في كل مخرج بلا استثناء.
+let vzFsRequestedEl = null;
+let vzFsRequestedVideo = null;
+
+// تُحقن **عند أول وسم فعليّ فقط**: الموقع الذي ترفض بوابته لا يتلقّى بايت CSS.
+function injectFsFillCSS() {
+  if (document.getElementById("vz_fs_fill_css")) return;
+  const style = document.createElement("style");
+  style.id = "vz_fs_fill_css";
+  style.textContent = `
+    [${VZ_FS_ATTR}]:fullscreen video[${VZ_FS_VIDEO_ATTR}]{
+      width:100%!important; height:100%!important;
+      max-width:none!important; max-height:none!important;
+      object-fit:contain!important;
+    }
+  `;
+  (document.head || document.documentElement).appendChild(style);
+}
+
+// لا سمة تبقى على الـ DOM بعد الخروج. المرجعان أولاً، ثم **مسح المستند** لأي
+// شاردة نجت من إعادة بناء الموقع لعنصره — لا نفترض بقاء المرجع صحيحاً.
+function clearFsFillMarks() {
+  vzFsRequestedEl?.removeAttribute?.(VZ_FS_ATTR);
+  vzFsRequestedVideo?.removeAttribute?.(VZ_FS_VIDEO_ATTR);
+  vzFsRequestedEl = null;
+  vzFsRequestedVideo = null;
+  for (const el of document.querySelectorAll(`[${VZ_FS_ATTR}],[${VZ_FS_VIDEO_ATTR}]`)) {
+    el.removeAttribute(VZ_FS_ATTR);
+    el.removeAttribute(VZ_FS_VIDEO_ATTR);
+  }
+}
+
+function applyFsFillIfNeeded() {
+  const video = vzFsRequestedVideo;
+  const el = vzFsRequestedEl;
+  if (!video || !el) return false;
+  if (el === video) return false;                       // كبّرنا الفيديو نفسه
+  if (fullscreenElementFor(video) !== el) return false; // لسنا داخل ملء شاشتنا
+  if (videoFillsElement(video, el)) return false;       // ← البوابة ترفض
+  injectFsFillCSS();
+  el.setAttribute(VZ_FS_ATTR, "");
+  video.setAttribute(VZ_FS_VIDEO_ATTR, "");
+  return true;
+}
+
+// كل مخارج ملء الشاشة تمرّ من هنا: Esc، وخروج يبدؤه الموقع، وذهاب عنصر آخر إلى
+// ملء الشاشة — الثلاثة تُطلق `fullscreenchange`. و`fullscreenerror` للطلب المرفوض.
+function syncFsFillMarks() {
+  const video = vzFsRequestedVideo;
+  const el = vzFsRequestedEl;
+  if (!video || !el || fullscreenElementFor(video) !== el) { clearFsFillMarks(); return; }
+  applyFsFillIfNeeded();
+}
+
+document.addEventListener("fullscreenchange", syncFsFillMarks);
+document.addEventListener("fullscreenerror", clearFsFillMarks);
+
 function pickFullscreenContainer(video) {
   if (!video) return null;
 
@@ -2471,6 +2588,10 @@ function pickFullscreenContainer(video) {
   // continue to work after we toggle fullscreen.
   const knownPlayer = video.closest(KNOWN_PLAYER_WRAPPER_SELECTOR);
   if (knownPlayer && knownPlayer.requestFullscreen) return knownPlayer;
+
+  // #58 — الحكم القاطع قبل السكور. لم يتحقّق؟ يسقط إلى السكور القائم بلا تعديل حرف.
+  const nearest = nearestPlayerAncestor(video);
+  if (nearest && nearest.requestFullscreen) return nearest;
 
   const videoRect = video.getBoundingClientRect();
   const videoArea = Math.max(1, videoRect.width * videoRect.height);
@@ -2610,11 +2731,18 @@ function toggleFullscreen(video) {
   const container = pickFullscreenContainer(v);
   const req = container?.requestFullscreen || container?.webkitRequestFullscreen;
   if (!req) return false; // no API at all: leave the event to the page
+  // #58 كومِت ب — يُسجَّل ما كبّرناه **نحن** قبل الطلب. مسار الزر الأصلي خرج
+  // أعلاه ولم يصل هنا، فلا سمة فيه إطلاقاً. والبوابة تُقاس عند `fullscreenchange`.
+  vzFsRequestedEl = container;
+  vzFsRequestedVideo = v;
   try {
-    Promise.resolve(req.call(container)).catch((err) =>
-      notifyVideoActionFailed(v, "المتصفح رفض ملء الشاشة", err));
+    Promise.resolve(req.call(container)).catch((err) => {
+      clearFsFillMarks();
+      notifyVideoActionFailed(v, "المتصفح رفض ملء الشاشة", err);
+    });
   } catch (err) {
     // threw synchronously ⇒ nothing was dispatched
+    clearFsFillMarks();
     notifyVideoActionFailed(v, "المتصفح رفض ملء الشاشة", err);
     return false;
   }
