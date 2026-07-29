@@ -21,7 +21,9 @@ function slice(file, from, to) {
   return t.slice(a, b);
 }
 const SRC = "content.js";
-const HOST_PICK = slice(SRC, "function preferredOverlayHost", "function positionOverlayToVideo");
+// يبدأ من fullscreenElementFor لا من preferredOverlayHost: الأولى هي المصدر
+// الواحد لعنصر ملء الشاشة وتستدعيها الثانية (البند #47).
+const HOST_PICK = slice(SRC, "function fullscreenElementFor", "function positionOverlayToVideo");
 const ATTACH = slice(SRC, "function attachOverlayToHost", "function teardownOverlay");
 
 // ---------------------------------------------------------------- fake DOM
@@ -33,6 +35,13 @@ function node(tag, extra = {}) {
     childNodes: [],
     parentNode: null,
     adoptedStyleSheets: [],
+    // البند #47: attachOverlayToHost صار يمرّ بـ setOverlayTopLayer، وهي تسأل
+    // عن السمة. لا دعم popover في هذا العالم فالمسار كلّه لا يُلمس — وهذا
+    // بالضبط ما يجب أن يبقى صحيحاً هنا. تغطيته في tools/test-top-layer.js
+    attrs: {},
+    hasAttribute(n) { return n in this.attrs; },
+    setAttribute(n, v) { this.attrs[n] = String(v); },
+    removeAttribute(n) { delete this.attrs[n]; },
     appendChild(child) {
       if (child.parentNode) {
         const i = child.parentNode.childNodes.indexOf(child);
@@ -79,6 +88,7 @@ function makeWorld() {
     CSSStyleSheet: class { replaceSync(t) { this.cssText = t; } },
     vzOverlay: node("DIV"),
     vzOverlayHost: null,
+    vzOverlayVideo: null,
     console
   };
   vm.createContext(ctx);
@@ -92,8 +102,12 @@ const check = (name, cond, extra) => cond
   ? (pass++, console.log("  ✅ " + name))
   : (fail++, console.log("  ❌ " + name, extra ?? ""));
 
-// Runs one attach cycle exactly as ensureVideoOverlay / fullscreenchange do
-const attachFor = (ctx, video) => ctx.attachOverlayToHost(ctx.preferredOverlayHost(video));
+// Runs one attach cycle exactly as ensureVideoOverlay / fullscreenchange do —
+// including setting vzOverlayVideo first, which is the order in ensureVideoOverlay.
+const attachFor = (ctx, video) => {
+  ctx.vzOverlayVideo = video;
+  ctx.attachOverlayToHost(ctx.preferredOverlayHost(video));
+};
 const parentOf = (ctx) => ctx.vzOverlay.parentNode;
 
 console.log("\n[1] المسار العادي — فيديو في DOM عادي بلا ملء شاشة");

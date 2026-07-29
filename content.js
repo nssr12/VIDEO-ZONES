@@ -1717,6 +1717,15 @@ const OVERLAY_CSS = `
       opacity:.98;
     }
     .vzHidden{ display:none !important; }
+    /* البند #47 — لا تنطبق إلا حين تُضاف السمة، أي في حالة واحدة: عنصر ملء
+       الشاشة هو <video> نفسه. أنماط المتصفح الافتراضية لـ [popover] تفرض
+       inset:0 و margin:auto وإطاراً وحشواً وخلفية — تُصفَّر كلها هنا فيبقى
+       شكل الـ overlay كما هو بالضبط. left/top/width/height سطرية فتغلب. */
+    .vzWrap[popover]{
+      inset:auto; margin:0; border:0; padding:0;
+      background:transparent; color:inherit; overflow:visible;
+    }
+    .vzWrap::backdrop{ background:transparent; pointer-events:none; }
   `;
 
 function injectOverlayCSS() {
@@ -1749,24 +1758,78 @@ function buildOverlayElement() {
   return el;
 }
 
+// مصدر واحد لـ«ما هو عنصر ملء الشاشة بالنسبة لهذا الفيديو».
+// داخل جذر ظل تُقرأ من الجذر لا من المستند: `document.fullscreenElement`
+// **يُعاد استهدافه** إلى مضيف الظل، وهو عنصر لا يُرسم له صندوق بلا `<slot>`
+// (البند #46). الجذر وحده يسمّي العنصر الحقيقي.
+function fullscreenElementFor(video) {
+  const root = video?.getRootNode?.();
+  return (root?.host ? root.fullscreenElement : document.fullscreenElement) || null;
+}
+
 function preferredOverlayHost(video) {
+  const root = video?.getRootNode?.();
+  // A fullscreen <video> is a replaced element: children are fallback content and
+  // never render, so it can never host the overlay. In that one case we leave the
+  // overlay in its normal home and setOverlayTopLayer raises it instead (#47).
+  const fs = fullscreenElementFor(video);
+  const container = fs && fs !== video ? fs : null;
+
   // A video behind a shadow boundary gets its overlay inside that same root: it
   // is the only tree that still paints when something in there goes fullscreen.
-  // document.fullscreenElement is no help — it is RETARGETED to the shadow host,
-  // an element that renders nothing without a <slot>, so an overlay appended to
-  // it gets no layout box at all. Only the root itself names the real element.
-  const root = video?.getRootNode?.();
-  if (root?.host) {
-    const fs = root.fullscreenElement;
-    // A fullscreen <video> is a replaced element: children are fallback content
-    // and never render. Nothing paints anywhere in that state — see audit #47.
-    return fs && fs !== video ? fs : root;
-  }
+  if (root?.host) return container || root;
 
   // Inside fullscreen, the fullscreen element is the only thing the browser paints.
   // Outside, body is fine since we use position:fixed (viewport coords).
-  if (document.fullscreenElement) return document.fullscreenElement;
-  return document.body || document.documentElement;
+  return container || document.body || document.documentElement;
+}
+
+// ── البند #47: التحصين للطبقة العليا ─────────────────────────────────────────
+// حين يكون عنصر ملء الشاشة هو `<video>` نفسه لا يُرسم الـ overlay في أي مكان:
+// الطبقة العليا وحدها تُرسم، و`<video>` عنصر مُستبدَل فأبناؤه محتوى بديل لا
+// يُعرض. `popover` يرفع العنصر إلى الطبقة العليا نفسها فيُرسم فوق الفيديو.
+//
+// **manual لا auto عمداً**: الـ auto يُغلق بـ Esc وبالنقر خارجه، ويطرد أي
+// popover آخر مفتوح على الصفحة. الـ manual لا يفعل شيئاً من ذلك، ولا يأخذ
+// التركيز لأن الـ overlay بلا `autofocus` وبلا عنصر قابل للتركيز أصلاً.
+//
+// **ولا أثر على المسار الحالي إطلاقاً**: السمة لا تُضاف إلا في هذه الحالة
+// وحدها، وبدونها لا تنطبق أنماط المتصفح لـ `[popover]` فلا يتغيّر شيء. القياس
+// الميداني على ثمانية مواقع يقول إن الحالة لا تقع اليوم — تحصين لا إصلاح.
+const OVERLAY_CAN_POPOVER =
+  typeof HTMLElement === "function" && typeof HTMLElement.prototype.showPopover === "function";
+
+// الحالة **الوحيدة** التي لا يُرسم فيها الـ overlay بلا الطبقة العليا.
+function overlayNeedsTopLayer(video) {
+  return !!video && fullscreenElementFor(video) === video;
+}
+
+function isPopoverOpen(el) {
+  try { return el.matches(":popover-open"); } catch { return false; }
+}
+
+function setOverlayTopLayer(on) {
+  if (!vzOverlay) return;
+
+  if (!on) {
+    // المسار العادي يخرج من هنا بلا لمس أي شيء: السمة لم تُضَف أصلاً.
+    if (!vzOverlay.hasAttribute("popover")) return;
+    try { if (isPopoverOpen(vzOverlay)) vzOverlay.hidePopover(); } catch {}
+    vzOverlay.removeAttribute("popover");
+    return;
+  }
+
+  if (!OVERLAY_CAN_POPOVER) return;
+  if (!vzOverlay.hasAttribute("popover")) vzOverlay.setAttribute("popover", "manual");
+  if (isPopoverOpen(vzOverlay)) return;
+  try {
+    vzOverlay.showPopover();
+  } catch {
+    // درس البند #50: الاحتياطي الصامت يجب ألا يكون **أسوأ** مما كان.
+    // `[popover]` بلا فتح يعني `display:none` — أي إخفاء الـ overlay في كل
+    // الحالات لا في هذه وحدها. فإن تعذّر الرفع تُزال السمة فوراً.
+    vzOverlay.removeAttribute("popover");
+  }
 }
 
 function positionOverlayToVideo() {
@@ -1811,6 +1874,10 @@ function attachOverlayToHost(host) {
     ensureOverlayStylesIn(host.getRootNode?.());
   }
   vzOverlayHost = host;
+  // بعد الإلحاق دائماً، ومن هنا وحده: هذه الدالة هي ممرّ كل مسارات الإلحاق
+  // الثلاثة (إنشاء · إعادة استخدام · fullscreenchange)، ونقل العنصر في الـ DOM
+  // يُغلق أي popover مفتوح فيلزم إعادة فتحه بعد كل نقلة (#47).
+  setOverlayTopLayer(overlayNeedsTopLayer(vzOverlayVideo));
 }
 
 // A document stylesheet never crosses a shadow boundary, so the overlay carries
