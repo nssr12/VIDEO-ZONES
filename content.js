@@ -1144,20 +1144,47 @@ async function loadYtAutoQualitySettings(pre) {
 
 // yt_quality_main.js runs in the page's main world (declared in manifest.json).
 // We communicate with it via CustomEvent — content scripts cannot call YouTube's player API directly.
+// De-duplication key, same idea as ytCaptionAttemptKey: one attempt per video per
+// requested quality. Without it every loadedmetadata — and a watch page fires several,
+// one per ad and one per content video — re-triggered the whole poll (audit #19).
+let ytQualityAttemptKey = null;
+let lastYtQualityResult = null;
+
 function triggerYtQuality() {
   if (!isYouTubeHost() || !ytAutoQuality) return;
+  const key = `${location.pathname}${location.search}|${ytAutoQuality}`;
+  if (key === ytQualityAttemptKey) return; // same video, same quality: already tried
+  ytQualityAttemptKey = key;
   window.dispatchEvent(new CustomEvent("__vz_setq__", { detail: { q: ytAutoQuality } }));
 }
 
 function startYtAutoQuality() {
   if (!isYouTubeHost()) return;
+  // Leaving the video cancels a poll still running for it. Without this the old
+  // poll survives the navigation and sets the previous video's quality on the new
+  // one — the MAIN world listens for yt-navigate-start too, this is the belt.
+  document.addEventListener("yt-navigate-start", () => {
+    ytQualityAttemptKey = null;
+    window.dispatchEvent(new CustomEvent("__vz_cancelq__"));
+  }, true);
   document.addEventListener("yt-navigate-finish", () => {
+    ytQualityAttemptKey = null;
     setTimeout(() => triggerYtQuality(), 800);
   }, true);
   document.addEventListener("loadedmetadata", (e) => {
     if (e.target?.tagName !== "VIDEO") return;
     triggerYtQuality();
   }, true);
+  // The MAIN world reports what actually happened. Today this only records it —
+  // a requested quality that the video does not offer still fails silently to the
+  // user, and surfacing that is a separate decision, not part of this item.
+  window.addEventListener("__vz_setq_done__", (e) => {
+    lastYtQualityResult = e.detail || null;
+    const r = lastYtQualityResult?.result;
+    if (r && r !== "set" && r !== "cancelled" && r !== "ad") {
+      console.debug(`[VIDEO-ZONES] جودة يوتيوب «${lastYtQualityResult.requested}»: ${r}`);
+    }
+  });
 }
 
 // -------- Shorts → المشغّل العادي --------
