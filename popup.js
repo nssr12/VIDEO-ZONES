@@ -91,6 +91,26 @@ async function getActiveTab() {
   return tab;
 }
 
+// Same labels the options dropdown shows, so the two never describe the one setting
+// differently. Anything unknown falls back to the raw code rather than guessing.
+const YT_QUALITY_LABELS = {
+  hd4320: "8K — 4320p", hd2160: "4K — 2160p", hd1440: "1440p — QHD",
+  hd1080: "1080p — Full HD", hd720: "720p — HD", large: "480p",
+  medium: "360p", small: "240p", tiny: "144p"
+};
+const qualityLabel = (q) => YT_QUALITY_LABELS[q] || String(q || "");
+
+// Shown ONLY when the content script reports a real gap. It stays hidden on success,
+// on auto quality, during an ad and off YouTube — content.js decides all four, so the
+// popup has one rule: render what it is given, hide when given nothing.
+function setYtQualityGap(gap) {
+  const el = $("ytQualityGap");
+  if (!el) return;
+  if (!gap) { el.hidden = true; el.textContent = ""; return; }
+  el.textContent = `الجودة المطلوبة ${qualityLabel(gap.requested)} غير متاحة في هذا الفيديو — طُبِّقت ${qualityLabel(gap.applied)}`;
+  el.hidden = false;
+}
+
 function setStatus(kind, text) {
   const el = $("statusValue");
   if (!el) return;
@@ -127,6 +147,7 @@ async function checkPageStatus() {
 
   try {
     const res = await chrome.tabs.sendMessage(tab.id, { type: "GVZ_STATUS" });
+    setYtQualityGap(res?.ok ? res.ytQualityGap : null);
     if (!res?.ok) {
       setStatus("warn", "الصفحة مفتوحة لكن لم يصلنا رد واضح من الإضافة");
       return;
@@ -149,6 +170,7 @@ async function checkPageStatus() {
     }
     setStatus("ok", "الإضافة شغالة على هذه الصفحة");
   } catch {
+    setYtQualityGap(null);
     setStatus("bad", "الإضافة غير محقونة في هذه الصفحة. استخدم التفعيل اليدوي");
   }
 }

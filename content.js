@@ -1150,6 +1150,18 @@ async function loadYtAutoQualitySettings(pre) {
 let ytQualityAttemptKey = null;
 let lastYtQualityResult = null;
 
+// Reported to the popup ONLY when there is a real gap between what was asked for
+// and what the video could give. Success stays silent on purpose: a line that shows
+// every time is a line the user learns to ignore — the lesson from the permanent blue
+// notice in S1. Returns null on auto quality, during an ad, and off YouTube, because
+// none of those is a failure to tell anyone about.
+function ytQualityGap() {
+  if (!isYouTubeHost() || !ytAutoQuality) return null;
+  const r = lastYtQualityResult;
+  if (!r || typeof r.result !== "string" || !r.result.startsWith("fallback:")) return null;
+  return { requested: r.requested, applied: r.result.slice("fallback:".length) };
+}
+
 function triggerYtQuality() {
   if (!isYouTubeHost() || !ytAutoQuality) return;
   const key = `${location.pathname}${location.search}|${ytAutoQuality}`;
@@ -2014,7 +2026,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       globalEnabled: !!siteRules.enabled,
       siteProfileEnabled: !!siteProfile.enabled,
       hasVideoUnderPointer: !!getVideoFromPointerPosition(),
-      host: baseDomain(location.host)
+      host: baseDomain(location.host),
+      ytQualityGap: ytQualityGap()
     });
     return true;
   }
