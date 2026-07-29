@@ -461,6 +461,9 @@ async function loadBlockedHosts(pre) {
   const data = await settingsRead(pre);
   const settings = data.settings || {};
   blockedHosts = Array.isArray(settings.blockedHosts) ? settings.blockedHosts : [];
+  // Blocking a site must also drop the track observer, and unblocking must bring it
+  // back — the two loaders resolve independently, so each converges the state (#21).
+  syncSubtitleTrackObserver();
 }
 
 function hexToRgb(hex) {
@@ -490,6 +493,8 @@ async function loadSubtitleSettings(pre) {
   // Turning the automation on or off flips the two button exemptions, so the
   // Clean Player CSS has to be rebuilt here — no page reload (audit #18).
   applyCleanPlayerCSS();
+  // ...and creates or disconnects the track observer, likewise with no reload (#21)
+  syncSubtitleTrackObserver();
 }
 
 // Caption size used to be absolute px, so the same number that reads well on a
@@ -911,10 +916,33 @@ function enableMatchingTextTrack(video, lang) {
   return foundMatch;
 }
 
-function startSubtitleTrackObserver() {
-  if (subtitleTrackObserver) return;
+// True exactly when the observer has any work to do. Kept in one place so the
+// create path and the disconnect path can never drift apart.
+function subtitleTrackWatchWanted() {
+  return !!(subtitleSettings.enabled && subtitleSettings.defaultLang) && !isBlockedHost();
+}
+
+// Audit #21: the observer used to be created unconditionally with the guard INSIDE
+// the callback, so the browser collected and delivered mutations even to someone who
+// had turned subtitles off entirely, and it was never disconnected. Now it exists
+// only while it is wanted, and loadSubtitleSettings calls this on every change so
+// both directions apply with no reload.
+//
+// SCOPE: body, not documentElement. It cannot be narrowed to a caption container or
+// a player wrapper, because what it hunts for is a newly added <video> — which
+// appears BEFORE either of those exists. body is the real available win: measured
+// over 20s, <head> churn alone accounted for 32 of 227 callbacks on a YouTube watch
+// page and 48 of 104 on aljazeera.net.
+function syncSubtitleTrackObserver() {
+  const wanted = subtitleTrackWatchWanted();
+  if (wanted === !!subtitleTrackObserver) return; // already in the right state
+
+  if (!wanted) {
+    subtitleTrackObserver.disconnect();
+    subtitleTrackObserver = null;
+    return;
+  }
   subtitleTrackObserver = new MutationObserver((mutations) => {
-    if (!subtitleSettings.enabled || !subtitleSettings.defaultLang) return;
     for (const m of mutations) {
       for (const node of m.addedNodes) {
         if (node?.nodeType !== 1) continue;
@@ -928,7 +956,16 @@ function startSubtitleTrackObserver() {
       }
     }
   });
-  subtitleTrackObserver.observe(document.documentElement, { childList: true, subtree: true });
+  // body is null only if this runs before the parser reached it; documentElement is
+  // the fallback so the watch is never silently skipped.
+  subtitleTrackObserver.observe(document.body || document.documentElement,
+    { childList: true, subtree: true });
+}
+
+// Registered ONCE from startup. The two document listeners below are cheap and
+// guard themselves, so they stay put; only the observer comes and goes.
+function startSubtitleTrackObserver() {
+  syncSubtitleTrackObserver();
 
   // SPA navigation on YouTube: each new video is a new attempt
   document.addEventListener("yt-navigate-finish", () => {

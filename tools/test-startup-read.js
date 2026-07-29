@@ -95,6 +95,7 @@ function makeCtx() {
     // side effects the loaders trigger — not under test here
     buildMap: () => {}, buildSiteMap: () => {}, hideOverlayNow: () => {},
     applySubtitleStyles: () => {}, applySubtitleTrack: () => {}, applyCleanPlayerCSS: () => {},
+    syncSubtitleTrackObserver: () => {}, // #21 — خارج نطاق هذا الاختبار
     applyGridVars: () => {}, resolveGridAppearance: (g) => ({ ...g }),
     structuredClone, vzOverlay: null, vzVolumeBadge: null,
     FIRST_RUN_ZONES: { enabled: true, wheel: { map: {} } },
