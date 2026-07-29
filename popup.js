@@ -455,10 +455,13 @@ async function findVideoFrameId(tabId) {
   }
 }
 
+// NEVER broadcasts. A frameId-less send is the exact construct audit #24 names: it
+// lets every frame build its own AudioContext and lets an arbitrary one answer
+// GET_VOLUME_BOOST. With no resolved frame there is simply no video to boost, so the
+// right move is to refuse the send, not to shout at every frame.
 function sendToVideoFrame(message) {
-  return boostFrameId != null
-    ? chrome.tabs.sendMessage(boostTabId, message, { frameId: boostFrameId })
-    : chrome.tabs.sendMessage(boostTabId, message);
+  if (boostFrameId == null) return Promise.reject(new Error("no-video-frame"));
+  return chrome.tabs.sendMessage(boostTabId, message, { frameId: boostFrameId });
 }
 
 // The cached frameId goes stale if the page navigates while the popup stays open
@@ -470,18 +473,33 @@ async function sendBoostMessage(message) {
   } catch (err) {
     if (boostTabId == null) throw err;
     const fresh = await findVideoFrameId(boostTabId);
-    if (fresh === boostFrameId) throw err; // same frame — genuinely unreachable
+    // null would downgrade the retry into a broadcast, which is the bug itself
+    if (fresh == null || fresh === boostFrameId) throw err;
     boostFrameId = fresh;
     return await sendToVideoFrame(message);
   }
 }
 
+// A slider that slides with nothing behind it is worse than one that says why.
+function setBoostAvailable(available) {
+  const slider = $("boostSlider");
+  if (!slider) return;
+  slider.disabled = !available;
+  slider.title = available ? "" : "لا فيديو في هذه الصفحة";
+}
 
 async function loadBoostUI() {
   const tab = await getActiveTab();
   if (!tab?.id) return;
   boostTabId = tab.id;
   boostFrameId = await findVideoFrameId(tab.id);
+  setBoostAvailable(boostFrameId != null);
+  if (boostFrameId == null) {
+    $("boostSlider").value = 100;
+    $("boostValue").textContent = "100%";
+    setBoostNote("no_video");
+    return;
+  }
   try {
     const res = await sendToVideoFrame({ type: "GET_VOLUME_BOOST" });
     if (res?.pct != null) {
