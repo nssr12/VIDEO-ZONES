@@ -406,10 +406,10 @@ function remappingEnabled() {
 // Once migration removes the legacy key this read carries the shard alone.
 function spKeyFor(host) { return `sp:${host}`; }
 
-async function loadSiteProfile() {
+async function loadSiteProfile(pre) {
   const host = baseDomain(location.host);
   const key = spKeyFor(host);
-  const data = await chrome.storage.sync.get([key, "siteProfiles"]);
+  const data = pre || await chrome.storage.sync.get([key, "siteProfiles"]);
   const profile = data[key] || data.siteProfiles?.[host];
   siteProfile = {
     enabled: !!profile?.enabled,
@@ -441,15 +441,24 @@ const FIRST_RUN_ZONES = {
 // A missing `zones` key means a genuinely fresh install, so we hand back
 // FIRST_RUN_ZONES without persisting it. An existing-but-empty `zones` means the
 // user emptied it on purpose and is returned untouched.
-async function ensureZonesDefaults() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+// Audit #13: content.js runs at document_start in EVERY frame, and eleven separate
+// storage reads per frame meant a page with 30 ad iframes paid 330 of them. Startup
+// now does ONE read and hands the result to every loader. Each loader still reads on
+// its own when something else calls it — a RELOAD_* message or storage.onChanged —
+// so passing nothing keeps the old behaviour exactly.
+function settingsRead(pre) {
+  return pre || chrome.storage.sync.get({ settings: {} });
+}
+
+async function ensureZonesDefaults(pre) {
+  const data = await settingsRead(pre);
   const zones = (data.settings || {}).zones;
   if (!zones) return structuredClone(FIRST_RUN_ZONES);
   return zones;
 }
 
-async function loadBlockedHosts() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadBlockedHosts(pre) {
+  const data = await settingsRead(pre);
   const settings = data.settings || {};
   blockedHosts = Array.isArray(settings.blockedHosts) ? settings.blockedHosts : [];
 }
@@ -461,8 +470,8 @@ function hexToRgb(hex) {
   return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
 }
 
-async function loadSubtitleSettings() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadSubtitleSettings(pre) {
+  const data = await settingsRead(pre);
   const s = data.settings || {};
   const sub = s.subtitles || {};
   subtitleSettings = {
@@ -929,14 +938,14 @@ function syncZoneNumbers(root) {
   });
 }
 
-async function loadGridAppearance() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadGridAppearance(pre) {
+  const data = await settingsRead(pre);
   gridAppearance = resolveGridAppearance((data.settings || {}).gridAppearance);
   applyGridVars(vzOverlay);
 }
 
-async function loadSoundDisplaySettings() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadSoundDisplaySettings(pre) {
+  const data = await settingsRead(pre);
   const settings = data.settings || {};
   const sound = settings.soundDisplay || soundDisplaySettings;
   soundDisplaySettings = {
@@ -954,8 +963,8 @@ async function loadSoundDisplaySettings() {
   }
 }
 
-async function loadYtAutoQualitySettings() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadYtAutoQualitySettings(pre) {
+  const data = await settingsRead(pre);
   ytAutoQuality = (data.settings || {}).ytAutoQuality || "";
 }
 
@@ -978,8 +987,8 @@ function startYtAutoQuality() {
 }
 
 // -------- Shorts → المشغّل العادي --------
-async function loadYtShortsRedirectSetting() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadYtShortsRedirectSetting(pre) {
+  const data = await settingsRead(pre);
   const s = data.settings || {};
   // Refresh blockedHosts from the same read so the first redirect check
   // can't run before loadBlockedHosts() resolves
@@ -1075,8 +1084,8 @@ function isYouTubeFamilyHost() {
   return /(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname);
 }
 
-async function loadCleanPlayerSettings() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadCleanPlayerSettings(pre) {
+  const data = await settingsRead(pre);
   const s = data.settings || {};
   // Same-read refresh of blockedHosts (see loadYtShortsRedirectSetting)
   if (Array.isArray(s.blockedHosts)) blockedHosts = s.blockedHosts;
@@ -1133,8 +1142,8 @@ let zoneSettings = { enabled: true, wheel: { map: {} } };
 
 
 
-async function loadZoneSettings() {
-  const zones = await ensureZonesDefaults(); //  يضمن وجود الإعدادات حتى بدون فتح options
+async function loadZoneSettings(pre) {
+  const zones = await ensureZonesDefaults(pre); //  يضمن وجود الإعدادات حتى بدون فتح options
   zoneSettings = zones || zoneSettings;
 
   zoneSettings.enabled = zoneSettings.enabled !== false; // default true
@@ -1430,8 +1439,8 @@ window.addEventListener("mousedown", suppressMiddleClickDefault, true);
 // -------------------------------------------------------------------------
 let overlaySettings = { enabled: true, autoHideMs: 900, volumeAutoHideMs: 900 };
 
-async function loadOverlaySettings() {
-  const data = await chrome.storage.sync.get({ settings: {} });
+async function loadOverlaySettings(pre) {
+  const data = await settingsRead(pre);
   const s = data.settings || {};
   const o = s.overlay || {};
   const grid = Number(o.autoHideMs ?? 900);
@@ -1786,8 +1795,8 @@ function baseDomain(host) {
 }
 // ---- END baseDomain ----
 
-async function loadRulesForThisHost() {
-  const data = await chrome.storage.sync.get({
+async function loadRulesForThisHost(pre) {
+  const data = pre || await chrome.storage.sync.get({
     globalSiteRules: { enabled: false, mappings: [] }
   });
   siteRules = data.globalSiteRules || { enabled: false, mappings: [] };
@@ -1876,27 +1885,38 @@ function startup(label, run) {
   });
 }
 
-// The Shorts redirect now consults the enable flags, so its first check has to
-// wait for them: at document_start siteRules/siteProfile are still false and it
-// would skip a redirect the user has switched on. Reusing the promises these
-// steps already return costs no extra storage read (audit #20).
-const globalRulesReady = startup("globalRules", loadRulesForThisHost);
-const siteProfileReady = startup("siteProfile", loadSiteProfile);
-startup("zones", loadZoneSettings); // ✅ مهم: تشغيل zones بعد refresh مباشرة
-startup("overlay", loadOverlaySettings);
-startup("blockedHosts", loadBlockedHosts);
-startup("soundDisplay", loadSoundDisplaySettings);
-startup("gridAppearance", loadGridAppearance);
-startup("subtitles", loadSubtitleSettings);
+// ONE read for the whole startup (audit #13). Every key any loader needs is
+// requested here with that loader's own default, so each of them sees exactly
+// what its solo read would have returned. Failure is handled per step as before:
+// this promise rejecting makes every step reject, and startup() swallows the
+// expected "context invalidated" case for each.
+const startupRead = chrome.storage.sync.get({
+  settings: {},
+  globalSiteRules: { enabled: false, mappings: [] },
+  siteProfiles: {},
+  [spKeyFor(baseDomain(location.host))]: null
+});
+
+// The Shorts redirect consults the enable flags, so its first check has to wait
+// for them: at document_start siteRules/siteProfile are still false and it would
+// skip a redirect the user has switched on (audit #20).
+const globalRulesReady = startup("globalRules", () => startupRead.then(loadRulesForThisHost));
+const siteProfileReady = startup("siteProfile", () => startupRead.then(loadSiteProfile));
+startup("zones", () => startupRead.then(loadZoneSettings)); // ✅ مهم: تشغيل zones بعد refresh مباشرة
+startup("overlay", () => startupRead.then(loadOverlaySettings));
+startup("blockedHosts", () => startupRead.then(loadBlockedHosts));
+startup("soundDisplay", () => startupRead.then(loadSoundDisplaySettings));
+startup("gridAppearance", () => startupRead.then(loadGridAppearance));
+startup("subtitles", () => startupRead.then(loadSubtitleSettings));
 startup("subtitleObserver", startSubtitleTrackObserver);
-startup("ytQuality", () => loadYtAutoQualitySettings().then(() => {
+startup("ytQuality", () => startupRead.then(loadYtAutoQualitySettings).then(() => {
   startYtAutoQuality();
   triggerYtQuality();
 }));
 startup("ytShorts", () => Promise.all([
-  loadYtShortsRedirectSetting(), globalRulesReady, siteProfileReady
+  startupRead.then(loadYtShortsRedirectSetting), globalRulesReady, siteProfileReady
 ]).then(() => startYtShortsRedirect()));
-startup("cleanPlayer", loadCleanPlayerSettings);
+startup("cleanPlayer", () => startupRead.then(loadCleanPlayerSettings));
 startup("boostReapply", startBoostReapply);
 
 // ⚠️ PAIRED COPY — duplicated verbatim in storage.js. Edit both together;
