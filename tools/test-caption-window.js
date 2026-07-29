@@ -56,23 +56,42 @@ const check = (name, cond, extra) => cond
   ? (pass++, console.log("  ✅ " + name))
   : (fail++, console.log("  ❌ " + name, JSON.stringify(extra ?? "")));
 
-console.log("\n[1] التنسيق مُفعَّل ⇒ نافذة يوتيوب شفافة تماماً");
+// منذ #53 صارت النافذة هي حاملة الصندوق: نطليها بلوننا بدل تركها شفافة، وهو ما
+// يطمس «لون النافذة» عند يوتيوب بنفس القوة — ومع ذلك يبقى شرط #52 قائماً: لا أثر
+// باقياً عند الإطفاء، وهو ما يفحصه القسم [4].
+const painted = (css, sel) => rulesOf(css).find(([s, b]) => s.includes(sel) && /background-color:rgba/.test(b));
+function rulesOf(css) {
+  const out = [];
+  for (const raw of strip(css).replace(/@container[^{]*\{/g, "").split("}")) {
+    const i = raw.indexOf("{");
+    if (i !== -1) out.push([raw.slice(0, i).trim(), raw.slice(i + 1)]);
+  }
+  return out;
+}
+
+console.log("\n[1] التنسيق مُفعَّل ⇒ لوننا يطمس «لون النافذة» عند يوتيوب");
 {
   const css = generate({ ...BASE, enabled: true, hideOnPreviews: false });
-  const win = blockFor(css, ".caption-window");
-  check("بلوك النافذة موجود", !!win);
-  check("خلفية النافذة شفافة", /background-color:transparent !important;/.test(win), win);
-  check("والاختصار background كذلك", /background:transparent !important;/.test(win), win);
-  check("ولا صورة خلفية باقية", /background-image:none !important;/.test(win), win);
+  const win = painted(css, ".caption-window");
+  check("النافذة تُطلى بلوننا", !!win, rulesOf(css).map(([x]) => x.split("\n")[0]));
+  check("بـ !important فيتجاوز لون نافذة يوتيوب",
+    win && /background-color:rgba\(0,0,255,0\.6\) !important;/.test(win[1]), win && win[1]);
+  check("والاختصار background كذلك", win && /background:rgba\(0,0,255,0\.6\) !important;/.test(win[1]));
+  check("ولا صورة خلفية باقية", win && /background-image:none !important;/.test(win[1]));
+  // القاعدة التي محدّدها هو الحاوية وحدها، لا التي تذكرها ضمن سلالة
+  const outer = rulesOf(css).find(([sel]) => sel === "html .ytp-caption-window-container");
+  check("والحاوية الخارجية تبقى شفافة فلا تصير لوحاً عريضاً",
+    outer && /background-color:transparent !important;/.test(outer[1]),
+    outer ? outer[1] : rulesOf(css).map(([x]) => x.split("\n")[0]));
 }
 
 console.log("\n[2] خلفيتنا هي المصدر الوحيد للخلفية المرئية");
 {
   const css = generate({ ...BASE, enabled: true, hideOnPreviews: false });
-  const seg = blockFor(css, ".ytp-caption-segment");
-  check("النصّ يأخذ لون الخلفية من إعدادنا", /background-color:rgba\(0,0,255,0\.6\)/.test(seg), seg);
-  const win = blockFor(css, ".caption-window");
-  check("والنافذة لا تأخذ أي لون", !/rgba\(0,0,255/.test(win), win);
+  const painters = rulesOf(css).filter(([s, b]) => /caption/.test(s) && /background-color:rgba\(0,0,255/.test(b));
+  check("قاعدة تلوين واحدة في مسار يوتيوب", painters.length === 1, painters.map(([x]) => x));
+  const clear = rulesOf(css).find(([s, b]) => s.includes(".ytp-caption-segment") && /background-color:transparent/.test(b));
+  check("وكل ما داخلها مُصفَّر صراحةً", !!clear, clear && clear[0]);
 }
 
 console.log("\n[3] لا بُعد ثابت بالبكسل في أي قاعدة من قواعدنا");
@@ -86,11 +105,8 @@ console.log("\n[3] لا بُعد ثابت بالبكسل في أي قاعدة م
   check("الحشو صار em", /padding:[\d.]+em [\d.]+em !important;/.test(css), css.match(/padding:[^;]*/g));
   check("و max-width نسبية كما كانت", css.includes("max-width:90% !important;"));
 
-  // الحشو عند الحجم المرجعي = القيم القديمة نفسها
-  const pad = /padding:([\d.]+)em ([\d.]+)em !important;/.exec(css.slice(css.indexOf(".ytp-caption-segment")));
-  check("2px/8px عند الخط 22px بالضبط",
-    pad && Math.abs(pad[1] * 22 - 2) < 0.02 && Math.abs(pad[2] * 22 - 8) < 0.02,
-    pad && [pad[1] * 22, pad[2] * 22]);
+  // النسبة نفسها يحكمها tools/test-caption-box.js — هنا يكفي أن الداخل مُصفَّر
+  check("وحشو ما داخل النافذة صفر فلا يتراكم", /padding:0 !important;/.test(css));
 }
 
 console.log("\n[4] ⭐ التنسيق مطفأ ⇒ صفر أثر على الترجمة في أي سياق، النافذة منها");

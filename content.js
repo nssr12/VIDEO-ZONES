@@ -507,13 +507,14 @@ async function loadSubtitleSettings(pre) {
 // that drops the class cannot silently take the query container away with it.
 const YT_PREVIEW_PLAYER_SELECTOR = "#inline-preview-player";
 const CAPTION_REFERENCE_PLAYER_W = 1280;
-// Padding was the one fixed-px dimension left in our rules. In em it rides the
-// font-size — which is itself relative to the player — so the caption box stops
-// being oversized on a small player. The values are the old 2/8 and 2/6 px divided
-// by the default 22px, so at the reference size the box is byte-identical.
-const CAPTION_PAD_Y = (2 / 22).toFixed(3);
-const CAPTION_PAD_X = (8 / 22).toFixed(3);
-const CAPTION_PAD_X_CUE = (6 / 22).toFixed(3); // typical default YouTube watch player
+// YouTube's OWN caption padding, measured live on a watch page with no extension
+// present, at five player sizes: padding is `0 .25em` on .ytp-caption-segment and
+// the ratio to font-size is 0.25 horizontally and 0 vertically at every size — it
+// is em in YouTube's stylesheet, so constant by construction. We adopt those exact
+// numbers rather than inventing our own: YouTube's box is the reference that looks
+// balanced at every size (audit #53).
+const CAPTION_PAD_Y = 0;
+const CAPTION_PAD_X = 0.25; // typical default YouTube watch player
 function relativeCaptionFont(fontSize) {
   const px = Math.max(1, Number(fontSize) || 22);
   const perCqw = (px * 100 / CAPTION_REFERENCE_PLAYER_W).toFixed(3);
@@ -581,7 +582,7 @@ function applySubtitleStyles() {
       background:${bgRgba} !important;
       font-family:${fontFamily} !important;
       line-height:1.35 !important;
-      padding:${CAPTION_PAD_Y}em ${CAPTION_PAD_X_CUE}em !important;
+      padding:${CAPTION_PAD_Y}em ${CAPTION_PAD_X}em !important;
       text-shadow:none !important;
     }
 
@@ -591,19 +592,41 @@ function applySubtitleStyles() {
     html .ytp-caption-window-container .ytp-caption-segment,
     html .ytp-caption-window-container span,
     html .caption-visual-line *,
-    html .captions-text * {
+    html .captions-text *,
+    html .caption-window {
       font-size:${fontSize}px !important;
       color:${color} !important;
-      background-color:${bgRgba} !important;
-      background:${bgRgba} !important;
-      background-image:none !important;
       font-family:${fontFamily} !important;
-      padding:${CAPTION_PAD_Y}em ${CAPTION_PAD_X}em !important;
       text-shadow:none !important;
       fill:${color} !important;
     }
-    html .ytp-caption-window-container,
+
+    /* THE BOX — exactly ONE carrier: the caption window as a whole.
+       Measured live: YouTube paints its box on .ytp-caption-segment and NOTHING
+       else in the chain carries a background. We were painting on THREE nested
+       spans at once (.captions-text, .caption-visual-line, .ytp-caption-segment),
+       so a 0.6 alpha stacked to 0.936, the horizontal padding tripled to ~24px a
+       side, and every line became its own box of a different width — a ragged,
+       unbalanced block instead of one tidy one (audit #53). The owner's call: one
+       box around the whole window, in YouTube's own proportions. */
     html .caption-window {
+      background-color:${bgRgba} !important;
+      background:${bgRgba} !important;
+      background-image:none !important;
+      padding:${CAPTION_PAD_Y}em ${CAPTION_PAD_X}em !important;
+    }
+    /* Nothing inside the window may paint a box — including YouTube's own inline
+       background on the segment, which is why transparent is stated explicitly. */
+    html .ytp-caption-window-container span,
+    html .caption-visual-line *,
+    html .captions-text *,
+    html .ytp-caption-segment {
+      background-color:transparent !important;
+      background:transparent !important;
+      background-image:none !important;
+      padding:0 !important;
+    }
+    html .ytp-caption-window-container {
       /* YouTube has TWO colour settings: "background colour" (the text box) and
          "window colour" (the block behind the whole caption window). We only ever
          styled the first, so a user with a window colour set saw OUR box inside
@@ -616,6 +639,9 @@ function applySubtitleStyles() {
       background-color:transparent !important;
       background:transparent !important;
       background-image:none !important;
+    }
+    html .ytp-caption-window-container,
+    html .caption-window {
       ${posCss}
       left:50% !important; right:auto !important;
       transform:translateX(-50%)${position === "middle" ? " translateY(-50%)" : ""} !important;
@@ -633,10 +659,14 @@ function applySubtitleStyles() {
     html .player-timedtext .player-timedtext-text-container * {
       font-size:${fontSize}px !important;
       color:${color} !important;
-      background-color:${bgRgba} !important;
-      background:${bgRgba} !important;
       font-family:${fontFamily} !important;
       text-shadow:none !important;
+    }
+    /* one carrier here too — descendants inherit no box, so alpha cannot stack */
+    html .player-timedtext-text-container {
+      background-color:${bgRgba} !important;
+      background:${bgRgba} !important;
+      padding:${CAPTION_PAD_Y}em ${CAPTION_PAD_X}em !important;
     }
     html .player-timedtext {
       ${posCss}
@@ -657,6 +687,7 @@ function applySubtitleStyles() {
       html .ytp-caption-window-container span,
       html .caption-visual-line *,
       html .captions-text *,
+      html .caption-window,
       html .player-timedtext-text-container,
       html .player-timedtext-text-container span,
       html .player-timedtext .player-timedtext-text-container *,
@@ -673,9 +704,12 @@ function applySubtitleStyles() {
     html .jw-text-track-display * {
       font-size:${fontSize}px !important;
       color:${color} !important;
+      font-family:${fontFamily} !important;
+    }
+    html .jw-text-track-cue {
       background-color:${bgRgba} !important;
       background:${bgRgba} !important;
-      font-family:${fontFamily} !important;
+      padding:${CAPTION_PAD_Y}em ${CAPTION_PAD_X}em !important;
     }
   `;
 
