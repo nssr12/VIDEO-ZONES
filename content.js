@@ -491,6 +491,24 @@ async function loadSubtitleSettings(pre) {
   applyCleanPlayerCSS();
 }
 
+// Caption size used to be absolute px, so the same number that reads well on a
+// 1280px watch player buried a 300px player in text. YouTube's homepage hover
+// preview uses the SAME #movie_player / .html5-video-player element as the watch
+// page — verified in Chrome, no class or id tells them apart — so SIZE is the only
+// reliable discriminator, and that means measuring the player.
+//
+// Same technique as the zone numbers: container query units with clamp. The user's
+// setting stays one number and is reinterpreted as "the size at a reference-width
+// player", so nothing in the UI changes and no stored value migrates.
+const CAPTION_REFERENCE_PLAYER_W = 1280; // typical default YouTube watch player
+function relativeCaptionFont(fontSize) {
+  const px = Math.max(1, Number(fontSize) || 22);
+  const perCqw = (px * 100 / CAPTION_REFERENCE_PLAYER_W).toFixed(3);
+  // Floor keeps a tiny preview legible instead of invisible; ceiling stops a
+  // 4K fullscreen player from rendering absurd text.
+  return `clamp(${Math.max(9, px * 0.45).toFixed(1)}px, ${perCqw}cqw, ${(px * 2).toFixed(1)}px)`;
+}
+
 function applySubtitleStyles() {
   // A blocked site must get no styling layer at all — the block button promises
   // the extension keeps its hands off (audit #6). The existing tag is still
@@ -504,14 +522,24 @@ function applySubtitleStyles() {
 
   const { fontSize, color, bgColor, bgOpacity, fontFamily, position } = subtitleSettings;
   const bgRgba = `rgba(${hexToRgb(bgColor)},${Math.max(0, Math.min(1, bgOpacity))})`;
+  const relFont = relativeCaptionFont(fontSize);
   const posCss =
     position === "top" ? "top:8%;bottom:auto;" :
     position === "middle" ? "top:50%;bottom:auto;transform:translateY(-50%);" :
     "bottom:8%;top:auto;";
 
   const css = `
+    /* The query container the sizes above are measured against. inline-size only —
+       the weakest containment that still exposes cqw — and scoped to known player
+       wrappers so no page-level element is ever contained. */
+    html :is(${KNOWN_PLAYER_WRAPPER_SELECTOR}) {
+      container-type: inline-size !important;
+    }
+
     /* Native HTML5 cues (works on most generic <video><track> setups) */
     html video::cue {
+      /* Native cues are rendered by the browser inside the <video> box, out of
+         reach of any container we could establish, so this one stays absolute. */
       font-size:${fontSize}px !important;
       color:${color} !important;
       background-color:${bgRgba} !important;
@@ -529,7 +557,7 @@ function applySubtitleStyles() {
     html .ytp-caption-window-container span,
     html .caption-visual-line *,
     html .captions-text * {
-      font-size:${fontSize}px !important;
+      font-size:${relFont} !important;
       color:${color} !important;
       background-color:${bgRgba} !important;
       background:${bgRgba} !important;
@@ -556,7 +584,7 @@ function applySubtitleStyles() {
     html .player-timedtext-text-container,
     html .player-timedtext-text-container span,
     html .player-timedtext .player-timedtext-text-container * {
-      font-size:${fontSize}px !important;
+      font-size:${relFont} !important;
       color:${color} !important;
       background-color:${bgRgba} !important;
       background:${bgRgba} !important;
@@ -572,7 +600,7 @@ function applySubtitleStyles() {
     html .jw-text-track-cue,
     html .jw-text-track-display,
     html .jw-text-track-display * {
-      font-size:${fontSize}px !important;
+      font-size:${relFont} !important;
       color:${color} !important;
       background-color:${bgRgba} !important;
       background:${bgRgba} !important;
