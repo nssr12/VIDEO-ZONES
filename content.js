@@ -500,6 +500,11 @@ async function loadSubtitleSettings(pre) {
 // Same technique as the zone numbers: container query units with clamp. The user's
 // setting stays one number and is reinterpreted as "the size at a reference-width
 // player", so nothing in the UI changes and no stored value migrates.
+// YouTube's homepage/search hover preview. Verified live in Chrome: the element is
+// div#inline-preview-player and it ALSO carries .html5-video-player, so the known
+// wrapper list already covers it — named here explicitly so a future YouTube change
+// that drops the class cannot silently take the query container away with it.
+const YT_PREVIEW_PLAYER_SELECTOR = "#inline-preview-player";
 const CAPTION_REFERENCE_PLAYER_W = 1280; // typical default YouTube watch player
 function relativeCaptionFont(fontSize) {
   const px = Math.max(1, Number(fontSize) || 22);
@@ -532,7 +537,7 @@ function applySubtitleStyles() {
     /* The query container the sizes above are measured against. inline-size only —
        the weakest containment that still exposes cqw — and scoped to known player
        wrappers so no page-level element is ever contained. */
-    html :is(${KNOWN_PLAYER_WRAPPER_SELECTOR}) {
+    html :is(${KNOWN_PLAYER_WRAPPER_SELECTOR}, ${YT_PREVIEW_PLAYER_SELECTOR}) {
       container-type: inline-size !important;
     }
 
@@ -557,7 +562,7 @@ function applySubtitleStyles() {
     html .ytp-caption-window-container span,
     html .caption-visual-line *,
     html .captions-text * {
-      font-size:${relFont} !important;
+      font-size:${fontSize}px !important;
       color:${color} !important;
       background-color:${bgRgba} !important;
       background:${bgRgba} !important;
@@ -584,7 +589,7 @@ function applySubtitleStyles() {
     html .player-timedtext-text-container,
     html .player-timedtext-text-container span,
     html .player-timedtext .player-timedtext-text-container * {
-      font-size:${relFont} !important;
+      font-size:${fontSize}px !important;
       color:${color} !important;
       background-color:${bgRgba} !important;
       background:${bgRgba} !important;
@@ -596,11 +601,35 @@ function applySubtitleStyles() {
       z-index:60 !important;
     }
 
+    /* STRUCTURAL GUARD (audit #50). Everything above is the absolute fallback the
+       user already knows. The relative size lives inside @container, and a
+       container query CANNOT match when no ancestor query container exists — so a
+       future YouTube rename that stops the container from being established makes
+       captions fall back to the old fixed size instead of resolving cqw against the
+       viewport, which measured 32.7px on a 1900px window: BIGGER than the fallback
+       and silently wrong. Measured with the guard: no container -> ${fontSize}px. */
+    @container (min-width: 0px) {
+      html .ytp-caption-segment,
+      html .captions-text .ytp-caption-segment,
+      html .ytp-caption-window-container .ytp-caption-segment,
+      html .ytp-caption-window-container span,
+      html .caption-visual-line *,
+      html .captions-text *,
+      html .player-timedtext-text-container,
+      html .player-timedtext-text-container span,
+      html .player-timedtext .player-timedtext-text-container *,
+      html .jw-text-track-cue,
+      html .jw-text-track-display,
+      html .jw-text-track-display * {
+        font-size:${relFont} !important;
+      }
+    }
+
     /* JW Player / generic */
     html .jw-text-track-cue,
     html .jw-text-track-display,
     html .jw-text-track-display * {
-      font-size:${relFont} !important;
+      font-size:${fontSize}px !important;
       color:${color} !important;
       background-color:${bgRgba} !important;
       background:${bgRgba} !important;

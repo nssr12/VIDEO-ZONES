@@ -87,13 +87,63 @@ console.log("\n[6] شكل الـ CSS المحقون");
 {
   check("الحاوية inline-size لا size — أضعف احتواء يكفي",
     SRC.includes("container-type: inline-size !important;") && !SRC.includes("container-type: size !important;"));
-  check("ومحصورة في حاويات المشغّلات المعروفة وحدها",
-    SRC.includes("html :is(${KNOWN_PLAYER_WRAPPER_SELECTOR}) {"));
-  check("قواعد يوتيوب/نتفلكس/JW تستعمل الحجم النسبي",
-    (SRC.match(/font-size:\$\{relFont\} !important;/g) || []).length >= 3,
+  check("ومحصورة في حاويات المشغّلات المعروفة ومشغّل المعاينة وحدها",
+    SRC.includes("html :is(${KNOWN_PLAYER_WRAPPER_SELECTOR}, ${YT_PREVIEW_PLAYER_SELECTOR}) {"));
+  check("الحجم النسبي يُعلَن مرة واحدة فقط — داخل حارس @container (#50)",
+    (SRC.match(/font-size:\$\{relFont\} !important;/g) || []).length === 1,
     (SRC.match(/font-size:\$\{relFont\} !important;/g) || []).length);
   check("و ::cue وحدها تبقى بالبكسل — لا حاوية تقيس داخلها",
     /html video::cue \{[\s\S]{0,220}font-size:\$\{fontSize\}px !important;/.test(SRC));
+}
+
+console.log("\n[7] الحارس البنيوي (#50): cqw لا تُستعمل إلا داخل @container");
+{
+  // نولّد الـ CSS الحقيقي بتشغيل applySubtitleStyles نفسها، لا بفحص المصدر نصّياً
+  const head = SRC.indexOf("const YT_PREVIEW_PLAYER_SELECTOR");
+  const tail = SRC.indexOf("function applySubtitleTrack");
+  let css = null;
+  const c = {
+    console, subtitleStyleEl: null, isBlockedHost: () => false,
+    subtitleSettings: { enabled: true, defaultLang: "ar", fontSize: 22, color: "#fff",
+      bgColor: "#000", bgOpacity: 0.6, fontFamily: "sans-serif", position: "bottom" },
+    hexToRgb: () => "0,0,0",
+    KNOWN_PLAYER_WRAPPER_SELECTOR: "#movie_player,.html5-video-player",
+    document: { createElement: () => ({ id: "", textContent: "", remove() {} }),
+                documentElement: { appendChild: (el) => { css = el.textContent; } } }
+  };
+  vm.createContext(c);
+  vm.runInContext(SRC.slice(head, tail), c);
+  vm.runInContext("applySubtitleStyles()", c);
+
+  check("الـ CSS تولَّد", typeof css === "string" && css.length > 0);
+
+  const open = css.indexOf("@container (min-width: 0px) {");
+  check("يوجد بلوك @container", open !== -1);
+  // نهاية البلوك: نعدّ الأقواس من بدايته
+  let depth = 0, end = -1;
+  for (let i = css.indexOf("{", open); i < css.length; i++) {
+    if (css[i] === "{") depth++;
+    else if (css[i] === "}" && --depth === 0) { end = i; break; }
+  }
+  // نُجرّد تعليقات CSS أولاً: نصّ التعليق يذكر cqw ولو لم تُستعمل الوحدة فعلاً
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, "");
+  const inside = strip(css.slice(open, end + 1));
+  const outside = strip(css.slice(0, open) + css.slice(end + 1));
+
+  check("كل استعمالات cqw داخل البلوك وحده",
+    !outside.includes("cqw") && inside.includes("cqw"), outside.match(/[^\s;]*cqw[^\s;]*/g));
+  check("ولا clamp خارج البلوك", !outside.includes("clamp("), outside.match(/clamp\([^)]*\)/g));
+  check("والاحتياطي خارج البلوك مطلق بالبكسل", /font-size:22px !important;/.test(outside));
+
+  // الاحتياطي يغطي كل مجموعة تُحسَّن داخل البلوك
+  for (const sel of [".ytp-caption-segment", ".player-timedtext-text-container", ".jw-text-track-cue"]) {
+    check(`«${sel}» له احتياطي مطلق وتحسين نسبي`,
+      outside.includes(sel) && inside.includes(sel));
+  }
+  check("ومشغّل معاينة يوتيوب ضمن حاويات الاستعلام صراحةً",
+    css.includes("#inline-preview-player"));
+  check("و ::cue خارج البلوك — لا حاوية تقيس داخلها",
+    outside.includes("video::cue") && !inside.includes("video::cue"));
 }
 
 console.log(`\nالنتيجة: ${pass} ناجحة · ${fail} فاشلة`);
