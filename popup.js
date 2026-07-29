@@ -136,43 +136,81 @@ function isRestrictedUrl(url) {
   return !url || /^(chrome|edge|about|brave|opera|vivaldi|moz-extension|chrome-extension):/i.test(url);
 }
 
+// Reads from storage what the popup already owns: whether the extension is enabled
+// for this host and whether the host is blocked. Both used to be asked of a content
+// script — a frame cannot know them better than storage does, and a sleeping frame
+// answered from defaults (audit #56). baseDomain and isHostBlocked come from
+// storage.js; no third derivation lives here.
+async function readHostGates(host) {
+  const data = await chrome.storage.sync.get({
+    settings: {}, globalSiteRules: { enabled: false, mappings: [] },
+    siteProfiles: {}, [spKey(host || "")]: null
+  });
+  const settings = data.settings || {};
+  const profile = data[spKey(host || "")] || data.siteProfiles?.[host] || null;
+  return {
+    blocked: isHostBlocked(host, settings.blockedHosts),
+    globalEnabled: !!data.globalSiteRules?.enabled,
+    siteProfileEnabled: !!profile?.enabled
+  };
+}
+
 async function checkPageStatus() {
   const tab = await getActiveTab();
   const url = tab?.url || "";
 
   if (isRestrictedUrl(url)) {
+    setYtQualityGap(null);
     setStatus("bad", "هذه الصفحة محمية من المتصفح ولا يمكن تشغيل الإضافة عليها");
     return;
   }
 
+  // Decided here, from storage — no frame is consulted and none can contradict it.
+  const gates = await readHostGates(hostFromUrl(url));
+  if (gates.blocked) {
+    setYtQualityGap(null);
+    setStatus("warn", "الإضافة محظورة على هذا الموقع");
+    return;
+  }
+  if (!gates.globalEnabled && !gates.siteProfileEnabled) {
+    setYtQualityGap(null);
+    setStatus("warn", "الإضافة متوقفة (لا قواعد عامة ولا قواعد للموقع)");
+    return;
+  }
+
+  // Only now is a frame asked, and only about what it alone knows. Same resolver the
+  // booster uses, so "which frame are we talking about" has one answer (audit #56).
+  let res = null;
   try {
-    const res = await chrome.tabs.sendMessage(tab.id, { type: "GVZ_STATUS" });
-    setYtQualityGap(res?.ok ? res.ytQualityGap : null);
-    if (!res?.ok) {
-      setStatus("warn", "الصفحة مفتوحة لكن لم يصلنا رد واضح من الإضافة");
-      return;
-    }
-    if (res.blocked) {
-      setStatus("warn", "الإضافة محظورة على هذا الموقع");
-      return;
-    }
-    if (!res.globalEnabled && !res.siteProfileEnabled) {
-      setStatus("warn", "الإضافة متوقفة (لا قواعد عامة ولا قواعد للموقع)");
-      return;
-    }
-    if (res.siteProfileEnabled && !res.globalEnabled) {
-      setStatus("ok", "تشتغل بقواعد هذا الموقع فقط");
-      return;
-    }
-    if (res.siteProfileEnabled && res.globalEnabled) {
-      setStatus("ok", "الإضافة شغالة (قواعد الموقع تفوز على العامة)");
-      return;
-    }
-    setStatus("ok", "الإضافة شغالة على هذه الصفحة");
+    const frameId = await findVideoFrameId(tab.id);
+    res = frameId != null
+      ? await chrome.tabs.sendMessage(tab.id, { type: "GVZ_STATUS" }, { frameId })
+      : await chrome.tabs.sendMessage(tab.id, { type: "GVZ_STATUS" }, { frameId: 0 });
   } catch {
     setYtQualityGap(null);
     setStatus("bad", "الإضافة غير محقونة في هذه الصفحة. استخدم التفعيل اليدوي");
+    return;
   }
+
+  setYtQualityGap(res?.ok ? res.ytQualityGap : null);
+
+  // "no video here" and "the extension is stopped" are different states and must never
+  // be reported as one. A not-started answer means the script IS injected — the frame
+  // simply has nothing to act on yet.
+  if (!res?.ok || !res.hasVideo) {
+    setStatus("warn", "الإضافة شغالة لكن لا فيديو في هذه الصفحة");
+    return;
+  }
+
+  if (gates.siteProfileEnabled && !gates.globalEnabled) {
+    setStatus("ok", "تشتغل بقواعد هذا الموقع فقط");
+    return;
+  }
+  if (gates.siteProfileEnabled && gates.globalEnabled) {
+    setStatus("ok", "الإضافة شغالة (قواعد الموقع تفوز على العامة)");
+    return;
+  }
+  setStatus("ok", "الإضافة شغالة على هذه الصفحة");
 }
 
 async function activateOnCurrentPage() {
@@ -438,6 +476,7 @@ async function sendBoostMessage(message) {
   }
 }
 
+
 async function loadBoostUI() {
   const tab = await getActiveTab();
   if (!tab?.id) return;
@@ -508,8 +547,7 @@ async function sendBoost(pct, isFinal = false) {
 async function loadBlockedSiteUI() {
   const data = await chrome.storage.sync.get({ settings: {} });
   const settings = data.settings || {};
-  const blockedHosts = Array.isArray(settings.blockedHosts) ? settings.blockedHosts : [];
-  const isBlocked = !!currentHost && blockedHosts.includes(currentHost);
+  const isBlocked = isHostBlocked(currentHost, settings.blockedHosts);
   $("blockSiteBtn").classList.toggle("blocked", isBlocked);
   $("blockSiteBtn").title = isBlocked ? "الموقع محظور — اضغط للسماح" : "اضغط لمنع هذا الموقع";
 }

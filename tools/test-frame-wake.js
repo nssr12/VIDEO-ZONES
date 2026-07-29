@@ -160,7 +160,39 @@ console.log("\n[5] شبكة الأمان: فيديو لا يُطلق أحداث 
   check("وإطار بلا فيديو يبقى نائماً بعد 50 تفاعلاً", h.steps.length === 0 && h.reads === 0, h.steps.length);
 }
 
-console.log("\n[6] الإيقاظ موصول بمسارات التفاعل المقصود لا بـ mousemove");
+console.log("\n[6] ⭐ ما يقوله النائم — لا ما يستيقظ له (فجوة منهج كشفها #56)");
+{
+  // غطّى هذا الملف الإيقاظ ولم يغطِّ ما يردّ به النائم، فأفلت انحدار #56 كاملاً:
+  // إطار نائم كان يردّ على GVZ_STATUS بقيم البدء الافتراضية فيقول الـ popup
+  // «الإضافة متوقفة» والإضافة شغّالة. هذا القسم يسدّ الفجوة.
+  const handler = SRC.slice(SRC.indexOf('if (msg?.type === "GVZ_STATUS")'),
+    SRC.indexOf('if (msg?.type === "SITE_RULES_UPDATED")'));
+  const ask = (begun) => {
+    let answer = null, woke = false;
+    const c = {
+      msg: { type: "GVZ_STATUS" }, startupBegun: begun,
+      sendResponse: (r) => { answer = r; },
+      document: { querySelector: () => ({}) },
+      getVideoFromPointerPosition: () => null, ytQualityGap: () => null,
+      beginStartup: () => { woke = true; }, wakeIfVideoPresent: () => { woke = true; },
+      console
+    };
+    vm.createContext(c);
+    vm.runInContext(`(function(){ ${handler} })()`, c);
+    return { answer, woke };
+  };
+  const asleep = ask(false);
+  check("النائم يردّ not-started", asleep.answer?.ok === false && asleep.answer?.reason === "not-started", asleep.answer);
+  check("ولا يستيقظ لرسالة — وإلا بطل #13ب كلّه", asleep.woke === false);
+  check("ولا يفشي تفعيلاً ولا حظراً من قيم افتراضية",
+    !("globalEnabled" in (asleep.answer || {})) && !("blocked" in (asleep.answer || {})), asleep.answer);
+
+  // ولا مسار رسائل آخر يوقظ الإطار
+  check("ولا معالج رسائل يستدعي beginStartup",
+    !/onMessage[\s\S]{0,4000}beginStartup\(\)/.test(SRC));
+}
+
+console.log("\n[7] الإيقاظ موصول بمسارات التفاعل المقصود لا بـ mousemove");
 {
   const wheel = SRC.slice(SRC.indexOf('window.addEventListener("wheel"'), SRC.indexOf('window.addEventListener("wheel"') + 300);
   check("مسار العجلة يوقظ", wheel.includes("wakeIfVideoPresent()"));

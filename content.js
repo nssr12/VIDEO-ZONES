@@ -2020,13 +2020,23 @@ async function loadRulesForThisHost(pre) {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "GVZ_STATUS") {
+    // A frame that exited early (#13b) answers "not-started" and NEVER wakes for a
+    // message. Waking on messages would undo #13b outright: opening the popup would
+    // start all 122 frames measured on a news page. It answered with its untouched
+    // startup defaults instead, which is how it came to report a blocked, enabled
+    // extension as stopped (audit #56).
+    if (!startupBegun) {
+      sendResponse({ ok: false, reason: "not-started" });
+      return true;
+    }
+    // ONLY what the frame alone can know. Whether the extension is enabled and
+    // whether the site is blocked are facts the popup owns — storage and the tab URL
+    // — so asking a frame for them was the original mistake; the sleeping frame just
+    // made it visible (#56).
     sendResponse({
       ok: true,
-      blocked: isBlockedHost(),
-      globalEnabled: !!siteRules.enabled,
-      siteProfileEnabled: !!siteProfile.enabled,
+      hasVideo: !!document.querySelector("video"),
       hasVideoUnderPointer: !!getVideoFromPointerPosition(),
-      host: baseDomain(location.host),
       ytQualityGap: ytQualityGap()
     });
     return true;

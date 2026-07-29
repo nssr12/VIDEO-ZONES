@@ -96,6 +96,16 @@ function baseDomain(host) {
 }
 // ---- END baseDomain ----
 
+// One derivation of "is this host blocked", shared by every caller that has the host
+// and the list in hand. content.js keeps its own copy because a content script cannot
+// load this file — that pair is already guarded by tools/test-migration.js. What must
+// never exist is a THIRD derivation inside popup.js (audit #56, and the lesson of #5).
+function isHostBlocked(host, blockedHosts) {
+  if (!host || !Array.isArray(blockedHosts)) return false;
+  return blockedHosts.includes(baseDomain(host));
+}
+
+
 // ⚠️ PAIRED COPY — duplicated verbatim in content.js. Edit both together;
 // tools/test-migration.js fails if they drift apart.
 // ---- BEGIN normalizeKeyCombo ----
