@@ -737,20 +737,14 @@ function applySubtitleTrack() {
     enableMatchingTextTrack(video, lang);
   }
 
+  // البند #27: كان هنا فرع `else` يستدعي `tryEnableYouTubeCC()`، وكان **ميتاً
+  // 100% بالبناء**: أول سطر في تلك الدالة `if (!isYouTubeHost()) return;`
+  // ومستدعيها الوحيد داخل فرع «ليس يوتيوب» — فلم تُنفَّذ سطراً بعد حارسها أبداً.
+  // إعادتها تعني إعادة كود لا يعمل، لا إضافة ميزة. حارسها: tools/test-dead-code.js
   if (isYouTubeHost()) {
     // Drive YouTube's CC + auto-translate menu via simulated clicks
     youtubeSetCaptionLanguage(lang);
-  } else {
-    tryEnableYouTubeCC(); // no-op outside YouTube
   }
-}
-
-function tryEnableYouTubeCC() {
-  if (!isYouTubeHost()) return;
-  const btn = document.querySelector(".ytp-subtitles-button");
-  if (!btn) return;
-  if (btn.getAttribute("aria-pressed") === "true") return;
-  try { btn.click(); } catch {}
 }
 
 function isYouTubeHost() {
