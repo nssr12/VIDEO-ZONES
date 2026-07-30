@@ -903,9 +903,10 @@ function enableMatchingTextTrack(video, lang) {
     if (tLang.startsWith(target) || tLabel.includes(target)) {
       track.mode = "showing";
       foundMatch = true;
-    } else if (track.mode === "showing") {
-      // Leave other showing tracks alone unless user matched a different one
     }
+    // البند #28: كان هنا `else if (track.mode === "showing")` **جسمه تعليق فقط** —
+    // نيّة غير منفّذة لا سلوك، فالشرط يُحسب ولا يفعل شيئاً. حذفه لا يمسّ أي مسار.
+    // والسلوك المقصود («اترك المسارات الأخرى كما هي») هو **ما يحدث بلا فرع أصلاً**.
   }
   return foundMatch;
 }
