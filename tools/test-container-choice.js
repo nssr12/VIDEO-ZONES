@@ -1,9 +1,12 @@
 // البند #58 — كومِت أ: الأخصّ يفوز في اختيار حاوية ملء الشاشة، **وحتمياً**.
 //
-// شرط القبول الجديد الذي أضافه المالك: **الحتمية**. المستطيلات تتغيّر مع مقاس
-// إطار العرض، والسكور القديم كان يحسم بفارق ≈0.1 نقطة — فينقلب العنصر المختار
-// بين مقاسين. هذا الاختبار يشغّل كل بنية على **مقاسي إطار عرض** ويشترط أن يكون
-// العنصر المختار واحداً في المرتين.
+// شرط القبول الذي أضافه المالك: **الحتمية**. المستطيلات تتغيّر مع مقاس إطار
+// العرض، والسكور يحسم بفوارق ناعمة (0.1037 نقطة بين حاوية الصفحة والمشغّل على
+// d.tube)، فأي اعتماد عليه هشّ بطبعه. هذا الاختبار يشغّل كل بنية على **مقاسي
+// إطار عرض** ويشترط أن يكون العنصر المختار واحداً في المرتين.
+//
+// ⚠️ لا تكتب أن العنصر «ينقلب بين مقاسين»: ذاك شاهد **سُحب** — كان أثر توقيت في
+// منصّة القياس لا سلوكاً (`AUDIT.md` §7).
 //
 // الدالة المختبَرة خالصة على (العنصر، مستطيله، أصنافه)، فالمستطيلات المُمرَّرة
 // هنا **بيانات مقيسة** لا تخطيط مُحاكى: بصمة d.tube منسوخة من قياس حقيقي
@@ -123,7 +126,7 @@ const SHAPES = [
   },
   {
     key: "أ — فيديو ابن body",
-    expect: null,     // #59: لا سلف يشبه مشغّلاً ⇒ السكور، وهو غير حتميّ
+    expect: null,     // #59: لا سلف يشبه مشغّلاً ⇒ السكور، وهناك يفوز BODY حتمياً
     spec: [
       { name: "VIDEO", tag: "VIDEO", cls: "", rect: () => [640, 360] },
       { name: "BODY", tag: "BODY", cls: "", rect: (s) => [1440 * s, 360] }
@@ -176,7 +179,7 @@ for (const shape of SHAPES) {
     `1440 ⇒ ${na ? na.__name : null} · 864 ⇒ ${nb ? nb.__name : null}`);
 }
 
-console.log("\n[3] d.tube: الحكم القاطع يسبق قرعة السكور");
+console.log("\n[3] d.tube: الحكم القاطع يسبق السكور الناعم");
 {
   const shape = SHAPES[0];
   const { ctx, video, nodes } = load(shape.spec, 1);
@@ -251,33 +254,93 @@ console.log("\n[7] الحكم القاطع يسبق السكور ويأتي بع
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// ⚠️⚠️⚠️  تثبيت عطب معروف — البند #59  (قرار المالك 20)
-//
-//        **فشل هذا التثبيت يعني أن #59 أُصلح، فحدّثه ولا تُصلح الاختبار.**
-//
-// الحالة أ (فيديو ابن مباشر لـ`body`) لا سلف لها يشبه مشغّلاً، فالحكم القاطع في
-// #58 لا يمسّها بنيوياً وتسقط إلى السكور — وهناك تُحسم بفارق ≈0.1 نقطة فتنقلب
-// بين مقاسَي إطار عرض (`VIDEO` على 1440×900 و`BODY` على 900×700).
-//
-// هذا التثبيت **يبرهن أن العطب ما زال قائماً** كي لا يُخلط لاحقاً بفشل جديد.
-// البرهان الميداني عليه في `tools/repro-58-fullscreen.mjs` (فحص الحتمية).
-// مجموعة الاختبارات تبقى **خضراء دائماً**: الأحمر يعني «كسرتَ شيئاً الآن».
+// البند #59 — **مُصلح في كومِت أ**: `body` و`documentElement` مستثنيان من مرشّحي
+// السكور. التثبيت القديم (الذي كان يبرهن أن العطب قائم) أُزيل في **كومِت الإصلاح
+// نفسه** لا بعده، وحلّ محلّه فحص موجب يحرس الإصلاح — وكذلك سطره في
+// tools/KNOWN-DEFECTS.md. هذا ما يعنيه «حدّثه ولا تُصلح الاختبار».
 // ═════════════════════════════════════════════════════════════════════════════
 if (READY) {
-console.log("\n[8] تثبيت #59 — عطب معروف، لا يُرمَّم الاختبار بدل إصلاحه");
+console.log("\n[8] البند #59 — body و documentElement خارج المرشّحين");
 {
   const shape = SHAPES.find((s) => s.key.startsWith("أ"));
   const a = load(shape.spec, 1);
-  check("لا حكم قاطع للحالة أ — الحكم لا يمسّها بنيوياً",
+  const b = load(shape.spec, 0.6);
+  const pa = a.ctx.pickFullscreenContainer(a.video);
+  const pb = b.ctx.pickFullscreenContainer(b.video);
+  check("لا حكم قاطع للحالة أ — لا سلف يشبه مشغّلاً",
     a.ctx.nearestPlayerAncestor(a.video) === null);
-  check("فتسقط إلى السكور، والسكور هو موضع #59",
-    typeof a.ctx.pickFullscreenContainer === "function");
-  // النصّ نفسه محروس: من يحذف التنبيه يُسقط الاختبار
-  const SELF = fs.readFileSync("tools/test-container-choice.js", "utf8");
-  check("تنبيه «حدّثه ولا تُصلح الاختبار» موجود نصّاً",
-    /فشل هذا التثبيت يعني أن #59 أُصلح، فحدّثه ولا تُصلح الاختبار/.test(SELF));
-  check("والعطب مُدرَج في موضع العطب المعروفة الواحد",
-    fs.readFileSync("tools/KNOWN-DEFECTS.md", "utf8").includes("#59"));
+  check("والسكور لم يعد يُرجع BODY", pa && pa.__name !== "BODY", pa && pa.__name);
+  check("ولا HTML", pa && pa.__name !== "HTML", pa && pa.__name);
+  check("بل الفيديو نفسه", pa === a.video, pa && pa.__name);
+  check("وحتميّ على المقاسين", (pa === a.video) && (pb === b.video),
+    `${pa && pa.__name} / ${pb && pb.__name}`);
+  check("body مستثنى نصّاً من حلقة المرشّحين",
+    /cur!==document\.body&&cur!==document\.documentElement/.test(CONTENT.replace(/\s+/g, "")));
+  // لا فاصل تعادل: المقارِن يبقى مقارنة سكور واحدة بلا شرط ثانٍ.
+  // (regex ساذج على /tie/ يطابق "properties" — أُسقطني فعلاً عند كتابته.)
+  check("مقارِن الترتيب بلا فاصل تعادل",
+    /\.sort\(\(a,b\)=>b\.score-a\.score\)/.test(CONTENT.replace(/\s+/g, "")));
+  check("والسكور نفسه لم يُعدَّل بحرف",
+    /\(hasButtons\?3:0\)\+\(looksPlayer\?2:0\)\+\(el===video\?0:1\)\+Math\.max\(0,2-Math\.abs\(areaRatio-1\.15\)\)/
+      .test(CONTENT.replace(/\s+/g, "")));
+  // لافتة التثبيت كانت تبدأ بثلاث علامات تحذير متتالية — غيابها هو الدليل.
+  // (لا يصحّ البحث عن نصّ الجملة نفسها: هذا الملف يذكرها فيطابق نفسه.)
+  check("ولا لافتة تثبيت عطب باقية في هذا الملف",
+    !fs.readFileSync("tools/test-container-choice.js", "utf8").includes("\u26a0\ufe0f\u26a0\ufe0f\u26a0\ufe0f"));
+  check("ولا سطر #59 باقياً في KNOWN-DEFECTS كعطب متوقَّع",
+    !/### ❌ متوقَّعة — البنية \*\*أ\*\* تُكبِّر/.test(fs.readFileSync("tools/KNOWN-DEFECTS.md", "utf8")));
+}
+}
+
+if (READY) {
+console.log("\n[9] البند #59 كومِت ب — المسار الاحتياطي لا يُرجع إلا الفيديو");
+{
+  // كل المرشّحين مرفوضون: مستطيلات صفرية ⇒ scored فارغة ⇒ الاحتياطي.
+  // هذا هو التخطيط المنهار الوحيد الذي يُدخِل المسار.
+  const COLLAPSED = [
+    {
+      key: "تخطيط منهار — كل المستطيلات صفرية",
+      spec: [
+        { name: "VIDEO", tag: "VIDEO", cls: "", rect: () => [0, 0] },
+        { name: "DIV.hid", cls: "hid", rect: () => [0, 0] },
+        { name: "BODY", tag: "BODY", cls: "", rect: () => [0, 0] }
+      ]
+    },
+    {
+      key: "منهار داخل حاوية تشبه مشغّلاً",
+      spec: [
+        { name: "VIDEO", tag: "VIDEO", cls: "", rect: () => [0, 0] },
+        { name: "DIV.player", cls: "some-player", rect: () => [0, 0] },
+        { name: "BODY", tag: "BODY", cls: "", rect: () => [0, 0] }
+      ]
+    },
+    {
+      key: "فيديو صفريّ وأب ضخم (النسبة > 3.5)",
+      spec: [
+        { name: "VIDEO", tag: "VIDEO", cls: "", rect: () => [0, 0] },
+        { name: "DIV.big", cls: "big", rect: () => [4000, 4000] },
+        { name: "BODY", tag: "BODY", cls: "", rect: () => [4000, 4000] }
+      ]
+    }
+  ];
+  for (const shape of COLLAPSED) {
+    for (const scale of [1, 0.6]) {
+      const { ctx, video, nodes } = load(shape.spec, scale);
+      const got = ctx.pickFullscreenContainer(video);
+      const body = nodes[nodes.length - 1];
+      check(`${shape.key} @${scale}: يُرجع الفيديو`, got === video, got && got.__name);
+      check(`${shape.key} @${scale}: ولا BODY`, got !== body, got && got.__name);
+      check(`${shape.key} @${scale}: ولا أب الفيديو`, got !== video.parentElement,
+        got && got.__name);
+    }
+  }
+  check("الكود لا يُرجع video.parentElement في الاحتياطي",
+    !/scored\[0\]\?\.el\|\|video\.parentElement/.test(CONTENT.replace(/\s+/g, "")),
+    "ما زال video.parentElement في المسار الاحتياطي");
+  check("بل يُرجع الفيديو وحده",
+    /scored\[0\]\?\.el\|\|video;/.test(CONTENT.replace(/\s+/g, "")));
+  check("والتعليق يذكر شرط دخول المسار",
+    /رُفض كل المرشّحين أو كانت مستطيلاتهم صفرية/.test(CONTENT));
 }
 }
 
