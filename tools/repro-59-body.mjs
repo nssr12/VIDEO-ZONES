@@ -145,7 +145,9 @@ await sleep(2500);
 const pad = (s, w) => String(s) + " ".repeat(Math.max(0, w - String(s).length));
 
 console.log("\n=== إعادة إنتاج #59 — البنية أ: <video> ابن مباشر لـ body ===");
-console.log("⚠️ اقرأ tools/KNOWN-DEFECTS.md قبل تفسير أي ❌.\n");
+console.log("⚠️ اقرأ tools/KNOWN-DEFECTS.md قبل تفسير أي ❌.");
+console.log("ℹ️ «فائز السكور» أدناه هو السكور **الخام قبل استثناء body/documentElement**،");
+console.log("   و«ما تُرجعه الإضافة» هو الناتج الفعلي — والتباين بينهما هو إصلاح #59 نفسه.\n");
 
 const VARIANTS = [
   { label: "بلا زر · صفحة قصيرة", opts: { button: false, tall: false } },
