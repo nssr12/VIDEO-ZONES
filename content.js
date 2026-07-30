@@ -1969,8 +1969,15 @@ function showVolumeIndicator(video) {
   ensureVideoOverlay(video);
   if (!vzVolumeBadge || vzOverlayVideo !== video) return;
 
-  const percent = video.muted ? 0 : Math.round((video.volume ?? 1) * 100);
-  vzVolumeBadge.textContent = String(percent);
+  // Level and mute are independent facts (#35), so they get two channels in the
+  // badge instead of one field that conflates them: the level always reads the
+  // real value, and mute adds a mark beside it. Lowering the latent level of a
+  // muted video has to be visible — a change with no feedback is a defect of its
+  // own. Side effect worth having: "0" on the badge now means one thing only.
+  // A text mark, not an emoji: a colour emoji ignores --vz-volume-color, and the
+  // badge has to keep honouring the user's soundDisplay colour and size.
+  const percent = Math.round((video.volume ?? 1) * 100);
+  vzVolumeBadge.textContent = video.muted ? `مكتوم ${percent}` : String(percent);
   vzOverlay?.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
   vzOverlay?.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
   vzVolumeBadge.classList.remove("vzHidden");
@@ -2421,15 +2428,22 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
     const video = findVideoLoose(e);
     if (!video) return false;
     const delta = n / 100;
-    // When raising volume, force unmute first — some sites auto-mute at 0.
-    if (delta > 0 && (video.muted || (video.volume ?? 1) === 0)) {
-      video.muted = false;
-      if ((video.volume ?? 0) === 0) video.volume = Math.min(1, delta);
-    } else {
-      // When lowering, clamp to a tiny non-zero floor to prevent host-site auto-mute.
-      const next = (video.volume ?? 1) + delta;
-      video.volume = next <= 0 ? 0.0001 : Math.min(1, next);
-    }
+    // Mute state and level are two independent facts (audit #35): mute is never
+    // inferred from a zero level, and the level is never zeroed to mute.
+    // Raising unmutes AND applies the increment in the SAME press — unmuting on
+    // its own is what made the first press after a mute do nothing audible.
+    // Lowering leaves `muted` untouched on purpose: the user asked for less
+    // sound, not for sound, so a muted video stays muted and only its latent
+    // level moves.
+    if (delta > 0 && video.muted) video.muted = false;
+    const next = (video.volume ?? 1) + delta;
+    // ⚠️ The floor is 0.0001 and never 0, and what it guards against is the HOST
+    // SITE inferring mute from a zero level — its own player watches
+    // volumechange and auto-mutes. It does NOT guard against an inference of
+    // ours: ours lived in this very block and went away with #35. An external
+    // inference does not disappear with our fix, so this floor is not a leftover
+    // from the defect — do not read it as one and delete it.
+    video.volume = next <= 0 ? 0.0001 : Math.min(1, next);
     showVolumeIndicator(video);
     return true;
   }
