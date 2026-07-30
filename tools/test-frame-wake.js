@@ -197,7 +197,12 @@ console.log("\n[7] الإيقاظ موصول بمسارات التفاعل ال�
   const wheel = SRC.slice(SRC.indexOf('window.addEventListener("wheel"'), SRC.indexOf('window.addEventListener("wheel"') + 300);
   check("مسار العجلة يوقظ", wheel.includes("wakeIfVideoPresent()"));
   check("مسار المفاتيح يوقظ",
-    /addEventListener\("keydown"[\s\S]{0,200}wakeIfVideoPresent\(\)/.test(SRC));
+    /addEventListener\("keydown"[\s\S]{0,500}wakeIfVideoPresent\(\)/.test(SRC));
+  // ⚠️ **ولا يسبق الإيقاظَ إلا حارس عدم الارتداد (#60)**، وهو صواب لا استثناء:
+  // الحدث الذي يوقفه الحارس **من إرسالنا نحن** في إطار فيه فيديو أصلاً، فلا شيء
+  // يُوقَظ. أي سطر آخر يسبق `wakeIfVideoPresent` هنا انحدار على #13ب.
+  check("ولا يسبق الإيقاظَ إلا حارس عدم الارتداد",
+    /addEventListener\("keydown", \(e\) => \{[\s\S]{0,400}?if \(adapterSending\) return;\s*updatePointerFromEvent\(e\);\s*wakeIfVideoPresent\(\);/.test(SRC));
   check("ومسار الفأرة يوقظ",
     /function handleMouse\(e\) \{[\s\S]{0,160}wakeIfVideoPresent\(\)/.test(SRC));
   // معالج mousemove هو updatePointerFromEvent نفسه — نفحص جسمه لا ما يليه في الملف

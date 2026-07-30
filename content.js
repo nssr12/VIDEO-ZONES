@@ -2425,6 +2425,87 @@ function runHostAdapter(video, op, applyDirect) {
   return true;
 }
 
+// ── محوّل يوتيوب (#60 · قرار 25) — عائلة «اختصار المضيف» ────────────────────
+// قِيس أن قيادة واجهة المضيف هي **الوحيدة** التي تجعل نموذجه يتبعنا، وأن
+// **حدثاً غير موثوق يكفيها** (`AUDIT.md` §8 §6) — فسكربت المحتوى يستطيعها.
+// ومصنع لا نسخة مفردة: يوتيوب عائلة «الاختصار»، وتويتش وكِك عائلة «المنزلق»،
+// فيُكتبان لاحقاً بمصنعهما لا بتكرار هذا.
+//
+// ⚠️ **حارس عدم الارتداد**: مستمع المفاتيح عندنا في `window`+`capture` **يرى ما
+// نُرسله** — قِيس **2 من 2** — فبلا هذا العلم يصير أمر الصوت يُطلق نفسه.
+let adapterSending = false;
+
+function makeKeyStepAdapter({ playerSelector, upKey, downKey, minSendMs = 60, maxQueue = 5 }) {
+  let queued = 0, timer = null, pendingKey = null, lastSentAt = 0;
+
+  // ⚠️ **قاعدة أمان لا صوت:** الهدف عنصر المشغّل أو `<video>`، و**لا
+  // `document.activeElement` أبداً**. قِيس أن سهماً يصل إلى حقل مركَّز يقود قائمة
+  // اقتراحات يوتيوب **فيستبدل نصّ المستخدم** («hello» ⇒ «hello hello»)، والضغطة
+  // الموثوقة تفعلها كذلك — فالحارس **على الهدف لا على الاصطناع**.
+  const targetFor = (video) => {
+    const root = video?.getRootNode?.();
+    const scope = root && typeof root.querySelector === "function" ? root : document;
+    return scope.querySelector(playerSelector) || video || null;
+  };
+
+  // الإرسال مُلجَّم بالزمن **وبالسقف معاً**: واحد كل `minSendMs` على الأكثر،
+  // والطابور لا يتجاوز `maxQueue` فدفقة طويلة تُهدر زائدها بدل أن تنفجر إرسالاً.
+  // ⚠️ اللجام بالزمن يقيس **آخر إرسال فعلي** لا وجود مؤقّت: بلا `lastSentAt`
+  // كانت كل نقرة تجد المؤقّت فارغاً فتُرسل فوراً، فلا لجام أصلاً.
+  const schedule = (video) => {
+    if (timer) return;
+    timer = setTimeout(() => drain(video), Math.max(0, minSendMs - (nowMs() - lastSentAt)));
+  };
+
+  const drain = (video) => {
+    timer = null;
+    if (queued <= 0) return;
+    queued--;
+    lastSentAt = nowMs();
+    const el = targetFor(video);
+    if (el) {
+      const isUp = pendingKey === upKey;
+      adapterSending = true;
+      try {
+        for (const type of ["keydown", "keyup"]) {
+          el.dispatchEvent(new KeyboardEvent(type, {
+            key: pendingKey, code: pendingKey,
+            keyCode: isUp ? 38 : 40, which: isUp ? 38 : 40,
+            bubbles: true, cancelable: true, composed: true
+          }));
+        }
+      } finally {
+        adapterSending = false;
+      }
+    }
+    if (queued > 0) schedule(video);
+  };
+
+  const step = (video, key) => {
+    // **نطابق المضيف لا نزيد عليه**: قِيس أن يوتيوب نفسه يتجاهل اختصاره والتركيز
+    // في حقل نصّ. والحارس هو `shouldIgnoreKeyBecauseTyping` القائم لا حارس ثانٍ.
+    if (shouldIgnoreKeyBecauseTyping()) return false;
+    if (!targetFor(video)) return false;
+    pendingKey = key;
+    if (queued < maxQueue) queued++;   // الزائد يُهدر عمداً — لا ينفجر إرسالاً
+    schedule(video);
+    return true;
+  };
+
+  return { stepUp: (video) => step(video, upKey), stepDown: (video) => step(video, downKey) };
+}
+
+// ⚠️ **الخطوة الفعلية خطوة المضيف لا خطوتنا:** سهم يوتيوب يحرّك منزلقه **±5%**
+// بينما ربطنا الافتراضي `ACTION:VOLUME:+4` أي 4%. **هذا مقصود وموثَّق فلا يُسجَّل
+// عطباً لاحقاً** — المطلوب أن **يتحرّك منزلق المضيف**، وحركته بمقدار خطوته هو.
+// و**لا `toggleMute` هنا عمداً**: الكتم يبقى على مسار اليوم في هذا الكومِت،
+// والإطار يسقط لكل عملية على حدة فيتولّاه المسار المباشر بلا تغيير.
+hostAdapters.set("youtube.com", makeKeyStepAdapter({
+  playerSelector: "#movie_player",
+  upKey: "ArrowUp",
+  downKey: "ArrowDown"
+}));
+
 function runAction(action, e) {
   // Play/Pause: فقط فيديو نفسه
   if (action === "ACTION:TOGGLE_PLAY") {
@@ -2933,6 +3014,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // ✅ ArrowRight/Left: نمنع الافتراضي ونطبق 5 ثواني
 window.addEventListener("keydown", (e) => {
+  // ⚠️ حارس عدم الارتداد (#60): هذا المستمع **يرى ما يُرسله محوّلنا** — قِيس 2 من
+  // 2 — فبلا هذا السطر يصير أمر الصوت يُطلق نفسه. أول سطر عمداً: قبل أي عمل.
+  if (adapterSending) return;
   updatePointerFromEvent(e);
   wakeIfVideoPresent();
   if (isBlockedHost()) return;

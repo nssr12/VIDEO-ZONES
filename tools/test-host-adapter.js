@@ -21,8 +21,9 @@ function slice(file, from, to) {
 }
 
 const CONTENT = fs.readFileSync("content.js", "utf8");
-const ADAPTER = slice("content.js", "// ── البند #60 · قرار المالك 25", "function runAction");
+const ADAPTER = slice("content.js", "// ── البند #60 · قرار المالك 25", "// ── محوّل يوتيوب (#60 · قرار 25)");
 const VOL = slice("content.js", "// Volume delta in percent", "// Speed: SET absolute value");
+const YTAD = slice("content.js", "// ── محوّل يوتيوب (#60 · قرار 25)", "function runAction");
 const MUTE = slice("content.js", "// Mute\n  if (action === \"ACTION:TOGGLE_MUTE\")", "// PiP");
 
 let pass = 0, fail = 0;
@@ -33,21 +34,45 @@ const near = (a, b) => Math.abs(a - b) < 1e-9;
 
 // ---------------------------------------------------------------- العالم
 // ساعة مُدارة: المهل تُشغَّل يدوياً كي يُقاس **متى** يقع السقوط لا أن يُنتظر.
-function makeWorld(host = "example.com") {
+function makeWorld(host = "example.com", noPlayer = false) {
   const timers = [];
   const logs = [];
   const indicator = [];
   const dispatched = []; // عدّاد الأحداث المُرسَلة — حارس القسم [6]
+  // DOM مصغّر: مشغّل وحقل مركَّز — والحقل موجود عمداً كي يُكشف أي استهداف له
+  const mkEl = (tagName, id) => ({
+    tagName, id,
+    // `adapterSending` رابط معجميّ داخل سكربت الـ vm لا خاصية على العالم،
+    // فيُقرأ **من داخله** لا من كائن السياق — وإلا خرج `undefined` ومرّ الحارس بلا معنى.
+    dispatchEvent(ev) {
+      dispatched.push({ target: this, tag: tagName, type: ev.type, key: ev.key,
+                        sending: vm.runInContext("adapterSending", ctx) });
+      return true;
+    }
+  });
+  const player = mkEl("DIV", "movie_player");
+  const focused = mkEl("INPUT", "search");
+  let clock = 1000;
   const ctx = {
     console: { debug: (...a) => logs.push(a.join(" ")), log() {}, warn() {} },
     setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
     location: { host },
     baseDomain: (h) => h,
     showVolumeIndicator: (v) => indicator.push({ volume: v.volume, muted: v.muted }),
-    __dispatched: dispatched
+    nowMs: () => clock,
+    __advance: (ms) => { clock += ms; },
+    __typing: false,
+    shouldIgnoreKeyBecauseTyping: () => ctx.__typing,
+    KeyboardEvent: class { constructor(type, init) { Object.assign(this, { type }, init); } },
+    document: {
+      activeElement: focused,
+      querySelector: (sel) => (sel === "#movie_player" && !noPlayer ? player : null)
+    },
+    __player: player, __focused: focused, __dispatched: dispatched
   };
   vm.createContext(ctx);
   vm.runInContext(`${ADAPTER}
+    ${YTAD}
     function runVolume(action, v) {
       const e = {}; const findVideoLoose = () => v;
       ${VOL}
@@ -60,7 +85,9 @@ function makeWorld(host = "example.com") {
       return false;
     }`, ctx);
   return {
-    ctx, timers, logs, indicator, dispatched,
+    ctx, timers, logs, indicator, dispatched, player, focused,
+    advance: (ms) => ctx.__advance(ms),
+    typing: (on) => { ctx.__typing = on; },
     tick: () => { const t = timers.splice(0); for (const x of t) x.fn(); },
     vol: (a, v) => vm.runInContext("runVolume", ctx)(a, v),
     mute: (v) => vm.runInContext("runMute", ctx)(v),
@@ -71,17 +98,24 @@ function makeWorld(host = "example.com") {
   };
 }
 
-console.log("\n[1] السجلّ افتراضه **لا محوّل** — وهذا الكومِت لا يسجّل واحداً");
+console.log("\n[1] السجلّ: **محوّل واحد بالضبط** — يوتيوب، وما عداه مسار اليوم");
 {
   const w = makeWorld();
-  check("السجلّ فارغ عند التحميل", vm.runInContext("hostAdapters.size", w.ctx) === 0);
-  check("ولا محوّل لأي مضيف", vm.runInContext("hostAdapterFor()", w.ctx) === null);
-  for (const h of ["youtube.com", "twitch.tv", "vimeo.com", "d.tube"]) {
+  check("محوّل واحد لا أكثر", vm.runInContext("hostAdapters.size", w.ctx) === 1,
+    vm.runInContext("[...hostAdapters.keys()].join()", w.ctx));
+  check("وهو youtube.com", vm.runInContext("[...hostAdapters.keys()][0]", w.ctx) === "youtube.com");
+  check("ولا محوّل على مضيف غير مسجَّل", vm.runInContext("hostAdapterFor()", w.ctx) === null);
+  // **شرط القبول الأول**: من لا محوّل له يسلك مسار اليوم حرفياً
+  for (const h of ["twitch.tv", "vimeo.com", "d.tube", "kick.com"]) {
     const x = makeWorld(h);
     check(`ولا محوّل على ${h}`, vm.runInContext("hostAdapterFor()", x.ctx) === null);
+    const v = { muted: false, volume: 0.5 };
+    x.vol("ACTION:VOLUME:+4", v);
+    check(`  و${h}: كتابة مباشرة فورية 0.54 بلا مهلة`,
+      near(v.volume, 0.54) && x.timers.length === 0, v.volume);
   }
-  check("ولا استدعاء لـ registerHostAdapter في الملف كله",
-    !/hostAdapters\.set\(/.test(CONTENT), (CONTENT.match(/hostAdapters\.set\([^)]*\)/g) || []).join(" · "));
+  check("ولا تسجيل ثانٍ في الملف",
+    (CONTENT.match(/hostAdapters\.set\(/g) || []).length === 1);
 }
 
 console.log("\n[2] الواجهة **نسبية فقط** — لا ضبط مطلق، وهذا قيد بنيوي لا تفصيل");
@@ -208,6 +242,109 @@ console.log("\n[8] الحدود البنيوية في النصّ");
   check("والشارة تُنادى في مسارَي النجاح والسقوط",
     (ADAPTER.match(/showVolumeIndicator\(video\)/g) || []).length === 2);
   check("ولا setInterval في الإطار", !/setInterval/.test(ADAPTER));
+}
+
+
+console.log("\n[9] محوّل يوتيوب — الهدف والامتناع وعدم الارتداد");
+{
+  const w = makeWorld("youtube.com");
+  const ad = vm.runInContext("hostAdapterFor()", w.ctx);
+  check("محوّل يوتيوب موجود", !!ad);
+  check("وفيه stepUp و stepDown", typeof ad.stepUp === "function" && typeof ad.stepDown === "function");
+  // مقصود وموثَّق: الكتم يبقى على مسار اليوم في هذا الكومِت
+  check("**ولا toggleMute** — الكتم على مسار اليوم عمداً", typeof ad.toggleMute !== "function");
+
+  // نقرة واحدة = خطوة مضيف واحدة
+  const v = { muted: false, volume: 0.5 };
+  w.vol("ACTION:VOLUME:+4", v);
+  check("لم تُكتب دلتانا مباشرةً (المحوّل تولّاها)", near(v.volume, 0.5), v.volume);
+  w.tick();
+  const sends = w.dispatched.filter((d) => d.type === "keydown");
+  check("نقرة واحدة ⇒ إرسال واحد", sends.length === 1, sends.length);
+  check("والمفتاح ArrowUp", sends[0]?.key === "ArrowUp", sends[0]?.key);
+  check("وزوج keydown+keyup", w.dispatched.length === 2, w.dispatched.length);
+  const down = { muted: false, volume: 0.5 };
+  const w2 = makeWorld("youtube.com");
+  w2.vol("ACTION:VOLUME:-4", down); w2.tick();
+  check("والخفض يرسل ArrowDown",
+    w2.dispatched.find((d) => d.type === "keydown")?.key === "ArrowDown");
+}
+
+console.log("\n[10] **قاعدة أمان**: الهدف المشغّل أو <video>، ولا activeElement أبداً");
+{
+  const w = makeWorld("youtube.com");
+  w.vol("ACTION:VOLUME:+4", { muted: false, volume: 0.5 });
+  w.tick();
+  check("الهدف عنصر المشغّل", w.dispatched.every((d) => d.target === w.player), w.dispatched.map((d) => d.tag));
+  // ⚠️ الحارس القاطع: أي إرسال إلى حقل نصّ يفشل الاختبار صراحةً — لأنه يستبدل
+  // نصّ المستخدم عبر قائمة اقتراحات يوتيوب («hello» ⇒ «hello hello»، AUDIT §9)
+  check("**ولا إرسال إلى activeElement ولا إلى أي حقل نصّ**",
+    !w.dispatched.some((d) => d.target === w.focused || /^(INPUT|TEXTAREA)$/.test(d.tag)),
+    w.dispatched.map((d) => d.tag).join(","));
+  check("ولا ذكر لـ activeElement في المحوّل نصّاً", !/activeElement/.test(YTAD.replace(/\/\/.*$/gm, "")));
+
+  // بلا مشغّل: يسقط إلى <video> نفسه لا إلى المستند
+  const w3 = makeWorld("youtube.com", true);
+  const vid = { muted: false, volume: 0.5, tagName: "VIDEO",
+                dispatchEvent(ev) { w3.dispatched.push({ target: this, tag: "VIDEO", type: ev.type, key: ev.key }); return true; } };
+  w3.vol("ACTION:VOLUME:+4", vid); w3.tick();
+  check("وبلا #movie_player يسقط إلى <video>",
+    w3.dispatched.length > 0 && w3.dispatched.every((d) => d.tag === "VIDEO"),
+    w3.dispatched.map((d) => d.tag));
+}
+
+console.log("\n[11] الامتناع أثناء الكتابة — بالحارس القائم لا بحارس ثانٍ");
+{
+  const w = makeWorld("youtube.com");
+  w.typing(true);
+  const v = { muted: false, volume: 0.5 };
+  w.vol("ACTION:VOLUME:+4", v);
+  check("لا إرسال أثناء الكتابة", w.dispatched.length === 0, w.dispatched.length);
+  check("**والمسار المباشر يتولّاها فوراً**: 0.54 بلا مهلة",
+    near(v.volume, 0.54) && w.timers.length === 0, v.volume);
+  check("والحارس هو shouldIgnoreKeyBecauseTyping نفسه",
+    /shouldIgnoreKeyBecauseTyping\(\)/.test(YTAD));
+  check("ولا حارس كتابة ثانٍ في المحوّل",
+    !/isContentEditable|INPUT\|TEXTAREA/.test(YTAD));
+}
+
+console.log("\n[12] حارس عدم الارتداد + **سقف عدّ الأحداث**");
+{
+  const w = makeWorld("youtube.com");
+  w.vol("ACTION:VOLUME:+4", { muted: false, volume: 0.5 });
+  w.tick();
+  check("العلم مرفوع أثناء الإرسال", w.dispatched.every((d) => d.sending === true),
+    w.dispatched.map((d) => d.sending));
+  check("ويُخفض بعده", vm.runInContext("adapterSending", w.ctx) === false);
+  check("ومستمع المفاتيح يخرج أول سطر حين يكون مرفوعاً",
+    /addEventListener\("keydown"[\s\S]{0,400}?if \(adapterSending\) return;/.test(CONTENT));
+
+  // ⚠️ سقف الدفقة: عشر نقرات سريعة ⇒ إرسالات محدودة. الحادثة التي دعت إليه:
+  // 923,627 حدثاً بعد إرسال حدثين (AUDIT §9). **غير مفسَّرة لا تعني غير محروسة.**
+  const b = makeWorld("youtube.com");
+  for (let i = 0; i < 10; i++) b.vol("ACTION:VOLUME:+4", { muted: false, volume: 0.5 });
+  for (let i = 0; i < 40; i++) { b.advance(60); b.tick(); }
+  const bursts = b.dispatched.filter((d) => d.type === "keydown").length;
+  const CEILING = 5; // = maxQueue
+  check(`عشر نقرات سريعة ⇒ ${bursts} إرسالاً، والسقف ${CEILING}`, bursts <= CEILING, bursts);
+  check("والسقف ليس صفراً — الدفقة تُلجَّم لا تُلغى", bursts > 0, bursts);
+
+  // ودفقة ضخمة لا تنفجر: مئة نقرة تبقى تحت السقف نفسه
+  const h = makeWorld("youtube.com");
+  for (let i = 0; i < 100; i++) h.vol("ACTION:VOLUME:+4", { muted: false, volume: 0.5 });
+  for (let i = 0; i < 200; i++) { h.advance(60); h.tick(); }
+  const huge = h.dispatched.filter((d) => d.type === "keydown").length;
+  check(`ومئة نقرة ⇒ ${huge} إرسالاً — تحت السقف نفسه`, huge <= CEILING, huge);
+}
+
+console.log("\n[13] لا نسخة ثانية من التحقّق أو السقوط داخل المحوّل");
+{
+  check("لا applyDirect في المحوّل", !/applyDirect/.test(YTAD));
+  check("ولا نداء للشارة منه", !/showVolumeIndicator/.test(YTAD));
+  check("ولا كتابة في video.volume أو muted", !/video\.volume\s*=|video\.muted\s*=/.test(YTAD));
+  check("ولا ضبط مطلق", !/setVolume|volume\s*=\s*[0-9]/.test(YTAD));
+  check("والخطوة موثَّقة أنها خطوة المضيف لا خطوتنا",
+    /خطوة المضيف لا خطوتنا/.test(YTAD) && /±5%/.test(YTAD));
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);
