@@ -23,7 +23,7 @@ const CONTENT = fs.readFileSync("content.js", "utf8");
 const VOL = slice("content.js", "// Volume delta in percent", "// Speed: SET absolute value");
 // إطار المحوّلات (#60) يُحقن **كما هو** لا كبديل مزيّف: هذه الاختبارات تصف مسار
 // «لا محوّل مسجَّل»، وهو المسار الذي يجب أن يبقى مطابقاً لما قبل الإطار حرفياً.
-const ADAPTER = slice("content.js", "// ── البند #60 · قرار المالك 25", "function runAction");
+const ADAPTER = slice("content.js", "// ── البند #60 · قرار المالك 25", "// ── محوّل يوتيوب (#60 · قرار 25)");
 const BADGE = slice("content.js", "function showVolumeIndicator(video) {", "// -------------------------------------------");
 
 let pass = 0, fail = 0;
