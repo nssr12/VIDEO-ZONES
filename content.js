@@ -2819,10 +2819,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
                changes[spKeyFor(baseDomain(location.host))];
   if (ours) requestReload();
 });
-/*chrome.tabs.query({active:true,currentWindow:true}, ([t])=>{
-  chrome.tabs.sendMessage(t.id, {type:"RELOAD_OVERLAY_SETTINGS"});
-});
-*/
+// البند #29: كانت هنا كتلة `chrome.tabs.query` معطّلة بالتعليق — **ميتة مرتين**:
+// معطّلة، و`chrome.tabs` غير متاح في سكربت المحتوى أصلاً فلو أُزيل التعليق لرمت
+// فوراً. قناة التوصيل الاحتياطية هي `chrome.storage.onChanged` أعلاه، لا هذه.
 
 
 
