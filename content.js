@@ -2357,6 +2357,74 @@ function seek(video, deltaSec) {
   video.currentTime = Math.max(0, Math.min(video.currentTime + deltaSec, video.duration));
 }
 
+// ── البند #60 · قرار المالك 25 — إطار محوّلات المضيفين ──────────────────────
+// **لماذا وُجد:** قِيس أن يوتيوب وتويتش يحتفظان بنموذج مستوى خاص بهما ويعيدان
+// رسمه على `video.volume` عند أي دورة كتم من طرفهما، **فتُمحى كتابتنا الصحيحة**
+// ويعود المستوى إلى قيمة ثابتة عندهما (56.2% و50%) مهما كتبنا. وقِيس أن قيادة
+// واجهة المضيف هي **الوحيدة** التي تجعل نموذجه يتبعنا. التفصيل: `AUDIT.md` §8.
+//
+// **وأربعة قيود بنيوية لا تُخفَّف** (قرار 25):
+//  ١. السجلّ مفتاحه المضيف و**افتراضه لا محوّل**. من لا محوّل له يسلك مسار اليوم
+//     **حرفياً** — ولذلك يخرج `hostAdapterFor` فوراً حين يكون السجلّ فارغاً، بلا
+//     حتى استدعاء `baseDomain`.
+//  ٢. **عمليات نسبية فقط**: خطوة أعلى · خطوة أسفل · قلب الكتم. **لا ضبط مطلق في
+//     الواجهة أصلاً** كي لا يُضاف لاحقاً سهواً — والقيد يُسقط حاجتنا إلى معرفة
+//     منحنى المضيف بين منزلقه و`video.volume`، وهو منحنى غير مقيس ولا نحتاجه.
+//  ٣. **تحقّق بعديّ ثم سقوط آمن**: إن لم تتغيّر حالة الصوت خلال مهلة قصيرة سقطنا
+//     إلى الكتابة المباشرة — أي **سلوك اليوم**. فإعادة تصميم المضيف تُنزلنا إلى
+//     ما نحن عليه الآن **لا إلى عطب** (درس #50)، **والسقوط يُسجَّل مرة لا في كل
+//     ضغطة**. والسقوط مسار عمل حقيقي لا اسم: قِيس أن `video.volume` يقصّ المسار
+//     المعزَّز بنسبة **0.500 بالضبط**، فالمستخدم يسمع فرقاً حتى مع المعزّز.
+//  ٤. **الشارة تقرأ الحالة الحيّة بعد العملية دائماً** — في المسار المباشر وبعد
+//     نجاح المحوّل وبعد السقوط على السواء.
+//
+// ⚠️ **وهذا الكومِت يُدخل الإطار وحده بصفر محوّل مسجَّل**، وشرط قبوله **صفر تغيّر
+// سلوكي**: `tools/test-host-adapter.js` يبرهنه، ومنه حارس دائم يعدّ الأحداث
+// المُرسَلة ويُفشل الاختبار إن تجاوزت المتوقَّع — أثراً لحادثة انفجار أحداث
+// رُئيت مرة ولم تُفسَّر (`AUDIT.md` §9).
+const hostAdapters = new Map();       // baseDomain ⇒ محوّل. **فارغ عمداً**
+const ADAPTER_OPS = ["stepUp", "stepDown", "toggleMute"]; // نسبية فقط، بلا مطلق
+const ADAPTER_VERIFY_MS = 150;
+const adapterFellBack = new Set();    // «مضيف|عملية» ⇒ سُجِّل سقوطه مرة واحدة
+
+function hostAdapterFor() {
+  if (!hostAdapters.size) return null; // المسار الشائع: خروج قبل أي عمل
+  return hostAdapters.get(baseDomain(location.host)) || null;
+}
+
+function audioStateOf(video) {
+  return { volume: video?.volume ?? 1, muted: !!video?.muted };
+}
+
+// يُرجع true إن تولّى المحوّل العملية (ومعه تحقّقه وسقوطه)، و false ⇒ نفّذ المسار
+// المباشر فوراً كما هو اليوم.
+function runHostAdapter(video, op, applyDirect) {
+  const adapter = hostAdapterFor();
+  if (!adapter || typeof adapter[op] !== "function") return false;
+  const before = audioStateOf(video);
+  try {
+    if (adapter[op](video) === false) return false;
+  } catch (err) {
+    console.debug(`[VIDEO-ZONES] محوّل ${op} رمى، والمسار المباشر يتولّاه:`, err);
+    return false;
+  }
+  setTimeout(() => {
+    const now = audioStateOf(video);
+    if (now.muted !== before.muted || Math.abs(now.volume - before.volume) > 0.001) {
+      showVolumeIndicator(video); // نجح المحوّل — والشارة تقرأ ما صار إليه فعلاً
+      return;
+    }
+    const key = `${baseDomain(location.host)}|${op}`;
+    if (!adapterFellBack.has(key)) {
+      adapterFellBack.add(key);
+      console.debug(`[VIDEO-ZONES] محوّل ${op} لم يقع أثره، والسقوط إلى الكتابة المباشرة`);
+    }
+    applyDirect();
+    showVolumeIndicator(video);
+  }, ADAPTER_VERIFY_MS);
+  return true;
+}
+
 function runAction(action, e) {
   // Play/Pause: فقط فيديو نفسه
   if (action === "ACTION:TOGGLE_PLAY") {
@@ -2394,8 +2462,16 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
   if (action === "ACTION:TOGGLE_MUTE") {
     const video = findVideoLoose(e);
     if (!video) return false;
-    video.muted = !video.muted;
-    showVolumeIndicator(video);
+    // الكتابة المباشرة كما هي حرفياً — والمحوّل يستدعيها نفسها عند السقوط،
+    // فلا تُكتب مرتين ولا تتباعد نسختان.
+    const applyDirect = () => {
+      video.muted = !video.muted;
+    };
+    // الشارة للمسار المباشر وحده — انظر التعليق في كتلة ACTION:VOLUME أدناه.
+    if (!runHostAdapter(video, "toggleMute", applyDirect)) {
+      applyDirect();
+      showVolumeIndicator(video);
+    }
     return true;
   }
 
@@ -2435,16 +2511,26 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
     // Lowering leaves `muted` untouched on purpose: the user asked for less
     // sound, not for sound, so a muted video stays muted and only its latent
     // level moves.
-    if (delta > 0 && video.muted) video.muted = false;
-    const next = (video.volume ?? 1) + delta;
-    // ⚠️ The floor is 0.0001 and never 0, and what it guards against is the HOST
-    // SITE inferring mute from a zero level — its own player watches
-    // volumechange and auto-mutes. It does NOT guard against an inference of
-    // ours: ours lived in this very block and went away with #35. An external
-    // inference does not disappear with our fix, so this floor is not a leftover
-    // from the defect — do not read it as one and delete it.
-    video.volume = next <= 0 ? 0.0001 : Math.min(1, next);
-    showVolumeIndicator(video);
+    // الكتابة المباشرة كما هي حرفياً — والمحوّل يستدعيها نفسها عند السقوط.
+    const applyDirect = () => {
+      if (delta > 0 && video.muted) video.muted = false;
+      const next = (video.volume ?? 1) + delta;
+      // ⚠️ The floor is 0.0001 and never 0, and what it guards against is the HOST
+      // SITE inferring mute from a zero level — its own player watches
+      // volumechange and auto-mutes. It does NOT guard against an inference of
+      // ours: ours lived in this very block and went away with #35. An external
+      // inference does not disappear with our fix, so this floor is not a leftover
+      // from the defect — do not read it as one and delete it.
+      video.volume = next <= 0 ? 0.0001 : Math.min(1, next);
+    };
+    // الخطوة نسبية: إشارة الدلتا وحدها تختار العملية. لا ضبط مطلق في أي مسار.
+    // ⚠️ والشارة **للمسار المباشر وحده هنا**: حين يتولّى المحوّل تكون الحالة بعد
+    // مهلته لا الآن، فنداؤها الآن يعرض القيمة **قبل** التغيير — وهو عَرَض #35
+    // نفسه عائداً من باب جديد. مسار المحوّل ينادي الشارة بنفسه بعد تحقّقه.
+    if (!runHostAdapter(video, delta > 0 ? "stepUp" : "stepDown", applyDirect)) {
+      applyDirect();
+      showVolumeIndicator(video);
+    }
     return true;
   }
 

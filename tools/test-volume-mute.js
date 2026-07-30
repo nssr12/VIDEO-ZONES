@@ -21,6 +21,9 @@ function slice(file, from, to) {
 
 const CONTENT = fs.readFileSync("content.js", "utf8");
 const VOL = slice("content.js", "// Volume delta in percent", "// Speed: SET absolute value");
+// إطار المحوّلات (#60) يُحقن **كما هو** لا كبديل مزيّف: هذه الاختبارات تصف مسار
+// «لا محوّل مسجَّل»، وهو المسار الذي يجب أن يبقى مطابقاً لما قبل الإطار حرفياً.
+const ADAPTER = slice("content.js", "// ── البند #60 · قرار المالك 25", "function runAction");
 const BADGE = slice("content.js", "function showVolumeIndicator(video) {", "// -------------------------------------------");
 
 let pass = 0, fail = 0;
@@ -35,9 +38,12 @@ const near = (a, b) => Math.abs(a - b) < 1e-9;
 // كتلة الصوت تُقتطع من content.js نفسه وتُشغَّل كما هي: اختبار على الكود لا على
 // نسخة منه. `findVideoLoose` مُعرَّفة في نطاق الدالة فترى المعامل، بينما
 // `const video` داخل الـ if لها نطاق كتلتها — فلا تظليل ولا TDZ.
-const runner = VOL && vm.runInNewContext(
+const runner = VOL && ADAPTER && vm.runInNewContext(
   `(function (recordIndicator) {
      let showVolumeIndicator = recordIndicator;
+     const location = { host: "example.com" };
+     const baseDomain = (h) => h;
+     ${ADAPTER}
      return function runVolume(action, v) {
        const e = {};
        const findVideoLoose = () => v;
@@ -45,7 +51,7 @@ const runner = VOL && vm.runInNewContext(
        return false;
      };
    })`,
-  { console }
+  { console, setTimeout }
 );
 
 // تُرجع الحالة النهائية **ولقطة لحظة نداء المؤشّر** — بها وحدها يُبرهن أن النداء
@@ -196,8 +202,10 @@ console.log("\n[9] الشارة: نصّ لا DOM، وتحترم soundDisplay ا�
 
 console.log("\n[10] ما لا يجوز أن يتغيّر مع البند");
 {
-  check("TOGGLE_MUTE ما زال قلباً بحتاً لـ muted",
-    /if \(action === "ACTION:TOGGLE_MUTE"\)[\s\S]{0,200}?video\.muted = !video\.muted;/.test(CONTENT));
+  // بعد إطار المحوّلات (#60) صار القلب داخل `applyDirect`، وهو **نفسه** ما
+  // يستدعيه المحوّل عند السقوط — فالحارس على «قلب بحت في مسار واحد» لا على موضعه.
+  check("TOGGLE_MUTE ما زال قلباً بحتاً لـ muted داخل applyDirect",
+    /if \(action === "ACTION:TOGGLE_MUTE"\)[\s\S]{0,400}?const applyDirect = \(\) => \{\s*video\.muted = !video\.muted;\s*\};/.test(CONTENT));
   const mute = slice("content.js", '// Mute\n  if (action === "ACTION:TOGGLE_MUTE")', "// PiP");
   check("ولا يكتب في المستوى", mute && !/video\.volume\s*=/.test(mute));
   check("وما زال ينادي المؤشّر", mute && /showVolumeIndicator\(video\);/.test(mute));
