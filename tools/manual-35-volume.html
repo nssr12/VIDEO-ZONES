@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<meta charset="utf-8">
+<title>اختبار يدوي — البند #35: صوت وكتم بلا مشغّل موقع</title>
+<!--
+  ⚠️ صفحة اختبار يدوي. **لا تُشحن مع الإضافة** — مجلد tools/ مستثنى من حزمة النشر.
+
+  **لماذا وُجدت:** خطوات #35 على يوتيوب أعطت نتائج كاذبة، لأن يوتيوب يحتفظ بنموذج
+  مستوى خاص به ويعيد فرضه على `video.volume`. فسقط الافتراض الذي بُنيت عليه
+  الخطوات — أن `video.volume` مرجع نهائي — ولم يعد ممكناً الحكم على منطق #35 من
+  موقع له مشغّل. هذه الصفحة **محايدة بالبناء**: تعزل منطق الإضافة عن أي مشغّل.
+
+  **شرط الحياد، وهو كل قيمتها:**
+  لا سطر واحد في هذه الصفحة يكتب في `video.volume`، لا عند البدء ولا في أي مستمع.
+  الكاتب الوحيد فيه هو الإضافة. وزرّ الكتم يقلب `muted` **وحده** ولا يمسّ المستوى
+  — وهو مقابل مفتاح `m` في يوتيوب بلا نموذجه.
+  السطر السفلي **قارئ فقط**: يعرض ولا يفرض.
+
+  الصوت نغمة محلية من Web Audio تُبَث كـ MediaStream — **بلا شبكة ولا ملف**.
+  ⚠️ يبدأ بضغطة زر لا تلقائياً: كروم يمنع التشغيل المسموع بلا إيماءة مستخدم.
+
+  ⚠️ **منصّة دائمة (قرار المالك 17):** كل بند يمسّ الصوت أو الكتم يُشغّل خطواتها
+  كاملة، كما تفعل §8 لحالة الـ popup و§9 للظل و§10 لملء الشاشة.
+
+  ⚠️ **وحيادها حدُّها:** الصفحة محايدة **بالتصميم** — لا نموذج مستوى لها ولا مشغّل.
+  فهي تُثبت أن منطق الإضافة صحيح، و**لا تقول شيئاً عن سلوك المضيفين إطلاقاً**.
+  لا يُختبَر عليها فرض يوتيوب ولا تويتش، ولا يُستنتج منها أن العطب اختفى عندهما:
+  ذلك مقياسه `tools/bench-host-volume.mjs` والبند **#60** وحدهما.
+-->
+<style>
+  html, body { margin: 0; background: #0f172a; color: #e2e8f0;
+               font: 15px/1.7 -apple-system, "Segoe UI", Tahoma, sans-serif; }
+  video { width: 640px; height: 360px; background: #1e293b; display: block; }
+  .bar { display: flex; gap: 10px; align-items: center; padding: 8px 12px; flex-wrap: wrap; }
+  button { padding: 6px 14px; font: inherit; border-radius: 8px;
+           border: 1px solid #3b82f6; background: #1e293b; color: #e2e8f0; cursor: pointer; }
+  button[disabled] { opacity: .45; cursor: default; }
+  code { background: #1e293b; padding: 1px 6px; border-radius: 5px; }
+  #truth { padding: 8px 12px; font: 700 15px/1.8 ui-monospace, Menlo, monospace; color: #93c5fd; }
+  #log { padding: 4px 12px 14px; font: 12px/1.55 ui-monospace, Menlo, monospace;
+         color: #94a3b8; white-space: pre-wrap; max-height: 190px; overflow: auto; }
+  .hint { padding: 0 12px 8px; color: #94a3b8; font-size: 13px; }
+</style>
+
+<video id="v" playsinline></video>
+<div class="bar">
+  <button id="start">▶ شغّل النغمة</button>
+  <button id="mute" disabled>🔇 اكتم / افكّ (muted وحده)</button>
+  <button id="clear" disabled>امسح السجل</button>
+</div>
+<div class="hint">
+  مرّر عجلة الماوس فوق المربع <code>B1</code> (منتصف اليسار) — وهو ربط الصوت الافتراضي.
+  الصفحة <b>لا تكتب في المستوى أبداً</b>، فكل تغيير تراه أدناه مصدره الإضافة وحدها.
+</div>
+
+<!--
+  الخطوات مكانها هنا لا في تقرير خارجي: خطوة اختبار تعيش مع منصّتها فلا تتباعدان.
+  ⚠️ هذه **بديل** الخطوات التي فشلت على يوتيوب. الفرق أن أرقامها تقع هنا فعلاً،
+  لأن الصفحة لا نموذج مستوى لها — والنسخة القديمة كانت تُوقّع 54 و38 و4 على موقع
+  يفرض نموذجه فوقها (البند #60).
+-->
+<ol class="hint" style="line-height:2">
+  <li>أعد تحميل الإضافة من <code>chrome://extensions</code>، ثم افتح هذه الصفحة واضغط <b>▶ شغّل النغمة</b>.</li>
+  <li>عجلة لأعلى/لأسفل فوق <code>B1</code> ← النغمة تعلو وتخفت، والشارة رقم. اضبطها عند <b>50</b>.</li>
+  <li><b>العَرَض نفسه:</b> اضغط <b>اكتم</b>، ثم <b>عجلة لأعلى مرة واحدة</b> ←
+      تعود النغمة <b>مسموعة وأعلى</b>، والشارة <b>54</b> لا 50.</li>
+  <li><b>الخفض على مكتوم:</b> اكتم، ثم ثلاث دورات لأسفل ← <b>صمت تام</b>،
+      والشارة <b>«مكتوم 46» ← «مكتوم 42» ← «مكتوم 38»</b>.</li>
+  <li>اضغط <b>افكّ</b> ← تعود النغمة عند <b>38</b> لا 50: المستوى الكامن تحرّك فعلاً.</li>
+  <li><b>مستوى صفر:</b> أنزل بالعجلة حتى <b>0</b> ← صمت، والشارة <b>0</b> <u>بلا</u> كلمة «مكتوم»،
+      والسطر أعلاه يقول <code>muted: لا</code> — الصفر ليس كتماً.</li>
+  <li>ثم عجلة لأعلى مرة ← الشارة <b>4</b> والنغمة مسموعة خافتة.</li>
+  <li><b>القصّ:</b> واصل النزول تحت الصفر ← يبقى <code>muted: لا</code> ولا يُكتم العنصر.</li>
+  <li>السجل أسفل الصفحة يحفظ كل تغيّر بزمنه — أي سطر لم يسبقه ضغط زرّ كتم مصدره <b>الإضافة</b>.</li>
+</ol>
+<div id="truth">—</div>
+<div id="log"></div>
+
+<script>
+const v = document.getElementById("v");
+const truth = document.getElementById("truth");
+const logEl = document.getElementById("log");
+let t0 = 0, lines = 0;
+
+// نغمة محلية: مذبذب → كسب منخفض → وجهة MediaStream. لا شبكة ولا ملف.
+// الكسب هنا كسب **المصدر** داخل الصفحة، لا علاقة له بمعزّز الإضافة، ولا يتغيّر
+// أبداً بعد البناء — فأي تغيّر في العلوّ الذي تسمعه مصدره الإضافة لا الصفحة.
+document.getElementById("start").addEventListener("click", async () => {
+  if (t0) return;
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  await ctx.resume();
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  const dest = ctx.createMediaStreamDestination();
+  osc.type = "sine";
+  osc.frequency.value = 440;
+  g.gain.value = 0.14;            // منخفض عمداً: نغمة اختبار لا إنذار
+  osc.connect(g); g.connect(dest);
+  osc.start();
+  v.srcObject = dest.stream;
+  await v.play();
+  t0 = performance.now();
+  document.getElementById("start").disabled = true;
+  document.getElementById("mute").disabled = false;
+  document.getElementById("clear").disabled = false;
+  render("البداية");
+});
+
+// مقابل مفتاح `m`: يقلب muted **ولا يمسّ المستوى**. هذا هو الفرق عن يوتيوب.
+document.getElementById("mute").addEventListener("click", () => {
+  v.muted = !v.muted;
+  render(v.muted ? "زرّ الصفحة: كتم" : "زرّ الصفحة: فكّ كتم");
+});
+document.getElementById("clear").addEventListener("click", () => { logEl.textContent = ""; lines = 0; });
+
+// شارة الإضافة تعيش في .vzWrap على body (أو داخل عنصر ملء الشاشة)
+function badgeText() {
+  const b = document.querySelector(".vzVolume");
+  return b ? (b.textContent || "—") : "لم تظهر بعد";
+}
+
+function refresh() {
+  const pct = Math.round((v.volume ?? 1) * 1000) / 10;
+  truth.textContent =
+    `muted: ${v.muted ? "نعم" : "لا"}   ·   volume: ${pct}%   ·   شارة الإضافة: ${badgeText()}`;
+  return pct;
+}
+
+function render(why) {
+  const pct = refresh();
+  if (!t0) return;
+  const at = ((performance.now() - t0) / 1000).toFixed(2).padStart(6);
+  logEl.textContent =
+    `${at}s  muted=${String(v.muted).padEnd(5)} volume=${String(pct).padStart(5)}%  شارة=${badgeText().padEnd(12)} ${why}\n`
+    + logEl.textContent;
+  if (++lines > 200) { logEl.textContent = logEl.textContent.split("\n").slice(0, 200).join("\n"); lines = 200; }
+}
+
+// كل تغيّر يُسجَّل بمصدره الزمني. الصفحة لا تكتب في المستوى، فسطرٌ لم يسبقه زرّ
+// كتم يعني أن الإضافة هي الكاتبة — وهذا بالضبط ما يُختبر.
+v.addEventListener("volumechange", () => render("حدث volumechange"));
+// السطر العلوي وحده يُحدَّث دورياً — لالتقاط نصّ الشارة بعد اختفائها. لا سطر سجلّ
+// من هنا: السجل يبقى سجلّ **تغيّرات** لا مسحاً دورياً.
+setInterval(() => { if (t0) refresh(); }, 1000);
+</script>
+</html>
