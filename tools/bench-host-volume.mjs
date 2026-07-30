@@ -265,6 +265,26 @@ const ALLSTORE = `(() => { const o = {};
     o[k] = String(localStorage.getItem(k)).slice(0, 60); } } catch {}
   return o; })()`;
 
+// شكل عنصر المستوى عند المضيف — يقرّر هل المحوّلان واحد بمعاملين أم اثنان.
+// يُقرأ من الشجرة الحيّة لا يُفترض.
+const SHAPE = `(() => {
+  const sels = ['input[data-a-target="player-volume-slider"]', 'input[type=range]',
+    '.ytp-volume-panel', '.ytp-volume-slider', '[role=slider]',
+    '[aria-label*="olume" i]', '[data-testid*="volume" i]', '[class*="volume" i]'];
+  const out = [];
+  const seen = new Set();
+  for (const sel of sels) {
+    let el = null;
+    try { el = document.querySelector(sel); } catch { continue; }
+    if (!el || seen.has(el)) continue;
+    seen.add(el);
+    out.push(sel + " ⇒ <" + el.tagName.toLowerCase() +
+      (el.type ? " type=" + el.type : "") + "> role=" + (el.getAttribute("role") || "—") +
+      " valuenow=" + (el.getAttribute("aria-valuenow") ?? el.value ?? "—"));
+  }
+  return out;
+})()`;
+
 // (ج) كتابة مفتاح المضيف — بصيغته هو، لا بصيغة نخترعها
 const storageRemedy = (host) => host.includes("youtube") ? `(() => {
   const k = "yt-player-volume";
@@ -341,6 +361,7 @@ async function measureRemedies(url, port) {
       if (!ready) { row.note = "المشغّل لم يبدأ — لم يُقس"; rows.push(row); continue; }
 
       row.before = await evalIn(send, STATE);
+      if (!rows.shape) rows.shape = await evalIn(send, SHAPE);
       row.storeBefore = await evalIn(send, ALLSTORE);
       row.applied = await evalIn(send, rem.code(host));
       await sleep(1200);
@@ -457,6 +478,31 @@ async function youtubeUrl(port) {
   finally { try { ws?.close(); } catch {} try { proc?.kill(); } catch {} }
 }
 
+// قناة كِك حيّة تُستخرج حيّاً: القنوات تتغيّر، ورابط مثبَّت يجعل القياس كاذباً.
+async function kickUrl(port) {
+  let proc, ws;
+  try {
+    proc = await launch(port);
+    const c = await attach(port, "https://kick.com/browse");
+    ws = c.ws;
+    await c.send("Runtime.enable"); await c.send("Page.bringToFront");
+    for (let i = 0; i < 30; i++) {
+      const href = await evalIn(c.send, `(() => {
+        const bad = /^\\/(browse|categories|following|search|about|help|terms|privacy|signup|login|clips|category)/i;
+        for (const a of document.querySelectorAll('a[href^="/"]')) {
+          const h = a.getAttribute("href");
+          if (h && /^\\/[A-Za-z0-9_-]{3,25}$/.test(h) && !bad.test(h)) return "https://kick.com" + h;
+        }
+        return null;
+      })()`);
+      if (href) return href;
+      await sleep(1000);
+    }
+    return null;
+  } catch { return null; }
+  finally { try { ws?.close(); } catch {} try { proc?.kill(); } catch {} }
+}
+
 // عدة مرشّحات لكل موقع: أول رابط يعطي مشغّلاً حقيقياً هو المقيس، وما عداه يُسجَّل
 // «لم يُقس» بسببه. **لا تعميم من موقع واحد** — السؤال كم موقعاً له نموذج خاص.
 let port = 9411;
@@ -468,6 +514,8 @@ if (MODE === "--remedy") {
   const rows = await measureRemedies(argUrl, port);
   const host = new URL(argUrl).host;
   console.log(`\n=== قياس العلاجات — ${host} · الهدف ${TARGET * 100}% ===\n`);
+  if (rows.shape) { console.log("   شكل عنصر المستوى عند المضيف:");
+    for (const l of rows.shape) console.log("     · " + l); console.log(""); }
   for (const r of rows) {
     console.log(`── (${r.id}) ${r.label}`);
     if (r.note) { console.log(`   ⚠️ ${r.note}\n`); continue; }
