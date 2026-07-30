@@ -237,6 +237,131 @@ async function measureRestoreMap(url, port) {
   finally { try { ws?.close(); } catch {} try { proc?.kill(); } catch {} }
 }
 
+// ---- قياس العلاجات ---------------------------------------------------------
+// أيّ تدخّل يجعل **نموذج المضيف نفسه** يتبعنا؟ يُقاس على المضيفَين اللذين يفرضان
+// وحدهما. لكل علاج متصفّح جديد: كتابة التخزين في (ج) تلوّث ما بعدها.
+//
+// ⚠️ **التمييز الحاسم — الموثوق وغير الموثوق.** أحداث CDP **موثوقة**
+// (`isTrusted: true`) وسكربت المحتوى **لا يستطيع توليدها**. فكل علاج هنا يُنفَّذ
+// بما تستطيعه الإضافة فعلاً (`dispatchEvent` من الصفحة)، ويبقى مفتاح CDP مرجعاً
+// أعلى للمقارنة لا علاجاً مقترحاً. قياس علاج بحدث موثوق **يبالغ في قدرتنا**.
+const TARGET = 0.3;
+
+const SLIDER = `(() => {
+  const yt = document.querySelector(".ytp-volume-panel, .ytp-volume-slider");
+  if (yt) return { kind: "yt", value: yt.getAttribute("aria-valuenow") };
+  const tw = document.querySelector('input[data-a-target="player-volume-slider"]');
+  if (tw) return { kind: "twitch", value: tw.value };
+  return null;
+})()`;
+
+const STATE = `(() => { ${FIND} const v = pick(); if (!v) return null;
+  const s = ${SLIDER};
+  return { volume: Math.round(v.volume * 10000) / 10000, muted: v.muted, slider: s?.value ?? null };
+})()`;
+
+const ALLSTORE = `(() => { const o = {};
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i);
+    o[k] = String(localStorage.getItem(k)).slice(0, 60); } } catch {}
+  return o; })()`;
+
+// (ج) كتابة مفتاح المضيف — بصيغته هو، لا بصيغة نخترعها
+const storageRemedy = (host) => host.includes("youtube") ? `(() => {
+  const k = "yt-player-volume";
+  const now = Date.now();
+  const payload = { data: JSON.stringify({ volume: ${TARGET * 100}, muted: false }),
+                    expiration: now + 2592000000, creation: now };
+  localStorage.setItem(k, JSON.stringify(payload));
+  sessionStorage.setItem(k, JSON.stringify(payload));
+  return "yt-player-volume";
+})()` : `(() => {
+  localStorage.setItem("volume", String(${TARGET}));
+  localStorage.setItem("video-muted", JSON.stringify({ default: false }));
+  return "volume";
+})()`;
+
+// (د1) اختصار المضيف بأحداث **غير موثوقة** — ما تستطيعه الإضافة فعلاً
+const keyRemedy = () => `(() => {
+  ${FIND}
+  const v = pick();
+  const player = document.querySelector("#movie_player, .video-player, [data-a-target='player-overlay-click-handler']") || v;
+  for (let i = 0; i < 4; i++) {
+    for (const type of ["keydown", "keyup"]) {
+      player.dispatchEvent(new KeyboardEvent(type, { key: "ArrowDown", code: "ArrowDown",
+        keyCode: 40, which: 40, bubbles: true, cancelable: true, composed: true }));
+    }
+  }
+  return "ArrowDown ×4 (غير موثوق)";
+})()`;
+
+// (د2) منزلق المضيف وحده. حقل `<input type=range>` يديره React لا يقبل `.value = x`
+// مباشرةً، فالطريق الوحيد هو الـ native setter ثم `input`/`change`.
+// ⚠️ يوتيوب منزلقه `div` لا `input`، فلا مقابل له — يُسجَّل «لا منزلق» لا «فشل».
+const sliderRemedy = () => `(() => {
+  const tw = document.querySelector('input[data-a-target="player-volume-slider"], input[type=range][class*=volume i]');
+  if (!tw) return "لا منزلق <input> في هذا المضيف";
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+  setter.call(tw, String(${TARGET}));
+  tw.dispatchEvent(new Event("input", { bubbles: true }));
+  tw.dispatchEvent(new Event("change", { bubbles: true }));
+  return "native setter + input/change (غير موثوق)";
+})()`;
+
+const REMEDIES = [
+  { id: "أ", label: "كتابة video.volume وحدها",
+    code: () => `(() => { ${FIND} const v = pick(); v.volume = ${TARGET}; return "volume=" + v.volume; })()` },
+  { id: "ب", label: "كتابتها + حدث volumechange مُصطنَع (غير موثوق)",
+    code: () => `(() => { ${FIND} const v = pick(); v.volume = ${TARGET};
+      v.dispatchEvent(new Event("volumechange")); return "volume+event"; })()` },
+  { id: "ج", label: "كتابة مفتاح المضيف في التخزين المحلي", code: storageRemedy },
+  { id: "د1", label: "اختصار المضيف (ArrowDown) بحدث غير موثوق", code: keyRemedy },
+  { id: "د2", label: "منزلق المضيف عبر native setter (غير موثوق)", code: sliderRemedy }
+];
+
+async function measureRemedies(url, port) {
+  const host = new URL(url).host;
+  const rows = [];
+  for (const rem of REMEDIES) {
+    let proc, ws;
+    const row = { id: rem.id, label: rem.label };
+    try {
+      const p = port++;
+      proc = await launch(p);
+      const c = await attach(p, url);
+      ws = c.ws;
+      const { send } = c;
+      await send("Runtime.enable"); await send("DOM.enable");
+      await send("Page.enable"); await send("Page.bringToFront");
+      let ready = false;
+      for (let i = 0; i < 60; i++) {
+        const p = await evalIn(send, PICK);
+        if (p?.found && p.readyState >= 1 && p.w > 0) { ready = true; break; }
+        await sleep(1000);
+      }
+      if (!ready) { row.note = "المشغّل لم يبدأ — لم يُقس"; rows.push(row); continue; }
+
+      row.before = await evalIn(send, STATE);
+      row.storeBefore = await evalIn(send, ALLSTORE);
+      row.applied = await evalIn(send, rem.code(host));
+      await sleep(1200);
+      row.after = await evalIn(send, STATE);
+      const m1 = await hostToggleMute(send, true);
+      const m2 = await hostToggleMute(send, false);
+      row.cycle = m2.after; row.via = m2.via;
+      row.afterCycle = await evalIn(send, STATE);
+      const sb = row.storeBefore || {}, sa = await evalIn(send, ALLSTORE) || {};
+      row.storeDiff = Object.keys(sa).filter((k) => sa[k] !== sb[k]).map((k) => `${k}=${sa[k]}`);
+      rows.push(row);
+    } catch (e) {
+      row.note = "فشل: " + String(e?.message || e).slice(0, 60);
+      rows.push(row);
+    } finally {
+      try { ws?.close(); } catch {} try { proc?.kill(); } catch {}
+    }
+  }
+  return rows;
+}
+
 // ---- قياس موقع واحد --------------------------------------------------------
 async function measure(name, url, port) {
   const row = { name, url, ok: false };
@@ -335,7 +460,33 @@ async function youtubeUrl(port) {
 // عدة مرشّحات لكل موقع: أول رابط يعطي مشغّلاً حقيقياً هو المقيس، وما عداه يُسجَّل
 // «لم يُقس» بسببه. **لا تعميم من موقع واحد** — السؤال كم موقعاً له نموذج خاص.
 let port = 9411;
-const argUrl = process.argv[2] === "--map" ? process.argv[3] : process.argv[2];
+const MODE = ["--map", "--remedy"].includes(process.argv[2]) ? process.argv[2] : null;
+const argUrl = MODE ? process.argv[3] : process.argv[2];
+
+// وضع العلاجات: node tools/bench-host-volume.mjs --remedy "https://..."
+if (MODE === "--remedy") {
+  const rows = await measureRemedies(argUrl, port);
+  const host = new URL(argUrl).host;
+  console.log(`\n=== قياس العلاجات — ${host} · الهدف ${TARGET * 100}% ===\n`);
+  for (const r of rows) {
+    console.log(`── (${r.id}) ${r.label}`);
+    if (r.note) { console.log(`   ⚠️ ${r.note}\n`); continue; }
+    const st = (x) => x ? `مستوى ${Math.round((x.volume ?? 0) * 1000) / 10}%${x.muted ? " (م)" : ""} · منزلق ${x.slider ?? "—"}` : "—";
+    console.log(`   قبل            : ${st(r.before)}`);
+    console.log(`   ما نُفِّذ       : ${r.applied ?? "—"}`);
+    console.log(`   بعده           : ${st(r.after)}`);
+    console.log(`   بعد دورة الكتم : ${st(r.afterCycle)}   (${r.via})`);
+    // ⚠️ النجاة تُقاس على **ما تحقّق فعلاً** لا على الهدف: العلاج (د) يقود واجهة
+    // المضيف بخطوات ثابتة ولا يصوّب إلى 30% أصلاً، فقياسه بالهدف يطبع ❌ كاذبة.
+    const moved = r.before && r.after && Math.abs((r.after.volume ?? 0) - (r.before.volume ?? 0)) > 0.01;
+    const survived = r.after && r.afterCycle &&
+      Math.abs((r.afterCycle.volume ?? 0) - (r.after.volume ?? 0)) < 0.02;
+    const sliderMoved = r.before && r.after && String(r.before.slider) !== String(r.after.slider);
+    console.log(`   الحكم          : غيّر المستوى ${moved ? "✅" : "❌"} · نجا بعد الدورة ${survived ? "✅" : "❌"} · تبعه نموذج المضيف (المنزلق) ${sliderMoved ? "✅" : "❌"}`);
+    console.log(`   تغيّر التخزين  : ${r.storeDiff?.length ? r.storeDiff.join(" · ") : "لا شيء"}\n`);
+  }
+  process.exit(0);
+}
 
 // وضع الخريطة: node tools/bench-host-volume.mjs --map "https://..."
 if (process.argv[2] === "--map") {
