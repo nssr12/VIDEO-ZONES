@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<meta charset="utf-8">
+<title>اختبار يدوي — البند #59: فيديو ابن body</title>
+<!--
+  ⚠️ صفحة اختبار يدوي. **لا تُشحن مع الإضافة** — مجلد tools/ مستثنى من حزمة النشر.
+
+  تُعيد إنتاج البنية أ في البند #59 بدقّة: <video> **ابن مباشر لـ body**، بحجم
+  سطريّ، وصفحة **قصيرة** (لا تمرير)، و**زرّ واحد** في الصفحة.
+  الثلاثة معاً هي ما كان يجعل السكور يُرجع <body> فيُكبَّر تخطيط الصفحة كله:
+  الزر يمنح body ثلاث نقاط hasButtons، وقِصَر الصفحة يُبقي نسبة مساحته تحت
+  حارس 3.5 فتمرّ، وسكور الفيديو ثابت عند 1.85 فيُهزم.
+
+  مصدر الفيديو لوحة رسم متحركة تُبَث كـ MediaStream — **بلا شبكة**، فلا يرثّ
+  برابط ميت، ولا يحتاج ملفاً خارجياً.
+-->
+<style>
+  /* الصفحة قصيرة عمداً: لا min-height ولا محتوى يمدّها.
+     أي تمديد لها يرفع نسبة مساحة body فوق 3.5 فيُرفض ويسقط العطب. */
+  html, body { margin: 0; background: #0f172a; color: #e2e8f0;
+               font: 15px/1.7 -apple-system, "Segoe UI", Tahoma, sans-serif; }
+  video { width: 640px; height: 360px; background: #333; display: block; }
+  .bar { display: flex; gap: 10px; align-items: center; padding: 8px 12px; }
+  button { padding: 6px 14px; font: inherit; border-radius: 8px;
+           border: 1px solid #3b82f6; background: #1e293b; color: #e2e8f0; cursor: pointer; }
+  code { background: #1e293b; padding: 1px 6px; border-radius: 5px; }
+  #out { padding: 8px 12px; font: 12px/1.6 ui-monospace, Menlo, monospace;
+         color: #93c5fd; white-space: pre-wrap; word-break: break-all; }
+</style>
+
+<video id="v" autoplay muted playsinline></video>
+<div class="bar">
+  <!-- الزرّ الواحد المقصود: هو ما يمنح body ثلاث نقاط hasButtons -->
+  <button id="probe">اطبع ما سيُكبَّر</button>
+  <span>ثم مرّر عجلة الماوس فوق الفيديو ونفّذ أمر ملء الشاشة من الإضافة.</span>
+</div>
+<div id="out">—</div>
+
+<script>
+// فيديو محلي بالكامل: لوحة رسم متحركة تُبَث. لا شبكة ولا ملف.
+const c = Object.assign(document.createElement("canvas"), { width: 640, height: 360 });
+const g = c.getContext("2d");
+let i = 0;
+setInterval(() => {
+  g.fillStyle = `hsl(${i * 4 % 360},55%,28%)`; g.fillRect(0, 0, 640, 360);
+  g.fillStyle = "#fff"; g.font = "700 64px sans-serif"; g.fillText(String(i++), 40, 210);
+}, 100);
+document.getElementById("v").srcObject = c.captureStream(10);
+
+// مسطرة مصغَّرة: تقول أي عنصر سيُكبَّر، بنفس منطق pickFullscreenContainer.
+document.getElementById("probe").addEventListener("click", () => {
+  const v = document.getElementById("v");
+  const d = (e) => !e ? "null" : e === document.body ? "BODY"
+    : e === document.documentElement ? "HTML" : e.tagName;
+  const vr = v.getBoundingClientRect();
+  const va = Math.max(1, vr.width * vr.height);
+  const P = /player|video|controls|overlay|container/i;
+  const cands = [];
+  for (let n = v, k = 0; n && k < 8; n = n.parentElement, k++) {
+    if (n !== document.body && n !== document.documentElement) cands.push(n);
+  }
+  const scored = cands.map((e) => {
+    const r = e.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return null;
+    const ar = r.width * r.height / va;
+    const cx = vr.left + vr.width / 2, cy = vr.top + vr.height / 2;
+    if (!(r.left <= cx && r.right >= cx && r.top <= cy && r.bottom >= cy)) return null;
+    if (ar > 3.5) return null;
+    return { e, s: (e.querySelector("button,[role='button'],input[type='range']") ? 3 : 0)
+      + (P.test(((e.className || "") + "") + " " + ((e.getAttribute("role")) || "")) ? 2 : 0)
+      + (e === v ? 0 : 1) + Math.max(0, 2 - Math.abs(ar - 1.15)) };
+  }).filter(Boolean).sort((a, b) => b.s - a.s);
+  const el = scored[0] ? scored[0].e : v;
+  const br = document.getElementById("v").getBoundingClientRect();
+  document.getElementById("out").textContent =
+    `سيُكبَّر: ${d(el)}   ·   الفيديو: ${Math.round(br.width)}×${Math.round(br.height)}` +
+    `   ·   الشاشة: ${innerWidth}×${innerHeight}` +
+    `   ·   المتوقَّع بعد الإصلاح: VIDEO` +
+    `\nمرشّحون بعد الاستثناء: ${cands.length} (${cands.map(d).join(" · ")})`;
+});
+</script>
+</html>

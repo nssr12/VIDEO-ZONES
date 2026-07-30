@@ -292,5 +292,57 @@ console.log("\n[8] البند #59 — body و documentElement خارج المر�
 }
 }
 
+if (READY) {
+console.log("\n[9] البند #59 كومِت ب — المسار الاحتياطي لا يُرجع إلا الفيديو");
+{
+  // كل المرشّحين مرفوضون: مستطيلات صفرية ⇒ scored فارغة ⇒ الاحتياطي.
+  // هذا هو التخطيط المنهار الوحيد الذي يُدخِل المسار.
+  const COLLAPSED = [
+    {
+      key: "تخطيط منهار — كل المستطيلات صفرية",
+      spec: [
+        { name: "VIDEO", tag: "VIDEO", cls: "", rect: () => [0, 0] },
+        { name: "DIV.hid", cls: "hid", rect: () => [0, 0] },
+        { name: "BODY", tag: "BODY", cls: "", rect: () => [0, 0] }
+      ]
+    },
+    {
+      key: "منهار داخل حاوية تشبه مشغّلاً",
+      spec: [
+        { name: "VIDEO", tag: "VIDEO", cls: "", rect: () => [0, 0] },
+        { name: "DIV.player", cls: "some-player", rect: () => [0, 0] },
+        { name: "BODY", tag: "BODY", cls: "", rect: () => [0, 0] }
+      ]
+    },
+    {
+      key: "فيديو صفريّ وأب ضخم (النسبة > 3.5)",
+      spec: [
+        { name: "VIDEO", tag: "VIDEO", cls: "", rect: () => [0, 0] },
+        { name: "DIV.big", cls: "big", rect: () => [4000, 4000] },
+        { name: "BODY", tag: "BODY", cls: "", rect: () => [4000, 4000] }
+      ]
+    }
+  ];
+  for (const shape of COLLAPSED) {
+    for (const scale of [1, 0.6]) {
+      const { ctx, video, nodes } = load(shape.spec, scale);
+      const got = ctx.pickFullscreenContainer(video);
+      const body = nodes[nodes.length - 1];
+      check(`${shape.key} @${scale}: يُرجع الفيديو`, got === video, got && got.__name);
+      check(`${shape.key} @${scale}: ولا BODY`, got !== body, got && got.__name);
+      check(`${shape.key} @${scale}: ولا أب الفيديو`, got !== video.parentElement,
+        got && got.__name);
+    }
+  }
+  check("الكود لا يُرجع video.parentElement في الاحتياطي",
+    !/scored\[0\]\?\.el\|\|video\.parentElement/.test(CONTENT.replace(/\s+/g, "")),
+    "ما زال video.parentElement في المسار الاحتياطي");
+  check("بل يُرجع الفيديو وحده",
+    /scored\[0\]\?\.el\|\|video;/.test(CONTENT.replace(/\s+/g, "")));
+  check("والتعليق يذكر شرط دخول المسار",
+    /رُفض كل المرشّحين أو كانت مستطيلاتهم صفرية/.test(CONTENT));
+}
+}
+
 console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);
 process.exit(fail ? 1 : 0);
