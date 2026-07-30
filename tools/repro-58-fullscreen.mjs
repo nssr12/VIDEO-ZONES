@@ -205,6 +205,30 @@ window.__setup = (i) => {
   return { name: window.__cases[i].name };
 };
 
+// أي فرع في pickFullscreenContainer حسم؟ — للبند #59 كومِت ب: هل يُدخَل الاحتياطي؟
+window.__branch = () => {
+  const v = window.__v;
+  const KPW = "#movie_player,.html5-video-player,.video-player,[data-a-target='video-player'],.jw-wrapper,.video-js,.plyr,.vjs-fluid";
+  const known = v.closest(KPW);
+  if (known && known.requestFullscreen) return "known-wrapper";
+  if (window.nearestPlayerAncestor && window.nearestPlayerAncestor(v)) return "decisive(#58)";
+  const vr = v.getBoundingClientRect();
+  const va = Math.max(1, vr.width * vr.height);
+  const cands = []; let cur = v;
+  for (let i = 0; i < 8 && cur; i++) {
+    if (cur !== document.body && cur !== document.documentElement) cands.push(cur);
+    cur = cur.parentElement;
+  }
+  const alive = cands.filter((el) => {
+    const r = el.getBoundingClientRect();
+    if (!r || r.width <= 0 || r.height <= 0) return false;
+    const cx = vr.left + vr.width / 2, cy = vr.top + vr.height / 2;
+    if (!(r.left <= cx && r.right >= cx && r.top <= cy && r.bottom >= cy)) return false;
+    return (r.width * r.height) / va <= 3.5;
+  });
+  return alive.length ? "score" : "FALLBACK";
+};
+
 window.__before = () => {
   const v = window.__v;
   const container = window.pickFullscreenContainer ? window.pickFullscreenContainer(v) : "MISSING";
@@ -341,6 +365,7 @@ for (let i = 0; i < count; i++) {
   const setup = await evalJs(`window.__setup(${i})`);
   await sleep(700);
   const before = await evalJs("window.__before()");
+  const branch = await evalJs("window.__branch()");
   await evalJs("window.__fire()", true);
   await sleep(1100);
   const after = await evalJs("window.__after()");
@@ -353,11 +378,12 @@ for (let i = 0; i < count; i++) {
   console.log(`  زر أصلي (مسار #17)      → ${before.nativeBtn}`);
   console.log(`  fullscreenElement       → ${after.fsElement}${after.fsIsVideo ? "   ← الفيديو نفسه" : ""}`);
   console.log(`  مقاس الفيديو قبل ⇒ بعد  → ${before.videoRect.join("×")} ⇒ ${after.videoRect.join("×")}   (${after.areaPct}% من الشاشة)`);
+  console.log(`  الفرع الحاسم            → ${branch}${branch === "FALLBACK" ? "   ⚠️ المسار الاحتياطي" : ""}`);
   console.log(`  البوابة (#58ب)          → ${after.stamped ? "وسمت" : "**رفضت**"}   ·   CSS محقونة: ${after.cssInjected ? "نعم" : "لا"}   ·   سمات بعد الخروج: ${leftover}`);
   console.log(`  ${after.fills ? "✅ الفيديو يملأ الشاشة" : "❌ الفيديو بقي بمقاسه — شاشة سوداء حوله"}`);
   console.log("");
   rows.push({ name: setup.name, ok: after.fills, fs: after.fsElement, pct: after.areaPct,
-              stamped: after.stamped, leftover });
+              stamped: after.stamped, leftover, branch });
 }
 
 console.log("=== الخلاصة ===");
@@ -370,6 +396,11 @@ console.log("");
 console.log(`=== عدّ البوابة: وُسِمت ${stamped.length} · رُفضت ${rows.length - stamped.length} ===`);
 console.log(`    الموسومة: ${stamped.map((r) => r.name.split(" — ")[0]).join(" · ") || "لا شيء"}`);
 console.log(`    سمات باقية بعد الخروج: ${leftovers.length === 0 ? "صفر في كل البنيات ✅" : leftovers.map((r) => r.name.split(" — ")[0] + "=" + r.leftover).join(" · ") + " ❌"}`);
+const fb = rows.filter((r) => r.branch === "FALLBACK");
+console.log("");
+console.log("=== الفرع الحاسم لكل بنية (البند #59) ===");
+for (const r of rows) console.log(`    ${pad(r.name.split(" — ")[0], 5)}${r.branch}`);
+console.log(`    ⇒ **دخول المسار الاحتياطي: ${fb.length}** ${fb.length === 0 ? "✅" : "❌ " + fb.map((r) => r.name.split(" — ")[0]).join(" · ")}`);
 console.log("");
 console.log("⚠️ اقرأ tools/KNOWN-DEFECTS.md قبل تفسير أي ❌ أعلاه.");
 console.log("");
