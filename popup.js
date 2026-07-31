@@ -176,6 +176,15 @@ async function checkPageStatus() {
     return;
   }
 
+  // ── البند #64 — الرئيسي أعلى الترتيب هنا كما هو في `content.js` ────────────
+  // بلا هذا الفحص تقول الحالة «الإضافة شغالة» والمفتاح الرئيسي مطفأ — وهو **كذب
+  // في الاتجاه المعاكس**: كنّا نُطفئ ولا يُطفأ شيء، فلا نُبدله بأن نُطفئ ونقول شغّالة.
+  if (!(await getMasterEnabled())) {
+    setYtQualityGap(null);
+    setStatus("bad", "المفتاح الرئيسي مطفأ — الإضافة متوقفة كلياً");
+    return;
+  }
+
   // Decided here, from storage — no frame is consulted and none can contradict it.
   const gates = await readHostGates(hostFromUrl(url));
   if (gates.blocked) {
@@ -233,6 +242,17 @@ async function activateOnCurrentPage() {
     return;
   }
 
+  // ── البند #64 — لا صمت بلا معنى ───────────────────────────────────────────
+  // **التفعيل اليدوي يخرق الحظر عمداً، ولا يخرق المفتاح الرئيسي.** فلو تُرك
+  // الزرّ يعمل والرئيسي مطفأ لضُغط **فلا يحدث شيء** — وهو **درس `skip` الذي كان
+  // يبتلع الشارة: صمتٌ تامّ يبدو تعطّلاً**. فيُعطَّل ظاهراً **بسبب مقروء**.
+  // (وهذا حارس ثانٍ: `syncMasterUi` يعطّل الزرّ بصرياً، وهذا يمنع المسار نفسه.)
+  const master = await getMasterEnabled();
+  if (!master) {
+    setStatus("bad", "المفتاح الرئيسي مطفأ — شغّل «تشغيل الإضافة» أولاً");
+    return;
+  }
+
   try {
     // ── البند #38ج ────────────────────────────────────────────────────────────
     // **المانيفست يحقن سكربتين، وهذا المسار كان يحقن واحداً.**
@@ -272,6 +292,50 @@ async function activateOnCurrentPage() {
   } catch {
     setStatus("bad", "فشل التفعيل اليدوي على هذه الصفحة");
   }
+}
+
+
+// ── البند #64 — المفتاح الرئيسي ─────────────────────────────────────────────
+// **افتراضه مُشغَّل بنمط `!== false`** — نظير `loadMasterEnabled` في
+// `content.js` حرفياً: ملفّ لم يُفتح إعداده قط يسلك سلوك اليوم، **فصفر تغيّر
+// سلوكي افتراضياً**. أي انحراف بين النسختين يجعل الواجهة تكذب على المستخدم.
+async function getMasterEnabled() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  return (data.settings || {}).enabled !== false;
+}
+
+// الحفظ يمرّ بـ`safeSyncSet` كبقيّة الكتابات، ولا يطمس بقيّة `settings`.
+async function saveMasterEnabled(on) {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const settings = data.settings && typeof data.settings === "object" ? data.settings : {};
+  settings.enabled = !!on;
+  const res = await safeSyncSet({ settings });
+  if (!res?.ok) {
+    setStatus("bad", res?.error || "تعذّر حفظ المفتاح الرئيسي");
+    return false;
+  }
+  // كل تبويب يعيد القراءة فوراً — بلا إعادة تحميل، كبقيّة قنوات التحديث
+  const tabs = await chrome.tabs.query({});
+  for (const t of tabs) {
+    if (t.id) chrome.tabs.sendMessage(t.id, { type: "GVZ_RELOAD" }).catch(() => {});
+  }
+  return true;
+}
+
+// **الزرّ يُعطَّل ظاهراً بسبب مقروء** — لا زرٌّ يُضغط فلا يحدث شيء (#64).
+function syncMasterUi(on) {
+  const btn = $("manualActivate");
+  if (!btn) return;
+  btn.disabled = !on;
+  btn.style.opacity = on ? "" : "0.5";
+  btn.style.cursor = on ? "" : "not-allowed";
+  btn.title = on ? "" : "المفتاح الرئيسي مطفأ — شغّل «تشغيل الإضافة» أولاً";
+}
+
+async function loadMasterUi() {
+  const on = await getMasterEnabled();
+  $("masterEnabled").checked = on;
+  syncMasterUi(on);
 }
 
 async function loadGlobalData() {
@@ -759,6 +823,7 @@ document.addEventListener("mousedown", (e) => {
   fillActionPreset();
   // Idempotent, and a no-op read once the legacy key is gone
   await migrateSiteProfiles().catch(() => {});
+  await loadMasterUi();
   await loadGlobalData();
   await loadSiteProfile();
   await loadOverlayUI();
@@ -779,6 +844,13 @@ document.addEventListener("mousedown", (e) => {
   }
 
   $("enabled").addEventListener("change", saveGlobalData);
+  $("masterEnabled").addEventListener("change", async (e) => {
+    const on = e.target.checked;
+    syncMasterUi(on);
+    const ok = await saveMasterEnabled(on);
+    if (!ok) { e.target.checked = !on; syncMasterUi(!on); return; }
+    await checkPageStatus();
+  });
   $("subtitlesEnabled")?.addEventListener("change", saveSubtitlesToggle);
   $("fullscreenOnly")?.addEventListener("change", saveFullscreenOnlyToggle);
   $("blockSiteBtn").addEventListener("click", () => saveBlockedSiteState().then(loadBlockedSiteUI));
