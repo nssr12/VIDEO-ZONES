@@ -1,109 +1,160 @@
-// قياس كِك **في متصفّح المالك** — يُلصق في الكونسول، ولا يُشحن. **النسخة الثالثة.**
+// قياس كِك **في متصفّح المالك** — يُلصق في الكونسول، ولا يُشحن. **النسخة الرابعة.**
 //
-// ⚠️ **ثلاثة أحكام غير مسنودة طبعتها نسختان سابقتان، وسحبها المالك ثلاثتها:**
-//   ١. «بقي مكتوماً (كيوتيوب)» — والمنزلق **لم يستجب أصلاً**؛ جمودُه أثرُ جمود
-//      لا دلالةُ مضيف. **عنصر لا يتحرّك لا يُستنطَق.**
-//   ٢. «نجاة القيمة ❌» — قُورنت القراءة **أثناء الكتم** بـ**بعد الفكّ**، وتلك
-//      **استعادة لا ضياع**.
-//   ٣. «النجاة 60% ⇒ 0% ❌ مُحيت» — والقراءة الأخيرة `muted=true`، أي أن
-//      **الدورة لم تكتمل** (وقع الكتم ولم يقع الفكّ داخل النافذة)، فقُورن
-//      «قبل الكتم» بـ«أثناء الكتم» **من باب آخر**.
-// ⇒ **القاعدة (قرار 26): كل حكم يشترط حالةً يفحص الحالة قبل أن ينطق، لا بعد أن
-// يُطبع.** ولذلك صار حكم النجاة هنا **مشروطاً بـ`muted === false`**، وإلا طُبع
-// «الدورة لم تكتمل، أعد القياس».
+// ⚠️ **استنتاج مسحوب (قرار 21) — وهو أخطر ما سُحب:**
+// ~~«كِك يمحو كتابتنا في السكون، وعطبه أشدّ من عائلة #60، وخاصيّة الصوت لا تعمل
+// عليه أصلاً»~~. **باطل بقياس نظيف: 30% صمدت أربع ثوانٍ كاملة**
+// (`0→100→300→600→1000→2000→4000ms` كلها 30%).
+// **والسبب المرجَّح أن القراءة الأولى لم تكن في سكون أصلاً:** سبقتها في التشغيلة
+// نفسها **تسع عشرة ضغطة مفتاح وثماني عجلات** مُرسَلة إلى واجهة كِك قبل الكتابة
+// بلحظات ⇒ **ما رُئي أثر استفزازنا لا سلوك المضيف**.
 //
-// **ما ثبت على كِك (أرقام المالك، 2026-07-31):**
-//   · أ) تركيز على المنزلق وأبيه وجدّه: **`تركيز=لا` في 19 محاولة** · كل
-//     المفاتيح (أسهم · Home · End · PageUp) **❌**
-//   · ب) عجلة ↑↓ على المنزلق وأبيه وجدّه والفيديو: **كلها ❌**
-//   · ج) **كتبنا 30% ⇒ فوراً 30% ⇒ بعد ثانيتين بلا أي حدث من المضيف: عاد 60%**
+// ⇒ **قاعدة (قرار 26): قياس يقع بعد تدخّلات مُرسَلة في التشغيلة نفسها ليس قياس
+// سكون. مرحلة السكون تُعزل في تشغيلة نظيفة أو لا تُصدَّق.**
+// **ولذلك تبدأ هذي النسخة بالسكون قبل أي تدخّل**، ولا تُرسل مفتاحاً ولا عجلة أبداً.
 //
-// ⚠️⚠️ **وهذا يخرج كِك من عائلة #60 كلها:** المضيفون الأربعة الآخرون **تنجو
-// عندهم كتابتنا ثلاث ثوانٍ** ولا تسقط إلا **بحدث منهم**؛ وكِك **يفرض نموذجه
-// بلا سبب خارجيّ**. ⇒ **على كِك خاصيّة الصوت في الإضافة لا تعمل أصلاً — لا
-// بمحوّل ولا بالمسار المباشر.** وهذا **أهمّ ما خرج به اليوم**.
+// ⚠️ **وعيب تصميم ثانٍ، في ترتيب المراحل لا في الأداة:** مرحلة دورة الكتم كانت
+// **نافذة زمنية تطالب بضغطتين متتاليتين** — تصميم هشّ فشل **ثلاث مرات**. صارت
+// **استطلاعاً**: يُراقَب `muted` كل 200ms مدة 30 ثانية، ويُطبع «رصدتُ الكتم»
+// و«رصدتُ الفكّ» **لحظة وقوعهما**، ويُحكَم على النجاة **عند رصد الفكّ نفسه** لا
+// عند انتهاء مهلة. وإن مضت الثلاثون بلا دورة كاملة **قيل ما نقص بالضبط**.
 //
-// **أربعة قياسات تحسم مصيره:**
-//   ١. **نمط المحو**: كتابة ثم قراءات عند 100·300·600·1000·2000·4000ms.
-//      **إيقاع ثابت ⇒ استطلاع دوريّ · عودة فورية ⇒ مستمع `volumechange`.**
-//      والفرق يقرّر **هل ثمّة نافذة أصلاً**.
-//   ٢. **مستمعو `volumechange`** على الفيديو (`getEventListeners` في الكونسول).
-//   ٣. **مفاتيح التخزين** التي فيها volume/sound/player — **الرافعة الوحيدة
-//      الباقية** إن كان كِك يقرأ مستواه من مفتاح.
-//   ٤. **دورة الكتم** بالشرط المُصلَح.
+// **والخيط الجديد:** مفاتيح `amazon_ivs_*` تقول إن كِك يشغّل **مشغّل Amazon IVS
+// للويب**، وله **واجهة برمجية** (`setVolume` وما حولها) **لا DOM يُدغدَغ**.
+// المرحلة ٣ **تبحث عن نسخة المشغّل ولا تكتب فيها شيئاً**: موجودة أم لا، وبأي
+// طريق، وهل يُقرأ منها المستوى. **الكونسول في عالم الصفحة أصلاً فلا حقن يلزم.**
 (() => {
   const say = (m) => console.log("VZKICK " + m);
   const v = document.querySelector("video");
   if (!v) { say("⚠️ لا فيديو في الصفحة — لم يُقس"); return; }
   const vol = () => Math.round(v.volume * 1000) / 10;
-  const st = () => `vol=${vol()}% muted=${v.muted}`;
 
-  // ── ١) نمط المحو: متى تعود القيمة، وبأي إيقاع؟ ──────────────────────────
+  // ── ١) السكون **أولاً**، قبل أي تدخّل: لا مفتاح ولا عجلة في هذي الأداة ────
   const before = vol();
   const marks = [100, 300, 600, 1000, 2000, 4000];
-  const series = [];
+  const series = [[0, null]];
   v.volume = 0.30;
-  series.push([0, vol()]);
-  say(`١) قبل=${before}% · كتبنا 30% · فوراً=${vol()}%`);
+  series[0][1] = vol();
+  say(`١) سكون نظيف — قبل=${before}% · كتبنا 30% · فوراً=${vol()}%  (لا مفتاح ولا عجلة أُرسلا)`);
 
   let i = 0;
   const tick = () => {
-    if (i >= marks.length) return finishOne();
+    if (i >= marks.length) return afterSilence();
     const at = marks[i], prev = i === 0 ? 0 : marks[i - 1];
     i++;
     setTimeout(() => { series.push([at, vol()]); tick(); }, at - prev);
   };
 
-  const finishOne = () => {
-    say("١) سلسلة المحو: " + series.map(([t, x]) => `${t}ms:${x}%`).join(" → "));
-    const returned = series.find(([, x]) => Math.abs(x - 30) > 1);
-    say("١) " + (returned
-      ? `عادت القيمة عند **${returned[0]}ms** ⇒ ` +
-        (returned[0] <= 300 ? "**فوريّ تقريباً — يشبه مستمع volumechange**"
-                            : "**متأخّر — يشبه استطلاعاً دورياً**") +
-        ` · نافذة الكتابة ≈ ${returned[0]}ms`
-      : "**لم تعد القيمة خلال 4 ثوانٍ** — لا محو في هذه التشغيلة"));
+  // ── ٢) نسخة مشغّل IVS — **بحث وقراءة فقط، بلا كتابة** ────────────────────
+  const findPlayer = () => {
+    const found = [];
+    const looksLikePlayer = (o) => {
+      if (!o || (typeof o !== "object" && typeof o !== "function")) return false;
+      try {
+        return ["setVolume", "getVolume", "setMuted", "getMuted", "isMuted"]
+          .filter((k) => typeof o[k] === "function").length >= 2;
+      } catch { return false; }
+    };
+    // (أ) على عنصر الفيديو نفسه — خصائص غير قياسية يزرعها المشغّل
+    try {
+      for (const k of Object.getOwnPropertyNames(v)) {
+        try { if (looksLikePlayer(v[k])) found.push(["video." + k, v[k]]); } catch {}
+      }
+    } catch {}
+    // (ب) على window مباشرةً
+    try {
+      for (const k of Object.getOwnPropertyNames(window)) {
+        if (/^(webkit|moz|on)/.test(k)) continue;
+        let o; try { o = window[k]; } catch { continue; }
+        if (looksLikePlayer(o)) found.push(["window." + k, o]);
+        // (ج) مصنع IVS: يعرض create()/isPlayerSupported بدل نسخة جاهزة
+        try {
+          if (o && typeof o === "object" && /ivs/i.test(k) &&
+              (typeof o.create === "function" || "isPlayerSupported" in o)) {
+            found.push(["window." + k + " (مصنع IVS)", o]);
+          }
+        } catch {}
+      }
+    } catch {}
+    return found;
+  };
 
-    // ── ٢) مستمعو volumechange ────────────────────────────────────────────
+  const afterSilence = () => {
+    say("١) السلسلة: " + series.map(([t, x]) => `${t}ms:${x}%`).join(" → "));
+    const gone = series.find(([, x]) => Math.abs(x - 30) > 1);
+    say("١) " + (gone
+      ? `عادت القيمة عند **${gone[0]}ms** ⇒ ` +
+        (gone[0] <= 300 ? "**فوريّ — يشبه مستمع volumechange**" : "**متأخّر — يشبه استطلاعاً دورياً**")
+      : "**صمدت أربع ثوانٍ — لا محو في السكون**"));
+
+    // ٢) مستمعو الفيديو — يعمل في كونسول DevTools وحده
     try {
       if (typeof getEventListeners === "function") {
         const l = getEventListeners(v) || {};
-        const types = Object.keys(l).map((k) => `${k}×${l[k].length}`).join(" · ");
-        say(`٢) مستمعو الفيديو: ${types || "لا شيء"} · volumechange=${(l.volumechange || []).length}`);
+        say(`٢) مستمعو الفيديو: ${Object.keys(l).map((k) => k + "×" + l[k].length).join(" · ") || "لا شيء"}` +
+          ` · volumechange=${(l.volumechange || []).length}`);
       } else {
-        say("٢) getEventListeners غير متاح هنا — يعمل في كونسول DevTools وحده");
+        say("٢) getEventListeners غير متاح **داخل دالة** — الصق بدلها في الكونسول مباشرةً:" +
+          "  getEventListeners(document.querySelector('video'))");
       }
-    } catch (e) { say("٢) تعذّر عدّ المستمعين: " + String(e).slice(0, 40)); }
+    } catch (e) { say("٢) تعذّر: " + String(e).slice(0, 40)); }
 
-    // ── ٣) مفاتيح التخزين — الرافعة الباقية إن وُجدت ──────────────────────
-    try {
-      const hits = [];
-      for (let k = 0; k < localStorage.length; k++) {
-        const key = localStorage.key(k);
-        if (/volume|sound|player|audio|mute/i.test(key)) {
-          hits.push(`${key}=${String(localStorage.getItem(key)).slice(0, 40)}`);
+    // ٣) نسخة المشغّل
+    const hits = findPlayer();
+    if (!hits.length) {
+      say("٣) **لم تُوجد نسخة مشغّل** على `window` ولا على عنصر الفيديو (بحث بالسلوك: " +
+        "كائن فيه ≥2 من setVolume/getVolume/setMuted/getMuted/isMuted).");
+    } else {
+      for (const [path, o] of hits) {
+        let readable = "—";
+        try { if (typeof o.getVolume === "function") readable = String(o.getVolume()); } catch (e) { readable = "رمى"; }
+        let muted = "—";
+        try {
+          if (typeof o.isMuted === "function") muted = String(o.isMuted());
+          else if (typeof o.getMuted === "function") muted = String(o.getMuted());
+        } catch {}
+        const api = ["setVolume", "getVolume", "setMuted", "getMuted", "isMuted", "attachHTMLVideoElement"]
+          .filter((k) => { try { return typeof o[k] === "function"; } catch { return false; } });
+        say(`٣) **وُجدت** عبر \`${path}\` · دوالّ: ${api.join(",")} · getVolume()=${readable} · مكتوم=${muted}`);
+      }
+    }
+    say(`٣) مفاتيح IVS في التخزين: ` + (() => {
+      try {
+        const k = [];
+        for (let n = 0; n < localStorage.length; n++) {
+          const key = localStorage.key(n);
+          if (/ivs|kick|volume|sound|audio|mute/i.test(key)) k.push(key);
         }
-      }
-      say("٣) مفاتيح التخزين: " + (hits.length ? hits.join(" · ") : "**لا مفتاح مطابق**"));
-    } catch (e) { say("٣) تعذّرت قراءة التخزين: " + String(e).slice(0, 40)); }
+        return k.join(" · ") || "لا شيء";
+      } catch { return "تعذّر"; }
+    })());
 
-    // ── ٤) دورة الكتم — بالشرط القاطع ─────────────────────────────────────
+    // ── ٤) دورة الكتم **بالاستطلاع لا بالمهلة** ───────────────────────────
     const beforeMute = vol();
-    say(`٤) قبل الكتم: ${st()}`);
-    say("٤) ⏳ اكتم بـ m ثم افكّ بـ m — الاثنتان معاً — خلال 15 ثانية …");
-    setTimeout(() => {
-      // ⚠️ **الشرط قبل النطق**: بلا `muted === false` لا يُطبع حكم نجاة إطلاقاً،
-      // لأن القراءة تكون **أثناء الكتم** لا بعده — وهو الخطأ الثالث المسحوب.
-      if (v.muted !== false) {
-        say(`٤) ⚠️ **الدورة لم تكتمل** (muted=${v.muted}) — لم يقع الفكّ داخل النافذة. ` +
-          "**لا حكم نجاة**، أعد القياس.");
-      } else {
+    say(`٤) قبل الكتم: vol=${beforeMute}% muted=${v.muted} — **اكتم بـ m ثم افكّ بـ m، بلا عجلة زمنية.**`);
+    let sawMute = false, t = 0;
+    const iv = setInterval(() => {
+      t += 200;
+      if (!sawMute && v.muted === true) {
+        sawMute = true;
+        say(`٤) رصدتُ **الكتم** عند ${t}ms · vol=${vol()}%`);
+      } else if (sawMute && v.muted === false) {
+        // ⚠️ **الحكم عند رصد الفكّ نفسه** — لا عند انتهاء مهلة، ولا والحالة مكتومة
+        clearInterval(iv);
         const after = vol();
-        say(`٤) بعد الفكّ: ${st()} · النجاة (قبل الكتم ⇔ بعد الفكّ): ${beforeMute}% ⇒ ${after}% ` +
+        say(`٤) رصدتُ **الفكّ** عند ${t}ms · vol=${after}%`);
+        say(`٤) النجاة (قبل الكتم ⇔ عند رصد الفكّ): ${beforeMute}% ⇒ ${after}% ` +
           (Math.abs(after - beforeMute) < 1 ? "✅ نجت" : "❌ **مُحيت**"));
+        say("✔ انتهى — انسخ كل أسطر VZKICK.");
+        return;
       }
-      say("✔ انتهى — انسخ كل أسطر VZKICK.");
-    }, 15000);
+      if (t >= 30000) {
+        clearInterval(iv);
+        say("٤) ⚠️ مضت 30 ثانية — " + (sawMute
+          ? "**رُصد الكتم ولم يُرصد الفكّ**: اضغط m مرة أخرى وأعد اللصق."
+          : "**لم يُرصد كتم أصلاً**: لم تصل ضغطة m إلى المشغّل — تأكّد أن التركيز على الصفحة."));
+        say("✔ انتهى — انسخ كل أسطر VZKICK.");
+      }
+    }, 200);
   };
 
   tick();
