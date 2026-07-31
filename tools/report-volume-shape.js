@@ -78,12 +78,34 @@
     return null;
   };
 
+  // ⚠️ **قاعدة: في المِجَسّ لا يُرشَّح شيء — الترشيح قرار القارئ لا قرار الأداة.**
+  // منزلق كِك مقاسه **0×0 دائماً** لأن أباه `…group-hover/volume:flex hidden` لا
+  // يُعرض إلا عند تمرير المؤشّر **على مجموعة الصوت نفسها** لا على المشغّل عموماً.
+  // النسخة السابقة رشّحت بالمرئيّة **فأسقطته وقالت «صفر عنصر مستوى»** — والعنصر
+  // موجود ويراه المستخدم. ⇒ الصفريّ يُطبع **موسوماً «مخفي»** ومعه سبب الإخفاء.
+  const hideReason = (el) => {
+    let n = el, depth = 0;
+    while (n && n.nodeType === 1 && depth < 8) {
+      const cls = typeof n.className === "string" ? n.className : "";
+      if (/\bhidden\b|group-hover|\binvisible\b/.test(cls)) {
+        return `أب«${cls.trim().split(/\s+/).slice(0, 2).join(" ")}»`;
+      }
+      try {
+        const st = getComputedStyle(n);
+        if (st && (st.display === "none" || st.visibility === "hidden")) return `أب display:${st.display}/vis:${st.visibility}`;
+      } catch {}
+      n = n.parentElement; depth++;
+    }
+    return "سبب غير معلوم";
+  };
+
   const describe = (el, c) => {
     const r = el.getBoundingClientRect ? el.getBoundingClientRect() : { width: 0, height: 0 };
     const inShadow = !!(el.getRootNode && el.getRootNode() !== document);
+    const shown = r.width > 0 && r.height > 0;
     return `${c.kind}<${el.tagName.toLowerCase()}>` +
       ` val=${c.value ?? "—"} مدى=${num(c.min) ?? "—"}..${num(c.max) ?? "—"}` +
-      ` مرئي=${r.width > 0 && r.height > 0 ? "نعم" : "لا"}` +
+      ` ${shown ? "مرئي" : "**مخفي** " + hideReason(el)}` +
       ` ظل=${inShadow ? "نعم" : "لا"}` +
       (c.label ? ` وسم="${c.label}"` : "");
   };
