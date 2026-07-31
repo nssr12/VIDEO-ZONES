@@ -1251,6 +1251,21 @@ const CLEAN_PLAYER_ITEMS = {
   embed_more_videos:       [".ytp-pause-overlay-container", ".ytp-pause-overlay"],
   watermark:               [".ytp-watermark"],
   large_play_button:       [".ytp-large-play-button"],
+  // ── وميض وسط الشاشة (bezel) — البند #62 ───────────────────────────────────
+  // ⚠️ **غير أزرار الشريط السفلي**: `play_button` و`mute_button` و`volume_slider`
+  // أدناه تُخفي **أزراراً ثابتة**؛ وهذي تُخفي **وميضاً يومض لحظةً وسط الشاشة**.
+  // وُلدت من #60: صرنا نضغط مفتاح يوتيوب بدل الكتابة الصامتة، فصار يومض كل خطوة.
+  //
+  // **التقسيم من قياس حيّ لا من تخمين** (صفحة watch، بانتظار خبوّ كل وميض قبل
+  // قراءة التالي): يوتيوب نفسه يفرّق بينهما **بصنف على الأب**:
+  //   · بلا `ytp-bezel-text-hide` ⇒ **وميض له نصّ**: الصوت («0%» · «100%»)
+  //     **والسرعة** («1.25x» · «1x») — قِيسا معاً، فلا ينفصلان.
+  //   · مع `ytp-bezel-text-hide`  ⇒ **وميض بلا نصّ**: تشغيل/إيقاف **والتقديم
+  //     والإرجاع** — قِيسا معاً كذلك.
+  //   · وتغيير **الجودة لا يومض أصلاً** (قِيس: `bezel 0×0`).
+  bezel_text:              [".ytp-bezel-text-wrapper"],
+  bezel_icon_valued:       [":not(.ytp-bezel-text-hide) > .ytp-bezel"],
+  bezel_icon_plain:        [".ytp-bezel-text-hide > .ytp-bezel"],
   spinner:                 [".ytp-spinner"],
   heatmap:                 [".ytp-heat-map-container", ".ytp-heat-map-chapter"],
   prev_button:             [".ytp-prev-button"],

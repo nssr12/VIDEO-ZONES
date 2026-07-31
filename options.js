@@ -30,6 +30,11 @@ const CLEAN_PLAYER_OPTIONS = [
   { key: "embed_more_videos",       label: "\"More videos\" overlay in embedded player" },
   { key: "watermark",               label: "Channel watermark" },
   { key: "large_play_button",       label: "Large play button" },
+  // البند #62 — وميض وسط الشاشة. الأسماء تصف **ما قِيس حرفياً** لا ما نتمنّاه:
+  // اسم يَعِد بما لا يفعل عيبٌ في المنتج لا تفصيل تحرير (قرار المالك).
+  { key: "bezel_text",              label: "Center flash: text (volume % and speed)" },
+  { key: "bezel_icon_valued",       label: "Center flash: icon with text (volume, speed)" },
+  { key: "bezel_icon_plain",        label: "Center flash: icon without text (play, pause, seek)" },
   { key: "spinner",                 label: "Loading spinner" },
   { key: "heatmap",                 label: "Progress bar heatmap" },
   { key: "prev_button",             label: "Previous button" },
