@@ -2435,8 +2435,10 @@ function runHostAdapter(video, op, applyDirect) {
 // نُرسله** — قِيس **2 من 2** — فبلا هذا العلم يصير أمر الصوت يُطلق نفسه.
 let adapterSending = false;
 
-function makeKeyStepAdapter({ playerSelector, upKey, downKey, minSendMs = 60, maxQueue = 5 }) {
-  let queued = 0, timer = null, pendingKey = null, lastSentAt = 0;
+function makeKeyStepAdapter({ playerSelector, upKey, downKey, unmuteKey, minSendMs = 60, maxQueue = 5 }) {
+  // الطابور صار **عمليات** لا عدداً: فكّ الكتم يسبق الخطوة في الطابور نفسه،
+  // فيقع بالترتيب المطلوب — فكّ ثم خطوة — بلا مسار ثانٍ ولا توقيت هشّ.
+  let queue = [], timer = null, lastSentAt = 0;
 
   // ⚠️ **قاعدة أمان لا صوت:** الهدف عنصر المشغّل أو `<video>`، و**لا
   // `document.activeElement` أبداً**. قِيس أن سهماً يصل إلى حقل مركَّز يقود قائمة
@@ -2457,28 +2459,39 @@ function makeKeyStepAdapter({ playerSelector, upKey, downKey, minSendMs = 60, ma
     timer = setTimeout(() => drain(video), Math.max(0, minSendMs - (nowMs() - lastSentAt)));
   };
 
+  const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, m: 77 };
+
+  const sendKey = (el, key) => {
+    const code = KEY_CODES[key] || 0;
+    adapterSending = true;
+    try {
+      for (const type of ["keydown", "keyup"]) {
+        el.dispatchEvent(new KeyboardEvent(type, {
+          key, code: key, keyCode: code, which: code,
+          bubbles: true, cancelable: true, composed: true
+        }));
+      }
+    } finally {
+      adapterSending = false;
+    }
+  };
+
   const drain = (video) => {
     timer = null;
-    if (queued <= 0) return;
-    queued--;
+    const op = queue.shift();
+    if (!op) return;
     lastSentAt = nowMs();
     const el = targetFor(video);
     if (el) {
-      const isUp = pendingKey === upKey;
-      adapterSending = true;
-      try {
-        for (const type of ["keydown", "keyup"]) {
-          el.dispatchEvent(new KeyboardEvent(type, {
-            key: pendingKey, code: pendingKey,
-            keyCode: isUp ? 38 : 40, which: isUp ? 38 : 40,
-            bubbles: true, cancelable: true, composed: true
-          }));
-        }
-      } finally {
-        adapterSending = false;
+      // فكّ الكتم **مشروط عند التنفيذ لا عند الجدولة**: مفتاح المضيف قالبٌ، فلو
+      // انفكّ الكتم بين اللحظتين لكان إرسالُه يُعيد الكتم — عطباً من صنعنا.
+      if (op === "unmute") {
+        if (video.muted) sendKey(el, unmuteKey);
+      } else {
+        sendKey(el, op);
       }
     }
-    if (queued > 0) schedule(video);
+    if (queue.length) schedule(video);
   };
 
   const step = (video, key) => {
@@ -2486,8 +2499,16 @@ function makeKeyStepAdapter({ playerSelector, upKey, downKey, minSendMs = 60, ma
     // في حقل نصّ. والحارس هو `shouldIgnoreKeyBecauseTyping` القائم لا حارس ثانٍ.
     if (shouldIgnoreKeyBecauseTyping()) return false;
     if (!targetFor(video)) return false;
-    pendingKey = key;
-    if (queued < maxQueue) queued++;   // الزائد يُهدر عمداً — لا ينفجر إرسالاً
+    // ⚠️ **عقد الصوت ع1** (`tools/volume-contract.js`): خطوة لأعلى وهو مكتوم
+    // **تفكّ الكتم وتطبّق خطوة واحدة**. وسهم المضيف **لا يفكّ الكتم بنفسه** —
+    // قِيس حيّاً: 90 ⇒ 95 ⇒ 100 و`muted` باقٍ. فبلا هذا السطر يتسلّق المستوى
+    // صامتاً («مكتوم 100») وتُهدر الضغطة، وهو عطب #35 عائداً من باب المحوّل.
+    // **وفكّ الكتم يمرّ بواجهة المضيف** (مفتاحه) لا بكتابة `video.muted`: كتابتنا
+    // المباشرة يمحوها نموذجه، وهي عين ما بُني #60 ضدّه.
+    if (key === upKey && video.muted && unmuteKey) {
+      if (queue.length < maxQueue) queue.push("unmute");
+    }
+    if (queue.length < maxQueue) queue.push(key);  // الزائد يُهدر عمداً
     schedule(video);
     return true;
   };
@@ -2503,7 +2524,11 @@ function makeKeyStepAdapter({ playerSelector, upKey, downKey, minSendMs = 60, ma
 hostAdapters.set("youtube.com", makeKeyStepAdapter({
   playerSelector: "#movie_player",
   upKey: "ArrowUp",
-  downKey: "ArrowDown"
+  downKey: "ArrowDown",
+  // مفتاح كتم يوتيوب. قِيس أنه يفكّ الكتم **حتى مُرسَلاً منّا** (غير موثوق)،
+  // وأن نقر `.ytp-mute-button` يفكّه كذلك — واخترنا المفتاح لأنه من عائلة
+  // المحوّل نفسها فلا يضيف محدّداً ثانياً يتعفّن مع إعادة تصميم المشغّل.
+  unmuteKey: "m"
 }));
 
 function runAction(action, e) {

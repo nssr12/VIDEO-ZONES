@@ -42,11 +42,16 @@ const check = (name, cond, extra) => cond
 // نحرسه وُلد في التقاء المسارات لا داخل أحدها.
 function buildWorld(host, hostModel) {
   const timers = [];
+  let seq = 0;
   const badges = [];
   const video = { muted: false, volume: 0.5 };
   const ctx = {
     console: { debug() {}, log() {}, warn() {} },
-    setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+    // ⚠️ **ساعة افتراضية تُطلق المهل بترتيب استحقاقها لا بترتيب تسجيلها.**
+    // أول رِكاز أطلقها بترتيب التسجيل، فوقع تحقّق الإطار (150ms) **قبل** إرسال
+    // الخطوة (60ms)، فقرأت الشارة حالةً في منتصف السلسلة وخرج «ع3 مكسور» —
+    // وهو **أثر مجدوِل لا عطب**. لا يُقرأ رقم قبل أن يستقرّ المقيس (قرار 22).
+    setTimeout: (fn, ms) => { timers.push({ fn, dueAt: ctx.__clock + (ms || 0), seq: ++seq }); return seq; },
     clearTimeout: () => {},
     location: { host },
     baseDomain: (h) => h,
@@ -83,10 +88,11 @@ function buildWorld(host, hostModel) {
   // نلتقط نصّ الشارة من العنصر بعد أن تكتبه الدالة الحقيقية
   const readBadge = () => ctx.vzVolumeBadge.textContent || null;
   const drain = () => {
-    for (let i = 0; i < 60 && timers.length; i++) {
-      const t = timers.splice(0);
-      ctx.__clock += 200;
-      for (const x of t) x.fn();
+    for (let i = 0; i < 200 && timers.length; i++) {
+      timers.sort((a, b) => a.dueAt - b.dueAt || a.seq - b.seq);
+      const t = timers.shift();
+      ctx.__clock = Math.max(ctx.__clock, t.dueAt);
+      t.fn();
     }
   };
   return { ctx, video, timers, drain, readBadge,
@@ -151,11 +157,10 @@ console.log("\n[بنيوي] كل محوّل مسجَّل له مسار في ال
   check("والمسار المباشر مشمول دائماً", PATHS.some((p) => p.name.includes("المباشر")));
 }
 
-// ⚠️ **تثبيت عطب مفتوح** (قرار المالك 20 — المجموعة خضراء دائماً):
-// محوّل يوتيوب **يكسر ع1 اليوم**: سهم يوتيوب يرفع المستوى **ولا يفكّ الكتم**
-// (قِيس حيّاً: 90 ⇒ 95 ⇒ 100 و`muted` باقٍ)، فتتسلّق القيمة صامتةً.
-// **فشل هذا التثبيت يعني أن العطب أُصلح، فاحذف التثبيت ولا تُصلح الاختبار.**
-const KNOWN_OPEN = { "محوّل youtube.com": ["ع1"] };
+// ✅ **لا تثبيتات مفتوحة.** كان هنا تثبيت لـ«ع1 مكسور في محوّل يوتيوب»، وأُزيل
+// **في كومِت إصلاحه نفسه لا بعده** (سابقة #59)، وحلّ محلّه **فحص موجب** يحرس
+// الإصلاح: ع1 يجب أن **ينجح** على المحوّل من الآن.
+const KNOWN_OPEN = {};
 
 // ─────────────────────────────────────────────────── إجراء العقد على كل مسار
 for (const path of PATHS) {
