@@ -1,0 +1,101 @@
+// عقد الصوت — **الثوابت مكتوبة مرة واحدة، وكل مسار يُختبَر عليها.**
+//
+// **لماذا وُجد هذا الملف:** أُصلح عقد #35 في **المسار المباشر** ثم أُنشئ **مسار
+// ثانٍ** (محوّل المضيف) لا يعرفه، فعاد العطب نفسه من باب جديد: بعد الكتم صارت
+// العجلة لأعلى **تسلّق المستوى صامتاً** («مكتوم 100») ولا تفكّ الكتم.
+// **الدرس: عقد محفوظ في نسخة واحدة ليس عقداً.** فصار مكتوباً هنا، ويُشغَّل على
+// كل مسار: المباشر، ومحوّل يوتيوب، وكل محوّل قادم (تويتش · كِك).
+//
+// ⚠️ **شرط بنيوي (قرار المالك): محوّل لا يجتاز العقد لا يُسجَّل في السجلّ.**
+// يحرسه `tools/test-volume-contract.js`: يعدّ كل `hostAdapters.set(...)` في
+// `content.js` ويشترط لكلٍّ **نموذج مضيف مُعايَراً بالقياس** ثم يُجري العقد
+// عليه. محوّل جديد بلا نموذج ⇒ **المجموعة حمراء**، فلا يُكتشف العطب في تويتش
+// وكِك واحداً واحداً بل يُمنع قبل التسجيل.
+//
+// **واجهة «المسار»** التي يستهلكها العقد:
+//   { name, step, eps, mid, make(initial) → { get(), up(), down(), badge() } }
+//   - `get()`   ⇒ { muted, level }   الحالة كما **يراها المستخدم** بعد استقرارها
+//   - `up()` / `down()`              خطوة واحدة، كما لو دار المستخدم العجلة مرة
+//   - `badge()`                      آخر نصّ عُرض في الشارة (أو null)
+//   - `step`                         خطوة **المسار** (المباشر 0.04 · يوتيوب 5)
+
+const INVARIANTS = [
+  {
+    id: "ع1",
+    title: "خطوة لأعلى وهو مكتوم ⇒ يُفكّ الكتم **وتُطبَّق خطوة واحدة** من المستوى الحالي",
+    why: "لا يتسلّق المستوى وهو صامت، ولا تُهدر الضغطة. وهذا **عين عطب #35** — " +
+         "أول ضغطة رفع بعد الكتم كانت لا ترفع شيئاً، ثم عاد من باب المحوّل بصورة " +
+         "أسوأ: ترفع ولا تُسمع.",
+    run(path) {
+      const h = path.make({ muted: true, level: path.mid });
+      const before = h.get();
+      h.up();
+      const after = h.get();
+      const unmuted = after.muted === false;
+      const oneStep = Math.abs(after.level - (before.level + path.step)) <= path.eps;
+      return {
+        ok: unmuted && oneStep,
+        detail: `${before.level} ⇒ ${after.level} · muted ${after.muted}` +
+                `${unmuted ? "" : "  ← لم يُفكّ الكتم"}${oneStep ? "" : "  ← ليست خطوة واحدة"}`
+      };
+    }
+  },
+  {
+    id: "ع2",
+    title: "خطوة لأسفل وهو مكتوم ⇒ **يبقى مكتوماً** والمستوى ينزل فعلاً",
+    why: "المستخدم لم يطلب صوتاً، فلا يُفكّ كتمه. والنزول يقع على **نموذج المضيف** " +
+         "لا على قيمة نكتبها نحن ويمحوها هو.",
+    run(path) {
+      const h = path.make({ muted: true, level: path.mid });
+      const before = h.get();
+      h.down();
+      const after = h.get();
+      const stillMuted = after.muted === true;
+      const dropped = after.level < before.level - path.eps;
+      return {
+        ok: stillMuted && dropped,
+        detail: `${before.level} ⇒ ${after.level} · muted ${after.muted}` +
+                `${stillMuted ? "" : "  ← انفكّ الكتم"}${dropped ? "" : "  ← لم ينزل"}`
+      };
+    }
+  },
+  {
+    id: "ع3",
+    title: "الشارة تعرض الحالة **بعد** العملية دائماً",
+    why: "تعرض ما سيسمعه المستخدم لا ما طلبناه. وهذا ما جعل الانحدار مرئياً: " +
+         "«مكتوم 100» كانت **صادقة** — هي التي كشفت أن المستوى يتسلّق صامتاً.",
+    run(path) {
+      const out = [];
+      for (const [label, init, op] of [
+        ["رفع على مكتوم", { muted: true, level: path.mid }, "up"],
+        ["خفض على مكتوم", { muted: true, level: path.mid }, "down"],
+        ["رفع على غير مكتوم", { muted: false, level: path.mid }, "up"]
+      ]) {
+        const h = path.make(init);
+        h[op]();
+        const st = h.get();
+        const txt = h.badge();
+        if (txt === null || txt === undefined) { out.push(`${label}: لا شارة`); continue; }
+        const shownLevel = Number(String(txt).replace(/[^0-9.]/g, ""));
+        const expected = path.badgeLevel(st.level);
+        const markOk = /مكتوم/.test(String(txt)) === st.muted;
+        const levelOk = Math.abs(shownLevel - expected) <= 1;
+        if (!markOk || !levelOk) {
+          out.push(`${label}: «${txt}» بينما الحالة ${st.muted ? "مكتوم " : ""}${expected}`);
+        }
+      }
+      return { ok: out.length === 0, detail: out.length ? out.join(" · ") : "الثلاث حالات مطابقة" };
+    }
+  }
+];
+
+function runContract(path) {
+  return INVARIANTS.map((inv) => {
+    let r;
+    try { r = inv.run(path); }
+    catch (err) { r = { ok: false, detail: "استثناء: " + String(err && err.message || err).slice(0, 80) }; }
+    return { id: inv.id, title: inv.title, ...r };
+  });
+}
+
+module.exports = { INVARIANTS, runContract };
