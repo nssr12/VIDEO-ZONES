@@ -96,6 +96,14 @@ const PRESS = `(async () => {
       files: ["content.js"]
     });
   } catch (e) { out.contentError = String(e && e.message || e).slice(0, 160); }
+  // الإيقاظ جزء من الضغطة، فلا يُحذف من النسخة: أول تشغيلة بعد إضافته إلى
+  // popup.js لم تُرسله هنا، فقاست الأداة الضغطة القديمة وطبعت «لم يقع» عن كود
+  // لم يُنفَّذ أصلاً. نسخةٌ تتخلّف عن أصلها تقيس الماضي.
+  // (ولا علامات اقتباس خلفية في هذا التعليق: هو داخل قالب نصّي فتُنهيه.)
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: "GVZ_ACTIVATED" });
+    out.wake = "أُرسلت";
+  } catch (e) { out.wakeError = String(e && e.message || e).slice(0, 120); }
   return out;
 })()`;
 
@@ -368,6 +376,7 @@ else {
   console.log(`   ── الضغط`);
   console.log(`      حقن MAIN         : ${blk.press?.mainError ? "❌ " + blk.press.mainError : "✅ " + (blk.press?.mainResult?.length || 0) + " إطار"}`);
   console.log(`      حقن content.js   : ${blk.press?.contentError ? "❌ " + blk.press.contentError : "✅ " + (blk.press?.contentResult?.length || 0) + " إطار"}`);
+  console.log(`      رسالة الإيقاظ    : ${blk.press?.wakeError ? "❌ " + blk.press.wakeError : blk.press?.wake || "—"}`);
   console.log(`   ── بعد الضغط`);
   console.log(`      المِجَسّ           : ${fmt(blk.probeAfter)}`);
   console.log(`      الجودة           : ${blk.stateBefore?.current} ⇒ ${blk.stateAfter?.current}`);

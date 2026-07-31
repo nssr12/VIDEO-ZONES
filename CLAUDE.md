@@ -144,6 +144,7 @@ When adding a new action you MUST touch:
 | `RELOAD_YT_QUALITY` | options | Re-reads `settings.ytAutoQuality` and re-triggers the quality setter |
 | `RELOAD_YT_SHORTS` | options | Re-reads `settings.ytShortsRedirect` and redirects if currently on a /shorts/ URL |
 | `RELOAD_CLEAN_PLAYER` | options | Re-reads `settings.cleanPlayer` and re-injects the hide-elements CSS |
+| `GVZ_ACTIVATED` | popup | Sent after manual activation. Re-runs `applyYtQualityStep()` — the *same* definition the startup step consumes. Needed because a page that already has `content.js` ignores re-injection (`__GVZ_CONTENT_LOADED__`), so nothing would re-trigger the quality request. **Not** a `RELOAD_*`: those go through `flushReload`, which returns early when the settings snapshot is unchanged — and in a wake nothing has changed by definition (audit #38ج) |
 
 `chrome.storage.onChanged` is a backup trigger that re-loads the relevant slice when `settings` / `globalSiteRules` / `siteProfiles` changes from any source.
 
