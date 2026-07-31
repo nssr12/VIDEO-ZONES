@@ -46,7 +46,7 @@ function makeWorld({ zone = 5, zoneClick = null, zoneKey = null, site = null, gl
     updatePointerFromEvent: () => {},
     wakeIfVideoPresent: () => {}, // إطار نائم — لا شأن له بالأولوية (#13ب)
     ensureVideoOverlay: () => {},
-    isBlockedHost: () => false,
+    isBlockedHost: () => false, extensionActive: () => true,
     remappingEnabled: () => true,
     zoneLabel: (z) => "B" + z,
     showOverlay: () => {},

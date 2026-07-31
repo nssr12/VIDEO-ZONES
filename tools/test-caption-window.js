@@ -28,7 +28,7 @@ const BASE = { defaultLang: "ar", fontSize: 22, color: "#ffffff", bgColor: "#000
 function generate(sub) {
   let css = null;
   const c = {
-    console, subtitleStyleEl: null, isBlockedHost: () => false,
+    console, subtitleStyleEl: null, isBlockedHost: () => false, extensionActive: () => true,
     subtitleSettings: sub, hexToRgb: () => "0,0,255",
     KNOWN_PLAYER_WRAPPER_SELECTOR: "#movie_player,.html5-video-player",
     document: { createElement: () => ({ id: "", textContent: "", remove() {} }),

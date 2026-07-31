@@ -19,6 +19,11 @@ let subtitleSettings = {
 };
 let subtitleStyleEl = null;
 let subtitleTrackObserver = null;
+// ── البند #64 — المفتاح الرئيسي ──────────────────────────────────────────
+// **افتراضه مُشغَّل بنمط `!== false` لا `=== true`**: ملفّ لم يُفتح إعداده قط
+// يسلك **سلوك اليوم حرفياً**، فالشكل (ب) **صفر تغيّر سلوكي افتراضياً** — الجديد
+// الوحيد هو **وجود** المفتاح.
+let masterEnabled = true;
 let ytAutoQuality = ""; // "" = auto (don't override)
 let ytShortsRedirect = true; // تحويل روابط Shorts إلى المشغّل العادي (watch)
 
@@ -298,7 +303,7 @@ function pickBoostReason(reasons) {
 // So we re-apply to the new element, and when that fails we drop back to 100%
 // so the reported value always matches what is actually audible.
 async function reapplyBoostTo(video) {
-  if (isBlockedHost()) return;
+  if (!extensionActive()) return;
   if (boostPct <= 100) return;       // nothing to carry over
   if (!video || boostMap.has(video)) return; // same element, gain already live
   const res = await applyBoostToVideo(video, boostPct);
@@ -324,7 +329,7 @@ function startBoostReapply() {
 async function applyBoostToAllVideos(pct) {
   // A blocked site must stay untouched — routing its audio through Web Audio is
   // exactly the kind of interference the block button promises to stop.
-  if (isBlockedHost()) {
+  if (!extensionActive()) {
     lastBoostFailure = "blocked";
     return { ok: false, reason: "blocked" };
   }
@@ -537,7 +542,7 @@ function applySubtitleStyles() {
     subtitleStyleEl.remove();
     subtitleStyleEl = null;
   }
-  if (isBlockedHost()) return;
+  if (!extensionActive()) return;
 
   // Hiding captions on hover previews is its OWN setting: someone who turned the
   // custom styling off still gets it, so it is built before the styling block and
@@ -729,7 +734,7 @@ function injectSubtitleCss(css) {
 }
 
 function applySubtitleTrack() {
-  if (isBlockedHost()) return;
+  if (!extensionActive()) return;
   const lang = subtitleSettings.defaultLang;
   if (!subtitleSettings.enabled || !lang) return;
 
@@ -821,7 +826,7 @@ function closeYTSettingsIfOpen() {
 async function youtubeSetCaptionLanguage(langCode) {
   // Guarded independently of applySubtitleTrack: this one drives the player with
   // synthetic clicks, the most intrusive thing the extension does.
-  if (isBlockedHost()) return false;
+  if (!extensionActive()) return false;
   if (!langCode || !isYouTubeHost()) return false;
 
   const targetNames = (YT_LANG_NAMES[langCode] || [langCode]).map((s) => s.toLowerCase());
@@ -914,7 +919,7 @@ function enableMatchingTextTrack(video, lang) {
 // True exactly when the observer has any work to do. Kept in one place so the
 // create path and the disconnect path can never drift apart.
 function subtitleTrackWatchWanted() {
-  return !!(subtitleSettings.enabled && subtitleSettings.defaultLang) && !isBlockedHost();
+  return !!(subtitleSettings.enabled && subtitleSettings.defaultLang) && extensionActive();
 }
 
 // Audit #21: the observer used to be created unconditionally with the guard INSIDE
@@ -1132,6 +1137,14 @@ async function loadSoundDisplaySettings(pre) {
   }
 }
 
+// ── البند #64 — مُحمِّل المفتاح الرئيسي ─────────────────────────────────────
+// `!== false` عمداً: غياب المفتاح = مُشغَّل، فلا هجرة بيانات ولا تغيّر لمن لم
+// يفتح الإعدادات قط.
+async function loadMasterEnabled(pre) {
+  const data = await settingsRead(pre);
+  masterEnabled = (data.settings || {}).enabled !== false;
+}
+
 async function loadYtAutoQualitySettings(pre) {
   const data = await settingsRead(pre);
   ytAutoQuality = (data.settings || {}).ytAutoQuality || "";
@@ -1158,6 +1171,7 @@ function ytQualityGap() {
 }
 
 function triggerYtQuality() {
+  if (!extensionActive()) return;   // #64: كانت بلا أي بوّابة
   if (!isYouTubeHost() || !ytAutoQuality) return;
   const key = `${location.pathname}${location.search}|${ytAutoQuality}`;
   if (key === ytQualityAttemptKey) return; // same video, same quality: already tried
@@ -1172,6 +1186,7 @@ function triggerYtQuality() {
 let ytQualityWired = false;
 
 function startYtAutoQuality() {
+  if (!extensionActive()) return;   // #64
   if (!isYouTubeHost()) return;
   if (ytQualityWired) return;
   ytQualityWired = true;
@@ -1238,7 +1253,7 @@ function maybeRedirectShorts() {
   // Bound to the global enable: switching the extension off stops this too, with
   // no exception (owner decision 4, audit #20). remappingEnabled() is the same
   // gate the zones, keyboard and mouse paths use — one switch, everything stops.
-  if (!ytShortsRedirect || !remappingEnabled() || !isYouTubeHost() || isBlockedHost()) return;
+  if (!ytShortsRedirect || !extensionActive() || !remappingEnabled() || !isYouTubeHost()) return;
   if (window.top !== window) return; // top frame only
   const m = /^\/shorts\/([A-Za-z0-9_-]+)/.exec(location.pathname);
   if (!m) return;
@@ -1355,7 +1370,7 @@ function applyCleanPlayerCSS() {
     cleanPlayerStyleEl.remove();
     cleanPlayerStyleEl = null;
   }
-  if (!cleanPlayerSettings.enabled || !isYouTubeFamilyHost() || isBlockedHost()) return;
+  if (!cleanPlayerSettings.enabled || !isYouTubeFamilyHost() || !extensionActive()) return;
 
   // The caption-language automation drives YouTube's menu by CLICKING these two
   // buttons, and findVisibleYTMenuItem requires a non-zero rect — so hiding them
@@ -1380,6 +1395,22 @@ function applyCleanPlayerCSS() {
 
 function isBlockedHost() {
   return blockedHosts.includes(baseDomain(location.host));
+}
+
+// ── البند #64 — **البوّابة الواحدة** ────────────────────────────────────────
+// **العطب لم يكن ميزةً بلا حارس، بل أحد عشر حارساً متفرّقاً يتباعدون بالبناء:**
+// المفتاح العام كان يحرس أربعة، والحظر عشرة، **والجودة لا شيء** — فأطفأ المستخدم
+// وحظر ولم يُطفأ شيء (`AUDIT.md` §27).
+//
+// **الترتيب المقرَّر (قرار المالك):** المفتاح الرئيسي ← حظر الموقع ←
+// `(siteRules || siteProfile)` للريماب ← مفتاح الميزة نفسها. **وهذه الدالّة
+// تملك الحلقتين الأوليين وحدهما**؛ ما تحتهما يبقى لكل ميزة كما كان.
+//
+// ⚠️ **وحارسها البنيويّ أن `isBlockedHost()` لها موضع نداء واحد — هنا.**
+// يحرسه `tools/test-master-gate.js` بالعدّ: أي ميزة تفحص الحظر بنفسها تُحمّر
+// المجموعة، **فيستحيل التفرّق الذي وُلد منه البند** بدل أن يُحرَس بالتذكّر.
+function extensionActive() {
+  return masterEnabled && !isBlockedHost();
 }
 
 
@@ -1461,8 +1492,8 @@ function zoneRectForVideo(video) {
 }
 
 function zonesActive() {
+  if (!extensionActive()) return false;   // #64: الرئيسي ثم الحظر
   if (!remappingEnabled()) return false;
-  if (isBlockedHost()) return false;
   if (!zoneSettings?.enabled) return false;
   if (zoneSettings?.fullscreenOnly && !document.fullscreenElement) return false;
   return true;
@@ -2333,12 +2364,13 @@ async function flushReload() {
   await Promise.all([
     loadRulesForThisHost(data), loadSiteProfile(data), loadZoneSettings(data),
     loadOverlaySettings(data), loadBlockedHosts(data), loadSoundDisplaySettings(data),
-    loadGridAppearance(data), loadSubtitleSettings(data), loadYtAutoQualitySettings(data),
+    loadMasterEnabled(data), loadGridAppearance(data), loadSubtitleSettings(data), loadYtAutoQualitySettings(data),
     loadYtShortsRedirectSetting(data), loadCleanPlayerSettings(data)
   ]);
   triggerYtQuality();
   maybeRedirectShorts();
-  if (!remappingEnabled()) hideOverlayNow();
+  // ‏#64: إطفاء الرئيسي يُخفي الشبكة كما يفعل إطفاء الريماب.
+  if (!extensionActive() || !remappingEnabled()) hideOverlayNow();
 }
 
 function runStartupSteps() {
@@ -2348,6 +2380,8 @@ function runStartupSteps() {
   // skip a redirect the user has switched on (audit #20).
   const globalRulesReady = startup("globalRules", () => read.then(loadRulesForThisHost));
   const siteProfileReady = startup("siteProfile", () => read.then(loadSiteProfile));
+  // ‏#64: الرئيسي يُقرأ مع الأوائل — بوّابة تُقرأ متأخّرة بوّابة مفتوحة لحظةً.
+  startup("master", () => read.then(loadMasterEnabled));
   startup("zones", () => read.then(loadZoneSettings)); // ✅ مهم: تشغيل zones بعد refresh مباشرة
   startup("overlay", () => read.then(loadOverlaySettings));
   startup("blockedHosts", () => read.then(loadBlockedHosts));
@@ -3314,7 +3348,7 @@ window.addEventListener("keydown", (e) => {
   if (adapterSending) return;
   updatePointerFromEvent(e);
   wakeIfVideoPresent();
-  if (isBlockedHost()) return;
+  if (!extensionActive()) return;   // #64: الرئيسي ثم الحظر
   if (!remappingEnabled()) return;
   if (shouldIgnoreKeyBecauseTyping()) return;
   const hoveredVideo = getVideoFromPointerPosition();
@@ -3356,7 +3390,7 @@ window.addEventListener("keydown", (e) => {
 function handleMouse(e) {
   updatePointerFromEvent(e);
   wakeIfVideoPresent();
-  if (isBlockedHost()) return;
+  if (!extensionActive()) return;   // #64: الرئيسي ثم الحظر
   if (!remappingEnabled()) return;
 
   // A zone binding owns this button here ⇒ the generic rule stays out entirely.

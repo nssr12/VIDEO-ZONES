@@ -44,7 +44,7 @@ function makeWorld({ enabled = true, lang = "ar", blocked = false, hasBody = tru
   const ctx = {
     MutationObserver: FakeObserver,
     subtitleSettings: { enabled, defaultLang: lang },
-    isBlockedHost: () => blocked,
+    isBlockedHost: () => blocked, extensionActive: () => !blocked,
     enableMatchingTextTrack: () => {},
     document: { body: hasBody ? { tag: "BODY" } : null, documentElement: { tag: "HTML" } },
     console

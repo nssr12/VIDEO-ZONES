@@ -31,7 +31,7 @@ function makeWorld({ items = {}, enabled = true, subtitles = { enabled: false, d
   const injected = [];
   const ctx = {
     location: { hostname: host },
-    isBlockedHost: () => blocked,
+    isBlockedHost: () => blocked, extensionActive: () => !blocked,
     subtitleSettings: { ...subtitles },
     blockedHosts: [],
     chrome: { storage: { sync: { get: async (d) => d } } },

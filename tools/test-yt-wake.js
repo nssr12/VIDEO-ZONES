@@ -47,6 +47,8 @@ function makeEnv(storedQuality) {
     location: { host: "www.youtube.com", pathname: "/watch", search: "?v=abc" },
     CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
     isYouTubeHost: () => true,
+    // ‏#64: البوّابة الواحدة — هنا مفتوحة، فالمقيس خطوة الجودة لا البوّابة
+    extensionActive: () => true,
     settingsRead: async () => ({ settings: { ytAutoQuality: sandbox.__stored } }),
     __stored: storedQuality
   };
