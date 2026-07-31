@@ -1661,7 +1661,7 @@ window.addEventListener("auxclick", handleZoneClick, true);
 window.addEventListener("contextmenu", handleZoneClick, true);
 window.addEventListener("mousedown", suppressMiddleClickDefault, true);
 // -------------------------------------------------------------------------
-let overlaySettings = { enabled: true, autoHideMs: 900, volumeAutoHideMs: 900 };
+let overlaySettings = { enabled: true, autoHideMs: 900, volumeAutoHideMs: 900, hintEnabled: true };
 
 async function loadOverlaySettings(pre) {
   const data = await settingsRead(pre);
@@ -1672,7 +1672,10 @@ async function loadOverlaySettings(pre) {
   overlaySettings = {
     enabled: o.enabled !== false && (grid > 0 || vol > 0),
     autoHideMs: grid,
-    volumeAutoHideMs: vol
+    volumeAutoHideMs: vol,
+    // البند #63 — افتراضه **الحالي (ظاهر)**: `!== false` لا `=== true`، فمن لم
+    // يفتح الإعدادات قط لا يتغيّر سلوكه بحرف.
+    hintEnabled: o.hintEnabled !== false
   };
 
   if (!overlaySettings.enabled) hideOverlayNow();
@@ -1958,9 +1961,12 @@ function showOverlay(text) {
   if (ms <= 0) return; // Grid overlay disabled
   if (!vzGridEl || !vzHintEl) return;
 
+  // البند #63: التلميح وحده يُطفأ — **والشبكة تبقى**، فمنصّات §8 و§9 و§10 تعتمد
+  // ظهور الشبكة لا نصّ التلميح. إطفاء أحدهما لا يُسقط الآخر.
   vzHintEl.textContent = text || "Zones";
   vzGridEl.classList.remove("vzHidden");
-  vzHintEl.classList.remove("vzHidden");
+  if (overlaySettings.hintEnabled) vzHintEl.classList.remove("vzHidden");
+  else vzHintEl.classList.add("vzHidden");
   positionOverlayToVideo();
   startOverlayTracking();
 

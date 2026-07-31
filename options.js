@@ -263,6 +263,8 @@ async function getSettings() {
   // Default volumeAutoHideMs to existing autoHideMs for migration; keeps existing user choice for both
   if (typeof settings.overlay.volumeAutoHideMs !== "number") settings.overlay.volumeAutoHideMs = settings.overlay.autoHideMs;
   if (typeof settings.overlay.enabled !== "boolean") settings.overlay.enabled = settings.overlay.autoHideMs > 0;
+  // البند #63 — الافتراض **ظاهر**، فلا يتغيّر سلوك مستخدم قائم بلا طلبه
+  if (typeof settings.overlay.hintEnabled !== "boolean") settings.overlay.hintEnabled = true;
   if (typeof settings.ytAutoQuality !== "string") settings.ytAutoQuality = "";
   if (typeof settings.ytShortsRedirect !== "boolean") settings.ytShortsRedirect = true;
   settings.cleanPlayer ||= {};
@@ -558,6 +560,7 @@ function renderOverlayTiming(overlay) {
   const vol = Number(overlay?.volumeAutoHideMs ?? grid);
   $("gridDuration").value = String(grid);
   $("gridDurationValue").textContent = formatDurationMs(grid);
+  $("zoneHintEnabled").checked = overlay?.hintEnabled !== false;
   $("volumeDuration").value = String(vol);
   $("volumeDurationValue").textContent = formatDurationMs(vol);
 }
@@ -968,6 +971,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     s.overlay ||= {};
     s.overlay.autoHideMs = grid;
     s.overlay.volumeAutoHideMs = vol;
+    s.overlay.hintEnabled = $("zoneHintEnabled").checked;
     s.overlay.enabled = grid > 0 || vol > 0;
     await saveSettings(s);
     const tabs = await chrome.tabs.query({});
@@ -980,6 +984,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     $("gridDurationValue").textContent = formatDurationMs(Number($("gridDuration").value));
   });
   $("gridDuration").addEventListener("change", persistOverlayTiming);
+  $("zoneHintEnabled").addEventListener("change", persistOverlayTiming);
   $("volumeDuration").addEventListener("input", () => {
     $("volumeDurationValue").textContent = formatDurationMs(Number($("volumeDuration").value));
   });
