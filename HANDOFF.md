@@ -734,10 +734,21 @@ node --check content.js && node --check popup.js && node --check options.js \
 node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8'))"
 ```
 
-**الاختبارات — تعمل بـ node وحده، لا تحتاج شيئاً:**
+**الاختبارات — تعمل بـ node وحده، لا تحتاج شيئاً.**
+**والمجموعة كاملة بأمر واحد، بلا معرفة معاملات أي ملف:**
 
 ```bash
-node tools/test-migration.js storage.js   # 127
+for f in tools/test-*.js; do node "$f" >/dev/null || echo "❌ $f"; done
+```
+
+**ولا ملف في المجموعة يشترط معاملاً** — كان `test-migration.js` يشترطه وحده
+فأُعطي مساره افتراضاً (2026-07-31)، لأن مشغّلاً يمرّ على `tools/test-*.js`
+كان يسقط عنده ويُقرأ **فشلاً** لا اصطلاحاً.
+
+**وواحداً واحداً عند الحاجة:**
+
+```bash
+node tools/test-migration.js              # 127  (والمسار افتراضيّ: storage.js)
 node tools/test-volume-mute.js            #  47  #35: الكتم مستقل عن المستوى + الشارة
 node tools/test-sw-migration.js           #  56
 node tools/test-dead-code.js              #  16  حرّاس الكود الميت 27·28·29 (الموجة 5)
