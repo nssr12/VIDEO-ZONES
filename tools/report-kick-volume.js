@@ -1,166 +1,110 @@
-// قياس كِك **في متصفّح المالك** — يُلصق في الكونسول، ولا يُشحن. **النسخة الثانية.**
+// قياس كِك **في متصفّح المالك** — يُلصق في الكونسول، ولا يُشحن. **النسخة الثالثة.**
 //
-// ⚠️ **عيبان في النسخة الأولى، سحبهما المالك ومعه الحقّ — «أداة تطبع حكماً لا
-// يسنده قياسها»:**
-//   ١. طبعت **«بقي مكتوماً (كيوتيوب)»** بينما المنزلق **لم يستجب أصلاً** في ①
-//      و②. **عنصر لا يتحرّك لا يُستنطَق**: جمودُه في الكتم أثرُ جمود لا دلالةُ
-//      مضيف. ⇒ حكم دلالة الكتم **لا يُطبع إلا إن تحرّك المنزلق بطريق ما**.
-//   ٢. وقاست «النجاة» بمقارنة القراءة **أثناء الكتم** بالقراءة **بعد الفكّ**،
-//      وتلك **استعادة لا ضياع**. ⇒ النجاة تُقاس **قبل الكتم مقابل بعد الفكّ**.
+// ⚠️ **ثلاثة أحكام غير مسنودة طبعتها نسختان سابقتان، وسحبها المالك ثلاثتها:**
+//   ١. «بقي مكتوماً (كيوتيوب)» — والمنزلق **لم يستجب أصلاً**؛ جمودُه أثرُ جمود
+//      لا دلالةُ مضيف. **عنصر لا يتحرّك لا يُستنطَق.**
+//   ٢. «نجاة القيمة ❌» — قُورنت القراءة **أثناء الكتم** بـ**بعد الفكّ**، وتلك
+//      **استعادة لا ضياع**.
+//   ٣. «النجاة 60% ⇒ 0% ❌ مُحيت» — والقراءة الأخيرة `muted=true`، أي أن
+//      **الدورة لم تكتمل** (وقع الكتم ولم يقع الفكّ داخل النافذة)، فقُورن
+//      «قبل الكتم» بـ«أثناء الكتم» **من باب آخر**.
+// ⇒ **القاعدة (قرار 26): كل حكم يشترط حالةً يفحص الحالة قبل أن ينطق، لا بعد أن
+// يُطبع.** ولذلك صار حكم النجاة هنا **مشروطاً بـ`muted === false`**، وإلا طُبع
+// «الدورة لم تكتمل، أعد القياس».
 //
-// **ما ثبت على كِك (2026-07-31، أرقام المالك):**
-//   · ① أسهم إلى المنزلق (0×0): `35 ⇒ 35` **لا يستجيب**
-//   · ② بعد تمرير مُصطنَع على 5 آباء: `35 ⇒ 35` **لا يستجيب**
-//   · ③ دورة الكتم: `aria 0` أثناءه ثم **استعادة 35** من نموذج كِك
-//   · ⚠️ **وتناقض غير مفسَّر يُسجَّل ولا يُفسَّر**: `aria=35` مع `volume=3%` في ①،
-//     و`aria=35` مع `volume=35%` في ③د.
+// **ما ثبت على كِك (أرقام المالك، 2026-07-31):**
+//   · أ) تركيز على المنزلق وأبيه وجدّه: **`تركيز=لا` في 19 محاولة** · كل
+//     المفاتيح (أسهم · Home · End · PageUp) **❌**
+//   · ب) عجلة ↑↓ على المنزلق وأبيه وجدّه والفيديو: **كلها ❌**
+//   · ج) **كتبنا 30% ⇒ فوراً 30% ⇒ بعد ثانيتين بلا أي حدث من المضيف: عاد 60%**
 //
-// ⚠️ **حدّ بنيويّ لا محاولة فاشلة:** كِك يعرض المنزلق بـ**`:hover` حقيقيّ**،
-// وحالة `:hover` **تتبع موضع المؤشّر الفعليّ ولا يصنعها أي حدث مُرسَل**. فالتمرير
-// المُصطنَع **لن ينجح أبداً مهما حُسّن**. لا يُعاد المحاولة فيه.
+// ⚠️⚠️ **وهذا يخرج كِك من عائلة #60 كلها:** المضيفون الأربعة الآخرون **تنجو
+// عندهم كتابتنا ثلاث ثوانٍ** ولا تسقط إلا **بحدث منهم**؛ وكِك **يفرض نموذجه
+// بلا سبب خارجيّ**. ⇒ **على كِك خاصيّة الصوت في الإضافة لا تعمل أصلاً — لا
+// بمحوّل ولا بالمسار المباشر.** وهذا **أهمّ ما خرج به اليوم**.
 //
-// **ثلاثة أسئلة أخيرة، ثم يُقرَّر مصير كِك:**
-//   أ) **تركيز ثم مفاتيح** — النسخة الأولى أرسلت المفاتيح **بلا `focus()`**.
-//      ومعها `Home`/`End`/`PageUp`: بعض widgets الدور تستجيب لها دون الأسهم.
-//   ب) **عجلة** فوق مجموعة الصوت أو المشغّل — **لم تُجرَّب أصلاً**.
-//   ج) **والأهم، ولم يُقس قط: هل تنجو كتابتنا المباشرة على كِك؟**
-//      «خلل كِك» ما زال مجهول الشكل: هل الصوت لا يتغيّر، أم يتغيّر ولا يتبعه
-//      المنزلق بصرياً؟ **الفرق يقرّر إن كان لكِك بند أصلاً.**
+// **أربعة قياسات تحسم مصيره:**
+//   ١. **نمط المحو**: كتابة ثم قراءات عند 100·300·600·1000·2000·4000ms.
+//      **إيقاع ثابت ⇒ استطلاع دوريّ · عودة فورية ⇒ مستمع `volumechange`.**
+//      والفرق يقرّر **هل ثمّة نافذة أصلاً**.
+//   ٢. **مستمعو `volumechange`** على الفيديو (`getEventListeners` في الكونسول).
+//   ٣. **مفاتيح التخزين** التي فيها volume/sound/player — **الرافعة الوحيدة
+//      الباقية** إن كان كِك يقرأ مستواه من مفتاح.
+//   ٤. **دورة الكتم** بالشرط المُصلَح.
 (() => {
-  const ours = (el) => {
-    if (!el || el.nodeType !== 1) return false;
-    if (typeof el.closest === "function" && el.closest(".vzWrap")) return true;
-    const c = typeof el.className === "string" ? el.className : "";
-    return /\bvz[A-Z]/.test(c) || /^vz_/.test(el.id || "");
-  };
-
-  // الدور داخل حاوية المشغّل هو الأساس، والوسم **مرجّح لا حاكم** (قد يُترجَم)
-  const findSlider = () => {
-    const v = document.querySelector("video");
-    if (!v) return null;
-    const cands = [...document.querySelectorAll('[role="slider"]')].filter((el) => !ours(el));
-    let best = null, bestScore = 1e9;
-    for (const el of cands) {
-      let n = v, depth = 0;
-      while (n && depth < 10) {
-        if (n.contains && n.contains(el)) {
-          const label = (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("title") || "");
-          const score = depth - (/volume|صوت/i.test(label) ? 3 : 0);
-          if (score < bestScore) { bestScore = score; best = el; }
-          break;
-        }
-        n = n.parentElement; depth++;
-      }
-    }
-    return best;
-  };
-
-  const V = () => document.querySelector("video");
-  const read = () => {
-    const el = findSlider(), v = V();
-    const r = el ? el.getBoundingClientRect() : null;
-    return {
-      aria: el ? el.getAttribute("aria-valuenow") : null,
-      w: r ? Math.round(r.width) : null, h: r ? Math.round(r.height) : null,
-      muted: v ? v.muted : null,
-      vol: v ? Math.round(v.volume * 1000) / 10 : null,
-      active: document.activeElement ? document.activeElement.tagName : "—"
-    };
-  };
-  // ⚠️ **جنباً إلى جنب بلا ربط**: لا معادلة بين aria و video.volume ولا اشتقاق
-  const fmt = (s) => `aria=${s.aria} · video.volume=${s.vol}% · muted=${s.muted} · مقاس=${s.w}×${s.h}`;
   const say = (m) => console.log("VZKICK " + m);
+  const v = document.querySelector("video");
+  if (!v) { say("⚠️ لا فيديو في الصفحة — لم يُقس"); return; }
+  const vol = () => Math.round(v.volume * 1000) / 10;
+  const st = () => `vol=${vol()}% muted=${v.muted}`;
 
-  const key = (el, k) => {
-    if (!el) return;
-    const codes = { ArrowUp: 38, ArrowDown: 40, Home: 36, End: 35, PageUp: 33, PageDown: 34 };
-    for (const type of ["keydown", "keyup"]) {
-      el.dispatchEvent(new KeyboardEvent(type, { key: k, code: k, keyCode: codes[k] || 0,
-        which: codes[k] || 0, bubbles: true, cancelable: true, composed: true }));
-    }
+  // ── ١) نمط المحو: متى تعود القيمة، وبأي إيقاع؟ ──────────────────────────
+  const before = vol();
+  const marks = [100, 300, 600, 1000, 2000, 4000];
+  const series = [];
+  v.volume = 0.30;
+  series.push([0, vol()]);
+  say(`١) قبل=${before}% · كتبنا 30% · فوراً=${vol()}%`);
+
+  let i = 0;
+  const tick = () => {
+    if (i >= marks.length) return finishOne();
+    const at = marks[i], prev = i === 0 ? 0 : marks[i - 1];
+    i++;
+    setTimeout(() => { series.push([at, vol()]); tick(); }, at - prev);
   };
 
-  const sl = findSlider();
-  if (!sl) {
-    say(`⚠️ لم يُعثر على [role=slider] داخل حاوية المشغّل — مرّر المؤشّر على أيقونة الصوت ثم أعد اللصق. ` +
-      `(role=slider في الصفحة: ${document.querySelectorAll('[role="slider"]').length})`);
-    return;
-  }
-  say(`وُجد: وسم="${sl.getAttribute("aria-label") || "بلا وسم"}" · ${fmt(read())}`);
+  const finishOne = () => {
+    say("١) سلسلة المحو: " + series.map(([t, x]) => `${t}ms:${x}%`).join(" → "));
+    const returned = series.find(([, x]) => Math.abs(x - 30) > 1);
+    say("١) " + (returned
+      ? `عادت القيمة عند **${returned[0]}ms** ⇒ ` +
+        (returned[0] <= 300 ? "**فوريّ تقريباً — يشبه مستمع volumechange**"
+                            : "**متأخّر — يشبه استطلاعاً دورياً**") +
+        ` · نافذة الكتابة ≈ ${returned[0]}ms`
+      : "**لم تعد القيمة خلال 4 ثوانٍ** — لا محو في هذه التشغيلة"));
 
-  // **بوّابة الحكم**: لا يُنطق بدلالة الكتم ما لم يتحرّك شيء
-  let moved = false;
-
-  // ── أ) تركيز ثم مفاتيح ──────────────────────────────────────────────────
-  const targets = [["المنزلق", sl], ["أبوه", sl.parentElement], ["جدّه", sl.parentElement && sl.parentElement.parentElement]];
-  for (const [name, t] of targets) {
-    if (!t) continue;
-    let focused = "—";
+    // ── ٢) مستمعو volumechange ────────────────────────────────────────────
     try {
-      if (t.tabIndex < 0 && !t.hasAttribute("tabindex")) t.setAttribute("tabindex", "-1");
-      t.focus({ preventScroll: true });
-      focused = document.activeElement === t ? "نعم" : "لا";
-    } catch { focused = "رمى"; }
-    for (const k of ["ArrowUp", "ArrowDown", "Home", "End", "PageUp"]) {
-      const b = read();
-      key(t, k);
-      const a = read();
-      const ok = a.aria !== b.aria || a.vol !== b.vol;
-      if (ok) moved = true;
-      say(`أ) ${name} · تركيز=${focused} · ${k}: aria ${b.aria}⇒${a.aria} · vol ${b.vol}%⇒${a.vol}%  ${ok ? "✅ تحرّك" : "❌"}`);
-    }
-  }
+      if (typeof getEventListeners === "function") {
+        const l = getEventListeners(v) || {};
+        const types = Object.keys(l).map((k) => `${k}×${l[k].length}`).join(" · ");
+        say(`٢) مستمعو الفيديو: ${types || "لا شيء"} · volumechange=${(l.volumechange || []).length}`);
+      } else {
+        say("٢) getEventListeners غير متاح هنا — يعمل في كونسول DevTools وحده");
+      }
+    } catch (e) { say("٢) تعذّر عدّ المستمعين: " + String(e).slice(0, 40)); }
 
-  // ── ب) عجلة فوق مجموعة الصوت والمشغّل ───────────────────────────────────
-  const wheelTargets = [["المنزلق", sl], ["أبوه", sl.parentElement],
-                        ["جدّه", sl.parentElement && sl.parentElement.parentElement],
-                        ["الفيديو", V()]];
-  for (const [name, t] of wheelTargets) {
-    if (!t) continue;
-    for (const dy of [-120, 120]) {
-      const b = read();
-      try {
-        t.dispatchEvent(new WheelEvent("wheel", { deltaY: dy, deltaMode: 0,
-          bubbles: true, cancelable: true, composed: true }));
-      } catch { continue; }
-      const a = read();
-      const ok = a.aria !== b.aria || a.vol !== b.vol;
-      if (ok) moved = true;
-      say(`ب) عجلة ${dy < 0 ? "↑" : "↓"} على ${name}: aria ${b.aria}⇒${a.aria} · vol ${b.vol}%⇒${a.vol}%  ${ok ? "✅ تحرّك" : "❌"}`);
-    }
-  }
+    // ── ٣) مفاتيح التخزين — الرافعة الباقية إن وُجدت ──────────────────────
+    try {
+      const hits = [];
+      for (let k = 0; k < localStorage.length; k++) {
+        const key = localStorage.key(k);
+        if (/volume|sound|player|audio|mute/i.test(key)) {
+          hits.push(`${key}=${String(localStorage.getItem(key)).slice(0, 40)}`);
+        }
+      }
+      say("٣) مفاتيح التخزين: " + (hits.length ? hits.join(" · ") : "**لا مفتاح مطابق**"));
+    } catch (e) { say("٣) تعذّرت قراءة التخزين: " + String(e).slice(0, 40)); }
 
-  // ── ج) هل تنجو كتابتنا المباشرة على كِك أصلاً؟ ──────────────────────────
-  const v = V();
-  const preWrite = read();
-  const target = preWrite.vol > 50 ? 0.3 : 0.7;
-  v.volume = target;
-  const t0 = read();
-  say(`ج) كتبنا video.volume=${target * 100}% مباشرةً ⇒ فوراً: ${fmt(t0)}`);
-
-  setTimeout(() => {
-    const t2 = read();
-    const survivedSilence = Math.abs(t2.vol - target * 100) < 1;
-    say(`ج) بعد ثانيتين **بلا أي حدث من المضيف**: ${fmt(t2)}  ${survivedSilence ? "✅ نجت" : "❌ مُحيت"}`);
-    // **قبل الكتم** — وهذي هي القراءة التي تُقارَن بها النجاة، لا القراءة أثناءه
-    const beforeMute = read();
-    say("ج) ⏳ **اكتم بـ m ثم افكّ بـ m — بيدك — الآن.** القراءة الأخيرة بعد 12 ثانية …");
-
+    // ── ٤) دورة الكتم — بالشرط القاطع ─────────────────────────────────────
+    const beforeMute = vol();
+    say(`٤) قبل الكتم: ${st()}`);
+    say("٤) ⏳ اكتم بـ m ثم افكّ بـ m — الاثنتان معاً — خلال 15 ثانية …");
     setTimeout(() => {
-      const afterCycle = read();
-      // ⚠️ **النجاة = قبل الكتم مقابل بعد الفكّ.** مقارنةُ «أثناء الكتم» بـ«بعده»
-      // استعادةٌ لا ضياع — وهو الخطأ الذي وقعت فيه النسخة الأولى.
-      const survivedCycle = Math.abs(afterCycle.vol - beforeMute.vol) < 1;
-      say(`ج) قبل الكتم: ${fmt(beforeMute)}`);
-      say(`ج) بعد الفكّ: ${fmt(afterCycle)}`);
-      say(`ج) النجاة عبر دورة الكتم (قبل الكتم ⇔ بعد الفكّ): ${beforeMute.vol}% ⇒ ${afterCycle.vol}%  ` +
-        (survivedCycle ? "✅ نجت" : "❌ **مُحيت** — المضيف فرض نموذجه"));
-      // **بوّابة الحكم**: دلالة الكتم لا تُنطق ما لم يتحرّك المنزلق بطريق ما
-      say(moved
-        ? "الحكم: المنزلق **استجاب** لطريق واحد على الأقل — انظر أسطر أ/ب أعلاه."
-        : "الحكم: **لم يستجب المنزلق لأي طريق جُرّب** ⇒ **لا تُستنبَط دلالة كتم من جموده** " +
-          "(عنصر لا يتحرّك لا يُستنطَق).");
+      // ⚠️ **الشرط قبل النطق**: بلا `muted === false` لا يُطبع حكم نجاة إطلاقاً،
+      // لأن القراءة تكون **أثناء الكتم** لا بعده — وهو الخطأ الثالث المسحوب.
+      if (v.muted !== false) {
+        say(`٤) ⚠️ **الدورة لم تكتمل** (muted=${v.muted}) — لم يقع الفكّ داخل النافذة. ` +
+          "**لا حكم نجاة**، أعد القياس.");
+      } else {
+        const after = vol();
+        say(`٤) بعد الفكّ: ${st()} · النجاة (قبل الكتم ⇔ بعد الفكّ): ${beforeMute}% ⇒ ${after}% ` +
+          (Math.abs(after - beforeMute) < 1 ? "✅ نجت" : "❌ **مُحيت**"));
+      }
       say("✔ انتهى — انسخ كل أسطر VZKICK.");
-    }, 12000);
-  }, 2000);
+    }, 15000);
+  };
+
+  tick();
 })();
