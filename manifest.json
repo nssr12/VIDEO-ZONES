@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "VIDEO-ZONES",
+  "name": "VIDEO ZONES",
   "version": "2.11.2",
   "description": "Control HTML5 videos on almost any site: keyboard/mouse/wheel remap, 3x3 interaction zones with click & keyboard triggers, per-site rule profiles, backup/restore, and overlay hints.",
   "permissions": [
@@ -19,7 +19,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Video Interaction Zones",
+    "default_title": "VIDEO ZONES",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
