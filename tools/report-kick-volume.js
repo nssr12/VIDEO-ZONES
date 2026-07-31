@@ -88,7 +88,8 @@
   }
   say(`وُجد: وسم="${sl.getAttribute("aria-label") || "بلا وسم"}" · ${fmt(read())}`);
 
-  let moved = false;   // **بوّابة الحكم**: لا يُنطق بدلالة الكتم ما لم يتحرّك شيء
+  // **بوّابة الحكم**: لا يُنطق بدلالة الكتم ما لم يتحرّك شيء
+  let moved = false;
 
   // ── أ) تركيز ثم مفاتيح ──────────────────────────────────────────────────
   const targets = [["المنزلق", sl], ["أبوه", sl.parentElement], ["جدّه", sl.parentElement && sl.parentElement.parentElement]];
