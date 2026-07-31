@@ -101,12 +101,13 @@ function makeWorld(host = "example.com", noPlayer = false) {
 console.log("\n[1] السجلّ: **محوّل واحد بالضبط** — يوتيوب، وما عداه مسار اليوم");
 {
   const w = makeWorld();
-  check("محوّل واحد لا أكثر", vm.runInContext("hostAdapters.size", w.ctx) === 1,
+  check("محوّلان بالضبط", vm.runInContext("hostAdapters.size", w.ctx) === 2,
     vm.runInContext("[...hostAdapters.keys()].join()", w.ctx));
-  check("وهو youtube.com", vm.runInContext("[...hostAdapters.keys()][0]", w.ctx) === "youtube.com");
+  check("وهما twitch.tv و youtube.com",
+    vm.runInContext("[...hostAdapters.keys()].sort().join()", w.ctx) === "twitch.tv,youtube.com");
   check("ولا محوّل على مضيف غير مسجَّل", vm.runInContext("hostAdapterFor()", w.ctx) === null);
   // **شرط القبول الأول**: من لا محوّل له يسلك مسار اليوم حرفياً
-  for (const h of ["twitch.tv", "vimeo.com", "d.tube", "kick.com"]) {
+  for (const h of ["vimeo.com", "d.tube", "kick.com"]) {
     const x = makeWorld(h);
     check(`ولا محوّل على ${h}`, vm.runInContext("hostAdapterFor()", x.ctx) === null);
     const v = { muted: false, volume: 0.5 };
@@ -114,8 +115,8 @@ console.log("\n[1] السجلّ: **محوّل واحد بالضبط** — يوت
     check(`  و${h}: كتابة مباشرة فورية 0.54 بلا مهلة`,
       near(v.volume, 0.54) && x.timers.length === 0, v.volume);
   }
-  check("ولا تسجيل ثانٍ في الملف",
-    (CONTENT.match(/hostAdapters\.set\(/g) || []).length === 1);
+  check("ولا تسجيل زائد في الملف",
+    (CONTENT.match(/hostAdapters\.set\(/g) || []).length === 2);
 }
 
 console.log("\n[2] الواجهة **نسبية فقط** — لا ضبط مطلق، وهذا قيد بنيوي لا تفصيل");
@@ -345,6 +346,31 @@ console.log("\n[13] لا نسخة ثانية من التحقّق أو السقو
   check("ولا ضبط مطلق", !/setVolume|volume\s*=\s*[0-9]/.test(YTAD));
   check("والخطوة موثَّقة أنها خطوة المضيف لا خطوتنا",
     /خطوة المضيف لا خطوتنا/.test(YTAD) && /±5%/.test(YTAD));
+}
+
+console.log("\n[14] محوّل تويتش — المحدّد بالبنية لا بالاسم، واستثناء عناصرنا");
+{
+  const ADP = slice("content.js", "// ── عائلة «منزلق المضيف» (#60)", "function runAction");
+  // ⚠️ معرّفات تويتش `player-volume-slider-<UUID>` وأصنافه `ScRangeInput-sc-…`
+  // بصمات تتغيّر مع كل بناء. تسلّلُ أيٍّ منها إلى الكود **يُفشل البناء هنا**.
+  check("لا UUID في كود المحوّلات",
+    !/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(ADP.replace(/\/\/.*$/gm, "")), "معرّف عابر");
+  check("ولا بصمة styled-components",
+    !/-sc-[a-z0-9]{6,}/i.test(ADP.replace(/\/\/.*$/gm, "")));
+  check("ولا اسم صنف تويتش عابر",
+    !/ScRangeInput|hsrOE|tw-range/.test(ADP.replace(/\/\/.*$/gm, "")));
+  check("ولا player-volume-slider بالاسم",
+    !/player-volume-slider/.test(ADP.replace(/\/\/.*$/gm, "")));
+  check("والبحث بالبنية: input[type=range]", /input\[type=range\]/.test(ADP));
+  check("والمرئي يفوز بقاعدة صريحة", /r\.width > 0 && r\.height > 0/.test(ADP));
+  check("وعناصرنا مُستثناة من المسح", /!isOwnElement\(el\)/.test(ADP));
+  check("و isOwnElement تستثني .vzWrap وأصنافنا",
+    /closest\("\.vzWrap"\)/.test(CONTENT) && /vz\[A-Z\]/.test(CONTENT));
+  check("والضبط بالـ native setter ثم input/change",
+    /HTMLInputElement\.prototype, "value"\)\?\.set/.test(ADP) &&
+    /new Event\("input"/.test(ADP) && /new Event\("change"/.test(ADP));
+  check("والمدى يُقرأ من العنصر لا يُفترض", /Number\(el\.min/.test(ADP) && /Number\(el\.max/.test(ADP));
+  check("ولا رقم مطلق مكتوب كمستوى", !/value = ["']?(50|60|80|100)["']?/.test(ADP));
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);

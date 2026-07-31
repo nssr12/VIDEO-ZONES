@@ -29,7 +29,7 @@ function slice(from, to) {
   return t.slice(a, b);
 }
 // الكتلة **كما هي في الملف** — لا نسخة مكتوبة هنا، وإلا قِسنا شيئاً آخر
-const YTAD = slice("// ── محوّل يوتيوب (#60 · قرار 25)", "function runAction");
+const ADAPTERS = slice("// ── محوّل يوتيوب (#60 · قرار 25)", "function runAction");
 
 const chrome = spawn(CHROME, ["--headless=new", "--disable-gpu", "--no-first-run", "--mute-audio",
   "--autoplay-policy=no-user-gesture-required", `--user-data-dir=/tmp/vz-adlive-${process.pid}`,
@@ -77,18 +77,26 @@ if (!ready) { console.log("⚠️ المشغّل لم يبدأ — لم يُقس
 await p.ev(`
   window.__sends = 0;
   window.addEventListener("keydown", (e) => { if (!e.isTrusted) window.__sends++; }, true);
+  window.addEventListener("input", (e) => { if (!e.isTrusted) window.__sends++; }, true);
   window.__typing = false;
   var shouldIgnoreKeyBecauseTyping = () => window.__typing;
   var nowMs = () => performance.now();
   var hostAdapters = new Map();
-  ${YTAD}
-  window.__ad = hostAdapters.get("youtube.com");
+  var isOwnElement = () => false;
+  ${ADAPTERS}
+  window.__ad = hostAdapters.get(location.host.replace(/^www\./, ""));
   "ok"`);
 
 const state = () => p.ev(`(() => { const v = document.querySelector("video");
-  const s = document.querySelector(".ytp-volume-panel, .ytp-volume-slider");
-  return { volume: Math.round(v.volume * 1000) / 10,
-           slider: s ? s.getAttribute("aria-valuenow") : null, muted: v.muted,
+  const yt = document.querySelector(".ytp-volume-panel, .ytp-volume-slider");
+  let slider = yt ? yt.getAttribute("aria-valuenow") : null;
+  if (slider === null) {
+    const all = [...document.querySelectorAll("input[type=range]")]
+      .filter((el) => !(el.closest && el.closest(".vzWrap")));
+    const vis = all.find((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) || all[0];
+    slider = vis ? vis.value : null;
+  }
+  return { volume: Math.round(v.volume * 1000) / 10, slider, muted: v.muted,
            sends: window.__sends }; })()`);
 
 const click = (n, dir = "stepDown") => p.ev(
@@ -96,7 +104,7 @@ const click = (n, dir = "stepDown") => p.ev(
      for (let i = 0; i < ${n}; i++) window.__ad.${dir}(v); return true; })()`);
 
 async function hostMuteKey() {
-  await p.ev(`(document.querySelector("#movie_player")||{}).focus?.()`);
+  await p.ev(`(document.querySelector("#movie_player, [data-a-player-state], .video-player, video")||{}).focus?.()`);
   for (const type of ["keyDown", "keyUp"]) {
     await p.send("Input.dispatchKeyEvent", { type, key: "m", code: "KeyM", windowsVirtualKeyCode: 77, nativeVirtualKeyCode: 77 });
   }
@@ -129,8 +137,12 @@ const mutedBefore = await state();
 await click(1, "stepUp");
 await sleep(1200);
 const afterUnmute = await state();
+// ⚠️ **المقارنة بالمستوى قبل الكتم لا بما يظهر أثناءه، وبلا سُلَّم مفترض.**
+// سُلَّم يوتيوب 0..100 وتويتش 0..1، وعند تويتش **الكتم هو المنزلق على صفر**
+// والمستوى يبقى كامناً — فمقارنةُ «أثناء الكتم + 5» تطبع فشلاً كاذباً.
+// الشرط الصادق: انفكّ الكتم **وصار المستوى أعلى مما كان قبل الكتم**.
 const contract1 = !afterUnmute.muted &&
-  Number(afterUnmute.slider) === Math.min(100, Number(mutedBefore.slider) + 5);
+  Number(afterUnmute.slider) > Number(back.slider);
 console.log(`  مكتوم ثم خطوة   : ${mutedBefore.slider}(م) ⇒ ${afterUnmute.slider}${afterUnmute.muted ? "(م)" : ""}  ` +
   `${contract1 ? "✅ ع1: فُكّ الكتم وخطوة واحدة" : "❌ ع1 مكسور"}`);
 

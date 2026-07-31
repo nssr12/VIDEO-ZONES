@@ -23,7 +23,12 @@
     '[aria-label*="صوت" i]',
     '[class*="volume" i]'
   ];
-  const q = (s) => { try { return [...document.querySelectorAll(s)]; } catch { return []; } };
+  // ⚠️ **استثناء عناصر الإضافة نفسها.** أول تشغيلة على كِك طابقت عنصراً واحداً
+  // هو **`.vzVolume` — شارتنا نحن**، اصطادها `[class*="volume"]`. مِجَسّ يرى
+  // نفسه يُنتج «عائلة منزلق» وهمية، ومحوّل يمسح بلا استثناء **يقود شارته**.
+  const isOurs = (el) => !!(el.closest && (el.closest(".vzWrap") || el.closest("[id^='vz_']"))) ||
+    (typeof el.className === "string" && /\bvz[A-Z]/.test(el.className));
+  const q = (s) => { try { return [...document.querySelectorAll(s)].filter((el) => !isOurs(el)); } catch { return []; } };
   const desc = (el) => {
     const tag = el.tagName.toLowerCase();
     const cls = typeof el.className === "string" && el.className.trim()

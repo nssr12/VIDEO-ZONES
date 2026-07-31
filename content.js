@@ -2435,6 +2435,17 @@ function runHostAdapter(video, op, applyDirect) {
 // نُرسله** — قِيس **2 من 2** — فبلا هذا العلم يصير أمر الصوت يُطلق نفسه.
 let adapterSending = false;
 
+// ⚠️ **قاعدة عامة: أي مسح لعناصر الصفحة يستثني عناصر الإضافة صراحةً.**
+// واقعتها: مِجَسّ الشكل على كِك طابق عنصراً واحداً هو **`.vzVolume` — شارتنا
+// نحن** — اصطادها `[class*="volume"]`. **محوّل يمسح بلا استثناء يقود شارته**،
+// فيقرأ حالته هو ويحسبها حالة المضيف. تُستدعى في كل محوّل يمسح.
+function isOwnElement(el) {
+  if (!el || el.nodeType !== 1) return false;
+  if (typeof el.closest === "function" && el.closest(".vzWrap")) return true;
+  const cls = typeof el.className === "string" ? el.className : "";
+  return /\bvz[A-Z]/.test(cls) || /^vz_/.test(el.id || "");
+}
+
 function makeKeyStepAdapter({ playerSelector, upKey, downKey, unmuteKey, minSendMs = 60, maxQueue = 5 }) {
   // الطابور صار **عمليات** لا عدداً: فكّ الكتم يسبق الخطوة في الطابور نفسه،
   // فيقع بالترتيب المطلوب — فكّ ثم خطوة — بلا مسار ثانٍ ولا توقيت هشّ.
@@ -2516,11 +2527,129 @@ function makeKeyStepAdapter({ playerSelector, upKey, downKey, unmuteKey, minSend
   return { stepUp: (video) => step(video, upKey), stepDown: (video) => step(video, downKey) };
 }
 
+// ── عائلة «منزلق المضيف» (#60) — عضوها اليوم تويتش ─────────────────────────
+// **قِيس على قناة حيّة قبل كتابته، ولم يُفترض أنه كيوتيوب — فخالفه:**
+//   · منزلقان `input[type=range]` مداهما **0..1** (لا 0..100) بخطوة 0.01،
+//     كلاهما داخل المشغّل، **أحدهما مرئي والآخر مخفي، ويتحرّكان معاً**.
+//   · **الكتم عند تويتش هو المنزلق على صفر**: زرّه يضع 0 ويرفع `muted` معاً.
+//   · **وضبط المنزلق وهو مكتوم يفكّ الكتم بنفسه** (0% مكتوم ⇒ 80% مسموع) —
+//     **عكس يوتيوب** الذي يرفع ويبقى مكتوماً. ولذلك لا فكّ كتم صريح هنا.
+//   · و`m` **من إرسالنا** تفكّ الكتم وتستعيد المستوى الكامن (0.8).
+//
+// ⚠️ **المحدّد بالبنية لا بالاسم:** معرّفات تويتش `player-volume-slider-<UUID>`
+// وأصنافه `ScRangeInput-sc-…` بصمات styled-components **تتغيّر مع كل بناء**.
+// فالبحث بـ`input[type=range]` **داخل حاوية المشغّل**، والمرئي منهما هو المستهدَف
+// بقاعدة صريحة — لا «أول ما يُطابِق». `tools/test-host-adapter.js` يُفشل البناء
+// إن تسلّل UUID أو بصمة صنف إلى الكود.
+function makeSliderAdapter({ playerSelector, stepFraction = 0.05, unmuteKey }) {
+  let queue = [], timer = null, lastSentAt = 0;
+
+  // المنزلق المستهدَف: داخل المشغّل · **ليس من عناصرنا** · والمرئي يفوز.
+  const sliderFor = (video) => {
+    const root = video?.getRootNode?.();
+    const scope = root && typeof root.querySelector === "function" ? root : document;
+    const player = scope.querySelector(playerSelector);
+    const all = [...(player || scope).querySelectorAll("input[type=range]")]
+      .filter((el) => !isOwnElement(el));
+    if (!all.length) return null;
+    // قاعدة صريحة مختبَرة: **المرئي** هو المستهدَف، وإن لم يكن أيٌّ مرئياً فالأول.
+    return all.find((el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    }) || all[0];
+  };
+
+  const bounds = (el) => {
+    const min = Number(el.min === "" ? 0 : el.min);
+    const max = Number(el.max === "" ? 1 : el.max);
+    return { min, max, span: (max - min) || 1 };
+  };
+
+  // ⚠️ الكسر لا الرقم المطلق: مدى تويتش **0..1** لا 0..100، ورقمٌ مطلق يفترض
+  // مدىً لم يُقس. قِيس فسقط شاهد موجب حين كُتب 60 على مدى 0..1 فقُصّ إلى 1.
+  const readFraction = (el) => {
+    const { min, span } = bounds(el);
+    return (Number(el.value) - min) / span;
+  };
+
+  const applyFraction = (el, frac) => {
+    const { min, max, span } = bounds(el);
+    const target = Math.max(min, Math.min(max, min + span * frac));
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+    if (!setter) return false;
+    setter.call(el, String(target));
+    // حقل يديره React لا يقبل `.value = x` مباشرةً — الـ native setter ثم
+    // `input`/`change` هي الطريقة **المقيسة** الوحيدة التي يتبعها نموذجه.
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  };
+
+  const schedule = (video) => {
+    if (timer) return;
+    timer = setTimeout(() => drain(video), Math.max(0, 60 - (nowMs() - lastSentAt)));
+  };
+
+  const drain = (video) => {
+    timer = null;
+    const op = queue.shift();
+    if (!op) return;
+    lastSentAt = nowMs();
+    const el = sliderFor(video);
+    if (el) {
+      if (op === "unmute") {
+        if (video.muted && unmuteKey) {
+          const player = (video.getRootNode?.() || document).querySelector?.(playerSelector) || video;
+          adapterSending = true;
+          try {
+            for (const type of ["keydown", "keyup"]) {
+              player.dispatchEvent(new KeyboardEvent(type, {
+                key: unmuteKey, code: unmuteKey, keyCode: 77, which: 77,
+                bubbles: true, cancelable: true, composed: true
+              }));
+            }
+          } finally { adapterSending = false; }
+        }
+      } else {
+        applyFraction(el, readFraction(el) + (op === "up" ? stepFraction : -stepFraction));
+      }
+    }
+    if (queue.length) schedule(video);
+  };
+
+  const step = (video, dir) => {
+    if (shouldIgnoreKeyBecauseTyping()) return false;
+    if (!sliderFor(video)) return false;
+    // ⚠️ **الكتم عند هذا المضيف هو المنزلق على صفر**، فالخفض عليه لا معنى له:
+    // المستوى في قاعه أصلاً. نعتذر عن العملية فيتولّاها المسار المباشر — سلوك
+    // اليوم — بدل أن نفكّ كتماً لم يطلبه المستخدم (عقد الصوت ع2).
+    if (dir === "down" && video.muted) return false;
+    // ورفعٌ على مكتوم: **يفكّه المضيف بنفسه عند الضبط** (مقيس)، ومع ذلك نُقدّم
+    // فكّاً صريحاً كي يُستعاد **المستوى الكامن** بدل أن نبني الخطوة على صفر.
+    if (dir === "up" && video.muted && unmuteKey) {
+      if (queue.length < 5) queue.push("unmute");
+    }
+    if (queue.length < 5) queue.push(dir);
+    schedule(video);
+    return true;
+  };
+
+  return { stepUp: (video) => step(video, "up"), stepDown: (video) => step(video, "down") };
+}
+
 // ⚠️ **الخطوة الفعلية خطوة المضيف لا خطوتنا:** سهم يوتيوب يحرّك منزلقه **±5%**
 // بينما ربطنا الافتراضي `ACTION:VOLUME:+4` أي 4%. **هذا مقصود وموثَّق فلا يُسجَّل
 // عطباً لاحقاً** — المطلوب أن **يتحرّك منزلق المضيف**، وحركته بمقدار خطوته هو.
 // و**لا `toggleMute` هنا عمداً**: الكتم يبقى على مسار اليوم في هذا الكومِت،
 // والإطار يسقط لكل عملية على حدة فيتولّاه المسار المباشر بلا تغيير.
+// تويتش: عائلة المنزلق. `unmuteKey` مفتاحه هو — قِيس أن إرسالنا له يفكّ الكتم
+// **ويستعيد المستوى الكامن**، فالخطوة تُبنى على مستوى حقيقي لا على صفر.
+hostAdapters.set("twitch.tv", makeSliderAdapter({
+  playerSelector: "[data-a-player-state], .video-player",
+  stepFraction: 0.05,
+  unmuteKey: "m"
+}));
+
 hostAdapters.set("youtube.com", makeKeyStepAdapter({
   playerSelector: "#movie_player",
   upKey: "ArrowUp",

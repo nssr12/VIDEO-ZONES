@@ -26,7 +26,7 @@ function slice(from, to) {
 
 const CONTENT = fs.readFileSync("content.js", "utf8");
 const FRAMEWORK = slice("// ── البند #60 · قرار المالك 25", "// ── محوّل يوتيوب (#60 · قرار 25)");
-const YTAD = slice("// ── محوّل يوتيوب (#60 · قرار 25)", "function runAction");
+const ADAPTERS = slice("// ── محوّل يوتيوب (#60 · قرار 25)", "function runAction");
 const VOL = slice("// Volume delta in percent", "// Speed: SET absolute value");
 const MUTE = slice("// Mute\n  if (action === \"ACTION:TOGGLE_MUTE\")", "// PiP");
 const BADGE = slice("function showVolumeIndicator(video) {", "// -------------------------------------------");
@@ -40,7 +40,7 @@ const check = (name, cond, extra) => cond
 // يبني السلسلة الكاملة: runAction ⇒ الإطار ⇒ (المحوّل) ⇒ المضيف ⇒ الشارة.
 // العقد يُجرى على **المسار كاملاً** لا على المحوّل معزولاً — لأن العطب الذي
 // نحرسه وُلد في التقاء المسارات لا داخل أحدها.
-function buildWorld(host, hostModel) {
+function buildWorld(host, hostModel, prepare) {
   const timers = [];
   let seq = 0;
   const badges = [];
@@ -60,6 +60,7 @@ function buildWorld(host, hostModel) {
     __typing: false,
     shouldIgnoreKeyBecauseTyping: () => ctx.__typing,
     KeyboardEvent: class { constructor(type, init) { Object.assign(this, { type }, init); } },
+    Event: class { constructor(type, init) { Object.assign(this, { type }, init); } },
     // الشارة الحقيقية من content.js — فالثابت الثالث يُقاس على نصّها هي
     overlaySettings: { volumeAutoHideMs: 900 },
     soundDisplaySettings: { color: "#fff", fontSize: 48 },
@@ -77,9 +78,10 @@ function buildWorld(host, hostModel) {
     dispatchEvent(ev) { if (ev.type === "keydown" && hostModel) hostModel(ev.key, video); return true; }
   };
   ctx.document = { activeElement: { tagName: "INPUT" }, querySelector: (s) => (s === "#movie_player" ? player : null) };
+  if (prepare) prepare(ctx);
   vm.createContext(ctx);
   vm.runInContext(`${FRAMEWORK}
-    ${YTAD}
+    ${ADAPTERS}
     ${BADGE.replace("function showVolumeIndicator(video) {",
         "function showVolumeIndicator(video) { __badge(video);")}
     function runVolume(action, v) { const e = {}; const findVideoLoose = () => v; ${VOL} return false; }
@@ -108,6 +110,50 @@ function youtubeModel(key, v) {
   if (key === "ArrowUp") v.volume = Math.min(100, level + YT_STEP) / 100;
   else if (key === "ArrowDown") v.volume = Math.max(0, level - YT_STEP) / 100;
   else if (key === "m") v.muted = !v.muted;
+}
+
+// تويتش: **الكتم هو المنزلق على صفر**، و**ضبط المنزلق يفكّ الكتم بنفسه**،
+// و`m` تقلب الكتم وتستعيد المستوى الكامن. مداه **0..1** لا 0..100. كلها مقيسة
+// على `twitch.tv/caseoh_` — انظر ترويسة الملف.
+const TW_STEP = 5;
+function buildTwitchWorld() {
+  const w = buildWorld("twitch.tv", null, (ctx) => {
+    let latent = 0.5;
+    class FakeInput {
+      constructor() { this._v = "0.5"; this.min = "0"; this.max = "1"; this.step = "0.01"; this.type = "range"; this.className = "ScRangeInput-sc-q01wc3-1 hsrOE"; this.id = "player-volume-slider-1f2e3d4c-aaaa"; }
+      get value() { return this._v; }
+      set value(x) { this._v = String(x); }
+      getBoundingClientRect() { return { width: 80, height: 10 }; }
+      closest() { return null; }
+      dispatchEvent(ev) {
+        if (ev.type === "input") {           // نموذج تويتش: الضبط يفكّ الكتم
+          ctx.video.muted = false;
+          ctx.video.volume = Number(this._v);
+          latent = Number(this._v);
+        }
+        return true;
+      }
+    }
+    const slider = new FakeInput();
+    const hidden = new FakeInput();
+    hidden.getBoundingClientRect = () => ({ width: 0, height: 0 });
+    const player = {
+      tagName: "DIV",
+      querySelectorAll: () => [hidden, slider],   // المخفي أولاً عمداً: القاعدة «المرئي يفوز» لا «الأول»
+      dispatchEvent(ev) {
+        if (ev.type !== "keydown" || ev.key !== "m") return true;
+        if (ctx.video.muted) { ctx.video.muted = false; ctx.video.volume = latent; slider.value = String(latent); }
+        else { latent = ctx.video.volume; ctx.video.muted = true; ctx.video.volume = 0; slider.value = "0"; }
+        return true;
+      }
+    };
+    ctx.window = { HTMLInputElement: FakeInput };
+    ctx.document = { activeElement: { tagName: "INPUT" },
+      querySelector: (sel) => (/player/.test(sel) ? player : null) };
+    ctx.__mute = () => { latent = ctx.video.volume; ctx.video.muted = true; ctx.video.volume = 0; slider.value = "0"; };
+    ctx.__latent = () => latent;
+  });
+  return w;
 }
 
 // ───────────────────────────────────────────────────────── المسارات المُعرَّفة
@@ -142,6 +188,25 @@ const PATHS = [
       };
     }
   }
+  ,{
+    name: "محوّل twitch.tv",
+    step: TW_STEP, eps: 0.51, mid: 50,
+    badgeLevel: (lvl) => lvl,
+    make(init) {
+      const w = buildTwitchWorld();
+      w.video.volume = init.level / 100;
+      if (init.muted) vm.runInContext("__mute", w.ctx)();
+      // **المستوى الذي يعنيه العقد هو ما سيسمعه المستخدم**: عند تويتش يخفي الكتمُ
+      // المستوى (المنزلق صفر) ويحتفظ به كامناً، فالقراءة الصادقة هي الكامن.
+      const level = () => Math.round((w.video.muted ? vm.runInContext("__latent", w.ctx)() : w.video.volume) * 100);
+      return {
+        get: () => ({ muted: w.video.muted, level: level() }),
+        up: () => { w.vol("ACTION:VOLUME:+4"); w.drain(); },
+        down: () => { w.vol("ACTION:VOLUME:-4"); w.drain(); },
+        badge: () => w.readBadge()
+      };
+    }
+  }
 ];
 
 // ───────────────────────────── الشرط البنيوي: لا محوّل مسجَّل بلا مسار في العقد
@@ -160,7 +225,17 @@ console.log("\n[بنيوي] كل محوّل مسجَّل له مسار في ال
 // ✅ **لا تثبيتات مفتوحة.** كان هنا تثبيت لـ«ع1 مكسور في محوّل يوتيوب»، وأُزيل
 // **في كومِت إصلاحه نفسه لا بعده** (سابقة #59)، وحلّ محلّه **فحص موجب** يحرس
 // الإصلاح: ع1 يجب أن **ينجح** على المحوّل من الآن.
-const KNOWN_OPEN = {};
+// ⚠️ **تثبيت مفتوح — سؤال دلالي لا عطب تنفيذ** (قرار 20 · وقرار 27: الدلالة
+// الجديدة تدخل العقد **بقرار المالك** لا بتعديلي).
+// **عند تويتش الكتمُ هو المنزلقُ على صفر**، والمستوى الحقيقي يبقى **كامناً
+// مخفيّاً**. فينشأ سؤالان لا جواب لهما في العقد اليوم:
+//   ع2 — «الخفض على مكتوم يُنزل المستوى فعلاً»: المنزلق في **قاعه** والكامن
+//        لا يُنزَل إلا بفكّ الكتم — أي بإسماع صوت لم يُطلب. فالعملية تُعتذَر
+//        اليوم ويتولّاها المسار المباشر، والكامن لا ينزل.
+//   ع3 — الشارة تعرض `video.volume` أي **0**، بينما ما سيسمعه المستخدم عند
+//        الفكّ هو **الكامن 50**. أيّهما «الحالة بعد العملية»؟
+// **فشل هذا التثبيت يعني أن الدلالة حُسمت، فحدّثه ولا تُصلح الاختبار.**
+const KNOWN_OPEN = { "محوّل twitch.tv": ["ع2", "ع3"] };
 
 // ─────────────────────────────────────────────────── إجراء العقد على كل مسار
 for (const path of PATHS) {
