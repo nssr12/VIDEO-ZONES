@@ -16,7 +16,7 @@
 //   · و`video.volume` يتبع المنزلق تماماً (95 ⇒ 0.95)
 const fs = require("fs");
 const vm = require("vm");
-const { runContract } = require("./volume-contract.js");
+const { runContract, DECLARED_LIMITS } = require("./volume-contract.js");
 
 function slice(from, to) {
   const t = fs.readFileSync("content.js", "utf8");
@@ -210,6 +210,23 @@ const PATHS = [
     }
   }
 ];
+
+// ───────────────────────── الحدود المعلنة: مضيف حُسم ألا محوّل له، بأرقامه
+console.log("\n[حدود معلنة] مضيفون لا محوّل لهم — قرار مسنود بالقياس");
+{
+  const registered = [...CONTENT.matchAll(/hostAdapters\.set\(\s*"([^"]+)"/g)].map((m) => m[1]);
+  for (const lim of DECLARED_LIMITS) {
+    console.log(`   ── ${lim.host} (${lim.date}): ${lim.verdict}`);
+    for (const [name, measured] of lim.levers) console.log(`      · ${name}: ${measured}`);
+    console.log(`      · الأثر الباقي: ${lim.effect}`);
+    console.log(`      · ${lim.note}`);
+    // ⚠️ تسجيل محوّل لمضيف معلن حدُّه **يُحمّر المجموعة**: الحدّ يُسقَط صراحةً
+    // وبقياس جديد، لا يُتجاوَز بصمت.
+    check(`لا محوّل مسجَّل لـ ${lim.host} — الحدّ قائم`,
+      !registered.includes(lim.host),
+      "سُجّل محوّل لمضيف معلن حدُّه: أسقِط الحدّ بقياس جديد أو احذف التسجيل");
+  }
+}
 
 // ───────────────────────────── الشرط البنيوي: لا محوّل مسجَّل بلا مسار في العقد
 console.log("\n[بنيوي] كل محوّل مسجَّل له مسار في العقد");
