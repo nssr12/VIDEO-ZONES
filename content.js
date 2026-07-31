@@ -1165,8 +1165,16 @@ function triggerYtQuality() {
   window.dispatchEvent(new CustomEvent("__vz_setq__", { detail: { q: ytAutoQuality } }));
 }
 
+// ⚠️ **البند #38ج — التسجيل مرّة واحدة مهما نودي.** صار لهذه الدالّة طريقان:
+// البدء، **والإيقاظ** عند الضغط على «تفعيل يدوي». وبلا هذا الحارس تُضاعَف
+// مستمعاتها الأربعة مع كل ضغطة. **يُختبَر بالعدّ لا بالنيّة**
+// (`tools/test-yt-wake.js`).
+let ytQualityWired = false;
+
 function startYtAutoQuality() {
   if (!isYouTubeHost()) return;
+  if (ytQualityWired) return;
+  ytQualityWired = true;
   // Leaving the video cancels a poll still running for it. Without this the old
   // poll survives the navigation and sets the previous video's quality on the new
   // one — the MAIN world listens for yt-navigate-start too, this is the belt.
@@ -1191,6 +1199,28 @@ function startYtAutoQuality() {
     if (r && r !== "set" && r !== "cancelled" && r !== "ad") {
       console.debug(`[VIDEO-ZONES] جودة يوتيوب «${lastYtQualityResult.requested}»: ${r}`);
     }
+  });
+}
+
+// ── البند #38ج — **تعريف واحد يستهلكه الطريقان** ────────────────────────────
+// **لماذا دالّة بدل تكرار السطرين:** للجودة الآن طريقان — **البدء** و**الإيقاظ**
+// عند «تفعيل يدوي» على صفحة `content.js` حاضر فيها سلفاً (فحقنه لا عمل له بحارس
+// `__GVZ_CONTENT_LOADED__`، **فلا بدء جديد ولا نداء** — مقيس في `AUDIT.md` §26).
+// **ولا يُكتب تسلسل تشغيل ثانٍ في الإيقاظ**: نسختان تتباعدان مع الوقت، وهو درس
+// عقد الصوت في #60 حرفياً — **عقد محفوظ في نسخة واحدة ليس عقداً** — وقد كلّفنا
+// مرة. فالطريقان يستهلكان **هذه الدالّة وحدها**.
+//
+// **وهي idempotent بالبناء لا بالحراسة الخارجية:** `startYtAutoQuality` تُسجّل
+// مستمعاتها مرّة (`ytQualityWired`)، و`triggerYtQuality` محروسة بمفتاح المحاولة
+// (`ytQualityAttemptKey`) — فضغطتان متتاليتان **لا تزيدان مستمعاً ولا طلباً**.
+//
+// **و`pre` اختياري بنفس عقد بقيّة المُحمِّلات:** البدء يمرّر قراءته الواحدة
+// (#13)، والإيقاظ يستدعيها بلا معامل **فيقرأ التخزين من جديد** — وهو المطلوب
+// تحديداً، إذ قد يكون المستخدم غيّر الجودة بعد فتح الصفحة.
+function applyYtQualityStep(pre) {
+  return Promise.resolve(loadYtAutoQualitySettings(pre)).then(() => {
+    startYtAutoQuality();
+    triggerYtQuality();
   });
 }
 
@@ -2147,6 +2177,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   // Every RELOAD_* now goes through the one applier — see requestReload (audit #14)
   if (RELOAD_MESSAGE_TYPES.has(msg?.type)) requestReload();
+
+  // ── البند #38ج — الإيقاظ ──────────────────────────────────────────────────
+  // **لماذا رسالة جديدة ولم تكفِ `RELOAD_YT_QUALITY` القائمة؟** لأنها تمرّ بـ
+  // `flushReload` التي تخرج مبكراً عند `snapshot === lastAppliedSnapshot` —
+  // **وفي الإيقاظ لم يتغيّر شيء بالتعريف**، فتخرج ولا تنادي `triggerYtQuality`.
+  // وإسقاط ذلك الخروج المبكر يهدم تجزئة #14 التي تجعل القناتين مجّانيتين
+  // (أيّهما وصلت أولاً كفت). **فالقائم لا يكفي، والدلالتان مختلفتان:**
+  // `RELOAD_*` تعني «تغيّر إعداد فأعد القراءة»، و`GVZ_ACTIVATED` تعني
+  // **«لم يتغيّر شيء، وأعد تنفيذ خطوة البدء»**.
+  //
+  // ⚠️ **وإطار خرج مبكراً لا يستيقظ برسالة** (#13ب و#56): جوابه أنه لم يبدأ،
+  // وإيقاظه هنا يفتح 122 إطاراً على صفحة أخبار. والفرع الآخر لا يحتاجه أصلاً —
+  // هناك يُحقن `content.js` من جديد فيبدأ بنفسه.
+  if (msg?.type === "GVZ_ACTIVATED") {
+    if (startupBegun) applyYtQualityStep();
+    return; // لا ردّ: المرسِل لا ينتظر شيئاً
+  }
   if (msg?.type === "SET_VOLUME_BOOST") {
     // Floor is 100: the booster only amplifies. Attenuation is ACTION:VOLUME's job.
     const pct = Math.max(100, Math.min(600, Number(msg.pct) || 100));
@@ -2308,10 +2355,8 @@ function runStartupSteps() {
   startup("gridAppearance", () => read.then(loadGridAppearance));
   startup("subtitles", () => read.then(loadSubtitleSettings));
   startup("subtitleObserver", startSubtitleTrackObserver);
-  startup("ytQuality", () => read.then(loadYtAutoQualitySettings).then(() => {
-    startYtAutoQuality();
-    triggerYtQuality();
-  }));
+  // البدء والإيقاظ يستهلكان `applyYtQualityStep` نفسها — لا تسلسل ثانٍ (#38ج)
+  startup("ytQuality", () => read.then(applyYtQualityStep));
   startup("ytShorts", () => Promise.all([
     read.then(loadYtShortsRedirectSetting), globalRulesReady, siteProfileReady
   ]).then(() => startYtShortsRedirect()));
