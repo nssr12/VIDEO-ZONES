@@ -122,6 +122,18 @@ const back = await state();
 console.log(`  بعد كتم المضيف : منزلق ${muted.slider} · مستوى ${muted.volume}%${muted.muted ? " (م)" : ""}`);
 console.log(`  بعد فكّ كتمه   : منزلق ${back.slider} · مستوى ${back.volume}%`);
 
+// ④ **حالة الانحدار نفسها**: كتم بيد المستخدم ثم خطوة لأعلى من المحوّل.
+// عقد الصوت ع1: يُفكّ الكتم **وتُطبَّق خطوة واحدة**، فلا يتسلّق المستوى صامتاً.
+await hostMuteKey();
+const mutedBefore = await state();
+await click(1, "stepUp");
+await sleep(1200);
+const afterUnmute = await state();
+const contract1 = !afterUnmute.muted &&
+  Number(afterUnmute.slider) === Math.min(100, Number(mutedBefore.slider) + 5);
+console.log(`  مكتوم ثم خطوة   : ${mutedBefore.slider}(م) ⇒ ${afterUnmute.slider}${afterUnmute.muted ? "(م)" : ""}  ` +
+  `${contract1 ? "✅ ع1: فُكّ الكتم وخطوة واحدة" : "❌ ع1 مكسور"}`);
+
 // شاهد سالب — الامتناع أثناء الكتابة
 await p.ev(`window.__typing = true`);
 const preTyping = await state();
@@ -139,6 +151,7 @@ console.log(`\n--- الأرقام الثلاثة ---`);
 console.log(`  ① تحرّك المنزلق بصرياً      : ${moved ? "✅ نعم" : "❌ لا"}  (${before.slider} ⇒ ${after.slider})`);
 console.log(`  ② نجت القيمة بعد دورة الكتم : ${survived ? "✅ نعم" : "❌ لا"}  (${after.slider} ⇒ ${back.slider})`);
 console.log(`  ③ إرسالات مقابل عشر نقرات   : **${sends}**`);
+console.log(`  ④ عقد الصوت ع1 (مكتوم + خطوة) : ${contract1 ? "✅ فُكّ الكتم وخطوة واحدة" : "❌ مكسور"}`);
 console.log(`\n--- شاهدا قرار 26 ---`);
 console.log(`  موجب — عشر نقرات تحرّك المنزلق : ${moved ? "✅" : "❌ الرِكاز لا يرى — لا يُبنى على الأرقام"}`);
 console.log(`  سالب — لا إرسال أثناء الكتابة  : ${silentWhileTyping ? "✅ صفر إرسال" : "❌ أرسل " + (postTyping.sends - preTyping.sends)}`);
