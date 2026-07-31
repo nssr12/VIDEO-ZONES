@@ -136,6 +136,17 @@ function isRestrictedUrl(url) {
   return !url || /^(chrome|edge|about|brave|opera|vivaldi|moz-extension|chrome-extension):/i.test(url);
 }
 
+// ⚠️ **نظير `"matches": ["*://*.youtube.com/*"]` في `manifest.json` حرفياً**
+// (البند #38ج). الغرض أن يحقن التفعيل اليدوي **ما يحقنه المانيفست، حيث يحقنه، لا
+// أوسع**: توسيعه هنا يجعل اليدوي يفعل ما لا يفعله التلقائي، فينكسر «صفر تغيّر»
+// من الجهة الأخرى. وإن تغيّر النمط في المانيفست **يُغيَّر هنا معه**، ويحرسه
+// `tools/test-manual-inject.js`.
+function isYouTubeUrl(url) {
+  let host;
+  try { host = new URL(url).hostname.toLowerCase(); } catch { return false; }
+  return host === "youtube.com" || host.endsWith(".youtube.com");
+}
+
 // Reads from storage what the popup already owns: whether the extension is enabled
 // for this host and whether the host is blocked. Both used to be asked of a content
 // script — a frame cannot know them better than storage does, and a sleeping frame
@@ -223,6 +234,27 @@ async function activateOnCurrentPage() {
   }
 
   try {
+    // ── البند #38ج ────────────────────────────────────────────────────────────
+    // **المانيفست يحقن سكربتين، وهذا المسار كان يحقن واحداً.**
+    // `yt_quality_main.js` يعيش في عالم الصفحة (`world: "MAIN"`) لأن واجهة جودة
+    // يوتيوب لا تُرى من العالم المعزول، وهو **المستمع الوحيد** لـ`__vz_setq__`
+    // الذي يرسله `content.js`. فبلا حقنه هنا **تذهب الرسالة إلى لا أحد بصمت**.
+    // **قِيس:** المستمع يردّ خلال **202ms** حيث يوجد، و**لا ردّ إطلاقاً** حيث لا
+    // يوجد — والتمييز بينهما هو ما بُني عليه هذا الإصلاح، لا قيمة الجودة نفسها
+    // (فـABR يوتيوب يغيّرها من تلقائه، ورُصد ذلك).
+    //
+    // **وقبل `content.js` عمداً:** بدء `content.js` ينادي `triggerYtQuality()`
+    // مباشرةً، فبوجود المستمع سلفاً **تُطبَّق الجودة فوراً عند التفعيل** بلا
+    // انتظار `yt-navigate-start` — والحقن المتأخّر يفوته ما سبقه.
+    //
+    // **ومقيَّد بمضيفي يوتيوب وحدهم:** لا يُحقن حيث لا فائدة.
+    if (isYouTubeUrl(url)) {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        files: ["yt_quality_main.js"],
+        world: "MAIN"
+      });
+    }
     await chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
       files: ["content.js"]
