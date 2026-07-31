@@ -192,6 +192,7 @@ const PATHS = [
     name: "محوّل twitch.tv",
     step: TW_STEP, eps: 0.51, mid: 50,
     badgeLevel: (lvl) => lvl,
+    mutesByZeroing: true, latentReadable: false,
     make(init) {
       const w = buildTwitchWorld();
       w.video.volume = init.level / 100;
@@ -201,6 +202,7 @@ const PATHS = [
       const level = () => Math.round((w.video.muted ? vm.runInContext("__latent", w.ctx)() : w.video.volume) * 100);
       return {
         get: () => ({ muted: w.video.muted, level: level() }),
+        raw: () => w.video.volume,   // للكشف عن أي كتابة مباشرة تتسلّل
         up: () => { w.vol("ACTION:VOLUME:+4"); w.drain(); },
         down: () => { w.vol("ACTION:VOLUME:-4"); w.drain(); },
         badge: () => w.readBadge()
@@ -235,7 +237,11 @@ console.log("\n[بنيوي] كل محوّل مسجَّل له مسار في ال
 //   ع3 — الشارة تعرض `video.volume` أي **0**، بينما ما سيسمعه المستخدم عند
 //        الفكّ هو **الكامن 50**. أيّهما «الحالة بعد العملية»؟
 // **فشل هذا التثبيت يعني أن الدلالة حُسمت، فحدّثه ولا تُصلح الاختبار.**
-const KNOWN_OPEN = { "محوّل twitch.tv": ["ع2", "ع3"] };
+// ✅ **لا تثبيتات مفتوحة.** كان هنا تثبيت لـ«ع2 وع3 على تويتش»، ورُفع حين
+// حُسمت الدلالتان بقرار المالك ودخلتا **العقد نفسه** (قرار 27): ع2 صارت تُعلن
+// **«غير منطبق، والسبب»** على مضيف يكتم بتصفير المستوى، وع3 صارت تشترط
+// **العلامة وحدها بلا رقم**. الفجوة مرئية في العقد لا في ملف جانبي.
+const KNOWN_OPEN = {};
 
 // ─────────────────────────────────────────────────── إجراء العقد على كل مسار
 for (const path of PATHS) {
@@ -245,6 +251,10 @@ for (const path of PATHS) {
     if (openHere.includes(r.id)) {
       check(`${r.id} — **مثبَّت مكسوراً اليوم** (${r.detail})`, !r.ok,
         "⚠️ نجح وهو مثبَّت مكسوراً ⇒ العطب أُصلح: احذف التثبيت من KNOWN_OPEN ومن KNOWN-DEFECTS.md");
+      continue;
+    }
+    if (r.na) {
+      check(`${r.id} — ⊘ **غير منطبق**: ${r.reason}`, r.ok === true, r.detail);
       continue;
     }
     check(`${r.id} — ${r.title}`, r.ok, r.detail);

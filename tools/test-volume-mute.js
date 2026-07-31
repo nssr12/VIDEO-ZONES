@@ -158,6 +158,8 @@ function badge({ muted, volume }) {
     vzVolumeBadge: badgeEl,
     vzOverlayVideo: video,
     vzOverlay: { style: { setProperty: (k, v) => setProps.push([k, v]) } },
+    // هذي الاختبارات تصف مسار **لا محوّل**، فالسجلّ يُجيب بلا محوّل — لا بديل مزيّف
+    hostAdapterFor: () => null,
     ensureVideoOverlay() {},
     positionOverlayToVideo() {},
     startOverlayTracking() {},
@@ -196,8 +198,9 @@ console.log("\n[9] الشارة: نصّ لا DOM، وتحترم soundDisplay ا�
   check("واللون من soundDisplay", keys.includes("--vz-volume-color"));
   check("والحجم من soundDisplay", keys.includes("--vz-volume-size"));
   check("ولا إعداد جديد في الشارة", !/settings\./.test(BADGE));
+  // على **الكود** لا على التعليقات: علامة ⚠️ في تعليق تحذيري ليست رمزاً في الشارة.
   check("والعلامة نصّية لا رمز تعبيري (الرمز الملوّن يتجاهل اللون)",
-    !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(BADGE));
+    !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(BADGE.replace(/\/\/.*$/gm, "")));
 }
 
 console.log("\n[10] ما لا يجوز أن يتغيّر مع البند");

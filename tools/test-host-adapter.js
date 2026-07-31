@@ -64,6 +64,7 @@ function makeWorld(host = "example.com", noPlayer = false) {
     __typing: false,
     shouldIgnoreKeyBecauseTyping: () => ctx.__typing,
     KeyboardEvent: class { constructor(type, init) { Object.assign(this, { type }, init); } },
+    Event: class { constructor(type, init) { Object.assign(this, { type }, init); } },
     document: {
       activeElement: focused,
       querySelector: (sel) => (sel === "#movie_player" && !noPlayer ? player : null)
@@ -240,8 +241,10 @@ console.log("\n[8] الحدود البنيوية في النصّ");
     (CONTENT.match(/ADAPTER_VERIFY_MS/g) || []).length === 2);
   check("والسقوط يستدعي **نفس** applyDirect لا نسخة ثانية",
     /applyDirect\(\);/.test(ADAPTER) && (ADAPTER.match(/video\.volume\s*=/g) || []).length === 0);
-  check("والشارة تُنادى في مسارَي النجاح والسقوط",
-    (ADAPTER.match(/showVolumeIndicator\(video\)/g) || []).length === 2);
+  // ثلاثة مواضع الآن: نجاح المحوّل · السقوط · و«skip» (لا يقع شيء، والمستخدم
+  // يستحقّ جواباً صادقاً عن الحالة — عقد الصوت ع3).
+  check("والشارة تُنادى في مسارات النجاح والسقوط و«skip»",
+    (ADAPTER.match(/showVolumeIndicator\(video\)/g) || []).length === 3);
   check("ولا setInterval في الإطار", !/setInterval/.test(ADAPTER));
 }
 
@@ -371,6 +374,55 @@ console.log("\n[14] محوّل تويتش — المحدّد بالبنية لا
     /new Event\("input"/.test(ADP) && /new Event\("change"/.test(ADP));
   check("والمدى يُقرأ من العنصر لا يُفترض", /Number\(el\.min/.test(ADP) && /Number\(el\.max/.test(ADP));
   check("ولا رقم مطلق مكتوب كمستوى", !/value = ["']?(50|60|80|100)["']?/.test(ADP));
+}
+
+console.log("\n[15] حصانة المدى — المحوّل يعمل على مديين مختلفين، ولا رقم مدى محفوظ");
+{
+  // ⚠️ **تناقض مقيس صار حصانة**: قِيس مدى تويتش **0..1** بينما قراءة المالك من
+  // متصفّحه **0..100**، ولم يُحسم أيّهما السياق العام. فبدل أن نُرجّح، يُشغَّل
+  // المحوّل على **الاثنين** ويُشترط نجاحه فيهما — والمدى يُقرأ وقت التنفيذ.
+  const ADP = slice("content.js", "// ── عائلة «منزلق المضيف» (#60)", "function runAction");
+  const code = ADP.replace(/\/\/.*$/gm, "");
+  check("لا رقم مدى محفوظ: لا 100 ولا 1 كافتراض",
+    !/\bmax\s*=\s*(100|1)\b/.test(code) && !/\?\s*(100|1)\s*:/.test(code), "افتراض مدى");
+  check("والمدى يُرفض إن لم يُعلنه العنصر",
+    /el\.min === ""|el\.max === ""/.test(code) && /return null/.test(code));
+
+  for (const [min, max, label] of [["0", "1", "0..1 (المقيس)"], ["0", "100", "0..100 (قراءة المالك)"]]) {
+    const w = makeWorld("twitch.tv");
+    const setVals = [];
+    const mkSlider = (visible) => ({
+      tagName: "INPUT", type: "range", min, max, step: "0.01", id: "", className: "",
+      _v: String((Number(min) + Number(max)) / 2),
+      get value() { return this._v; },
+      set value(x) { this._v = String(x); setVals.push(Number(x)); },
+      getBoundingClientRect: () => (visible ? { width: 80, height: 10 } : { width: 0, height: 0 }),
+      closest: () => null,
+      dispatchEvent: () => true
+    });
+    const vis = mkSlider(true), hid = mkSlider(false);
+    const player = { tagName: "DIV", querySelectorAll: () => [hid, vis], dispatchEvent: () => true };
+    w.ctx.document.querySelector = (sel) => (/player/.test(sel) ? player : null);
+    w.ctx.window = { HTMLInputElement: { prototype: Object.getPrototypeOf(vis) } };
+    // الـ native setter الحقيقي على النموذج الأوّلي للكائن نفسه
+    w.ctx.window.HTMLInputElement = function () {};
+    Object.defineProperty(w.ctx.window.HTMLInputElement.prototype, "value", {
+      configurable: true,
+      set(x) { this._v = String(x); setVals.push(Number(x)); },
+      get() { return this._v; }
+    });
+    const span = Number(max) - Number(min);
+    const mid = Number(vis.value);
+    const v = { muted: false, volume: 0.5 };
+    w.vol("ACTION:VOLUME:+4", v);
+    for (let i = 0; i < 10; i++) { w.advance(60); w.tick(); }
+    const wrote = setVals.filter((x) => Number.isFinite(x)).pop();
+    check(`مدى ${label}: كُتبت قيمة داخل المدى`,
+      wrote !== undefined && wrote >= Number(min) && wrote <= Number(max), wrote);
+    check(`  وبمقدار 5% من المدى (${(span * 0.05).toFixed(3)})`,
+      wrote !== undefined && Math.abs(wrote - (mid + span * 0.05)) < span * 0.01,
+      `كُتب ${wrote} والمتوقَّع ${mid + span * 0.05}`);
+  }
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);

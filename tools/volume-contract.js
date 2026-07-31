@@ -19,6 +19,17 @@
 //   - `badge()`                      آخر نصّ عُرض في الشارة (أو null)
 //   - `step`                         خطوة **المسار** (المباشر 0.04 · يوتيوب 5)
 
+// **ثلاث حالات لكل ثابت، لا اثنتان** (قرار المالك 2026-07-31):
+//   `ok: true`                  ⇒ اجتاز
+//   `ok: false`                 ⇒ مكسور
+//   `na: true, reason: "…"`     ⇒ **غير منطبق على هذا المضيف، والسبب معلن**
+// الحالة الثالثة ليست ثابتاً مكسوراً ولا ناجحاً: **الفجوة تُعلَن في العقد نفسه
+// لا في ملف جانبي**، والمجموعة تبقى خضراء. وكل محوّل قادم **يعلنها أو يجتازها**.
+//
+// **قدرات المضيف** التي تُصرّح بها المسارات:
+//   `mutesByZeroing`  — الكتم عنده **هو المستوى على صفر** (تويتش)، فالمستوى
+//                       الظاهر يضيع والكامن يختفي.
+//   `latentReadable`  — هل نستطيع قراءة المستوى الكامن وهو مكتوم؟
 const INVARIANTS = [
   {
     id: "ع1",
@@ -44,13 +55,35 @@ const INVARIANTS = [
     id: "ع2",
     title: "خطوة لأسفل وهو مكتوم ⇒ **يبقى مكتوماً** والمستوى ينزل فعلاً",
     why: "المستخدم لم يطلب صوتاً، فلا يُفكّ كتمه. والنزول يقع على **نموذج المضيف** " +
-         "لا على قيمة نكتبها نحن ويمحوها هو.",
+         "لا على قيمة نكتبها نحن ويمحوها هو.\n" +
+         "**وعلى مضيف يكتم بتصفير المستوى** (قرار المالك 2026-07-31): لا مستوى " +
+         "ظاهر يُخفَض، **فالعملية لا تُنفَّذ ولا تسقط إلى الكتابة المباشرة**. " +
+         "السقوط هنا **ضرر لا احتياط**: يكتب قيمة يمحوها المضيف فتتحرّك الشارة " +
+         "ولا يتغيّر شيء — وهو عين ما بُني #60 ضدّه. **والفكّ غير المطلوب مرفوض**.",
     run(path) {
       const h = path.make({ muted: true, level: path.mid });
       const before = h.get();
+      const rawBefore = h.raw ? h.raw() : null;
       h.down();
       const after = h.get();
+      const rawAfter = h.raw ? h.raw() : null;
       const stillMuted = after.muted === true;
+
+      if (path.mutesByZeroing) {
+        // المطلوب هنا: **لا شيء يقع**. لا فكّ كتم ولا كتابة مباشرة تتسلّل.
+        const noFallbackWrite = rawBefore === null || rawAfter === null ||
+          Math.abs(rawAfter - rawBefore) < 1e-9;
+        if (!stillMuted) {
+          return { ok: false, detail: `انفكّ الكتم وهو غير مطلوب (${before.level} ⇒ ${after.level})` };
+        }
+        if (!noFallbackWrite) {
+          return { ok: false, detail: `تسلّلت كتابة مباشرة: video.volume ${rawBefore} ⇒ ${rawAfter}` };
+        }
+        return { na: true, ok: true,
+          reason: "المضيف يكتم بتصفير المستوى، فلا مستوى ظاهر يُخفَض — " +
+                  "والعملية لا تُنفَّذ ولا تسقط إلى الكتابة المباشرة (مُتحقَّق منهما)" };
+      }
+
       const dropped = after.level < before.level - path.eps;
       return {
         ok: stillMuted && dropped,
@@ -76,12 +109,24 @@ const INVARIANTS = [
         const st = h.get();
         const txt = h.badge();
         if (txt === null || txt === undefined) { out.push(`${label}: لا شارة`); continue; }
-        const shownLevel = Number(String(txt).replace(/[^0-9.]/g, ""));
+        const raw = String(txt);
+        const markOk = /مكتوم/.test(raw) === st.muted;
+        const hasNumber = /[0-9]/.test(raw);
+        // **الشارة تعرض ما سيسمعه المستخدم عند الفكّ، لا ما يقرأه العنصر وهو
+        // مكتوم** (قرار المالك 2026-07-31). فحيث يكتم المضيف بتصفير المستوى:
+        // الكامن مقروء ⇒ «مكتوم ‹الكامن›» · غير مقروء ⇒ **العلامة وحدها بلا رقم**.
+        // و«مكتوم 0» **ممنوعة**: رقم نعلم أنه كاذب أسوأ من غياب الرقم.
+        if (st.muted && path.mutesByZeroing && !path.latentReadable) {
+          if (!markOk || hasNumber) {
+            out.push(`${label}: «${raw}» — المطلوب العلامة وحدها بلا رقم`);
+          }
+          continue;
+        }
+        const shownLevel = Number(raw.replace(/[^0-9.]/g, ""));
         const expected = path.badgeLevel(st.level);
-        const markOk = /مكتوم/.test(String(txt)) === st.muted;
         const levelOk = Math.abs(shownLevel - expected) <= 1;
         if (!markOk || !levelOk) {
-          out.push(`${label}: «${txt}» بينما الحالة ${st.muted ? "مكتوم " : ""}${expected}`);
+          out.push(`${label}: «${raw}» بينما الحالة ${st.muted ? "مكتوم " : ""}${expected}`);
         }
       }
       return { ok: out.length === 0, detail: out.length ? out.join(" · ") : "الثلاث حالات مطابقة" };

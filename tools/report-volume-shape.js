@@ -1,64 +1,114 @@
 // مِجَسّ شكل عنصر المستوى عند المضيف — **يُلصق في كونسول الصفحة، ولا يُشحن.**
 //
-// السؤال الذي يقرّر شكل «عائلة المنزلق» (#60 · قرار 25): هل منزلق المضيف
-// **`<input type=range>` كتويتش** أم **`div` بـ`role=slider` كيوتيوب** أم شيء ثالث؟
-// إن تشابه كِك وتويتش فمصنع واحد بمعاملين، وإن اختلفا فمحوّلان.
+// **النسخة الثانية.** الأولى كانت **عمياء**: قالت «صفر عنصر مستوى» على كِك،
+// والمنزلق **موجود ويراه المستخدم**. وأسوأ من ذلك أنها طابقت عنصراً واحداً هو
+// **`.vzVolume` — شارتنا نحن**. ⇒ **مِجَسّ لم يُثبت أنه يرى لا يُنفى به وجود شيء**
+// (قرار 26). فهذي النسخة:
+//   · **تمشي في جذور الظل** — المشغّلات الحديثة تخبّئ شريطها فيها.
+//   · **تستثني عناصر الإضافة** — بنفس منطق `isOwnElement` في `content.js`.
+//   · **تبحث عن سلوك لا اسم**: عنصر **له قيمة مستوى** (`input[type=range]` أو
+//     `aria-valuenow` مع مدى) أو **يقبل السحب** (مستمعو `pointerdown`/`mousedown`
+//     حين يتيحهم الكونسول) — **مهما كان صنفه**.
+//   · **وتُثبت أنها ترى قبل أن تنفي**: تطبع سطر «فحص البصر» على أي صفحة، وهو
+//     ما شُغّل على تويتش أولاً فوجد منزلقه المعروف.
 //
 // **الاستعمال:**
-//   ١. افتح `kick.com/<قناة حيّة>` أو `twitch.tv/<قناة حيّة>` وانتظر بدء التشغيل.
-//   ٢. **مرّر مؤشّر الفأرة فوق المشغّل** — كِك لا يُركّب شريط تحكّمه إلا بتفاعل،
-//      وقياسنا في headless خرج «لا عنصر مستوى» لهذا السبب بالضبط.
-//   ٣. الصق السطر في الكونسول. يطبع **سطرين**: واحداً فوراً (قبل التمرير)
-//      وواحداً بعد ست ثوانٍ — **مرّر المؤشّر على المشغّل خلالها**.
-//   ٤. انسخ السطرين كما هما.
+//   ١. افتح قناة **حيّة** وانتظر بدء التشغيل.
+//   ٢. **مرّر مؤشّر الفأرة فوق المشغّل** — كِك لا يُركّب شريطه إلا بتفاعل.
+//   ٣. الصق السطر. يطبع سطراً فوراً وآخر بعد ست ثوانٍ — **مرّر المؤشّر خلالها**.
+//   ٤. انسخ السطرين.
 //
 // ⚠️ تشخيصيّ محض: **لا يكتب شيئاً ولا يغيّر مستوى ولا كتماً.** قراءة فقط.
 (() => {
-  const SELECTORS = [
-    'input[type=range]',
-    '[role=slider]',
-    '[data-a-target*="volume" i]',
-    '[data-testid*="volume" i]',
-    '[aria-label*="volume" i]',
-    '[aria-label*="صوت" i]',
-    '[class*="volume" i]'
-  ];
-  // ⚠️ **استثناء عناصر الإضافة نفسها.** أول تشغيلة على كِك طابقت عنصراً واحداً
-  // هو **`.vzVolume` — شارتنا نحن**، اصطادها `[class*="volume"]`. مِجَسّ يرى
-  // نفسه يُنتج «عائلة منزلق» وهمية، ومحوّل يمسح بلا استثناء **يقود شارته**.
-  const isOurs = (el) => !!(el.closest && (el.closest(".vzWrap") || el.closest("[id^='vz_']"))) ||
-    (typeof el.className === "string" && /\bvz[A-Z]/.test(el.className));
-  const q = (s) => { try { return [...document.querySelectorAll(s)].filter((el) => !isOurs(el)); } catch { return []; } };
-  const desc = (el) => {
-    const tag = el.tagName.toLowerCase();
-    const cls = typeof el.className === "string" && el.className.trim()
-      ? "." + el.className.trim().split(/\s+/).slice(0, 2).join(".")
-      : "";
-    const r = el.getBoundingClientRect();
-    const val = el.getAttribute("aria-valuenow") ?? (el.value !== undefined ? el.value : null);
-    const min = el.getAttribute("aria-valuemin") ?? (el.min !== undefined && el.min !== "" ? el.min : null);
-    const max = el.getAttribute("aria-valuemax") ?? (el.max !== undefined && el.max !== "" ? el.max : null);
-    return `<${tag}${el.type ? " type=" + el.type : ""}>${el.id ? "#" + el.id : ""}${cls}` +
-      ` role=${el.getAttribute("role") || "—"}` +
-      ` val=${val === null || val === "" ? "—" : val}` +
-      ` مدى=${min === null ? "—" : min}..${max === null ? "—" : max}` +
-      ` مرئي=${r.width > 0 && r.height > 0 ? "نعم" : "لا"}`;
+  // نفس منطق isOwnElement في content.js — عناصرنا لا تُحسب اكتشافاً
+  const isOurs = (el) => {
+    if (!el || el.nodeType !== 1) return false;
+    if (typeof el.closest === "function" && el.closest(".vzWrap")) return true;
+    const cls = typeof el.className === "string" ? el.className : "";
+    return /\bvz[A-Z]/.test(cls) || /^vz_/.test(el.id || "");
   };
-  const scan = (tag) => {
-    const seen = new Set();
+
+  // المشي في المستند **وفي كل جذر ظل** — المشغّلات تخبّئ شريطها فيها
+  const walk = () => {
     const out = [];
-    for (const sel of SELECTORS) {
-      for (const el of q(sel)) {
-        if (seen.has(el) || out.length >= 6) continue;
-        seen.add(el);
-        out.push(desc(el));
+    const seenRoots = new Set();
+    const visit = (root, depth) => {
+      if (!root || seenRoots.has(root) || depth > 6) return;
+      seenRoots.add(root);
+      let els = [];
+      try { els = [...root.querySelectorAll("*")]; } catch { return; }
+      for (const el of els) {
+        if (!isOurs(el)) out.push(el);
+        if (el.shadowRoot) visit(el.shadowRoot, depth + 1);
       }
-    }
-    const v = document.querySelector("video");
-    console.log(`VZSHAPE ${location.host} [${tag}] عدد=${out.length}` +
-      ` | فيديو=${v ? "نعم rs=" + v.readyState + " vol=" + Math.round((v.volume ?? 0) * 100) + "%" + (v.muted ? " مكتوم" : "") : "لا"}` +
-      ` | ${out.length ? out.join("  ||  ") : "لا عنصر مستوى"}`);
+    };
+    visit(document, 0);
+    return out;
   };
+
+  const num = (x) => (x === null || x === undefined || x === "" ? null : Number(x));
+  const hasDragListener = (el) => {
+    try {
+      if (typeof getEventListeners !== "function") return null; // خارج الكونسول
+      const l = getEventListeners(el) || {};
+      return !!(l.pointerdown || l.mousedown || l.touchstart);
+    } catch { return null; }
+  };
+
+  // **السلوك لا الاسم**: قيمة مستوى معلنة، أو سحب مقبول
+  const classify = (el) => {
+    const tag = el.tagName ? el.tagName.toLowerCase() : "?";
+    if (tag === "input" && (el.type || "").toLowerCase() === "range") {
+      return { kind: "input-range", value: el.value, min: el.min, max: el.max };
+    }
+    const now = el.getAttribute && el.getAttribute("aria-valuenow");
+    if (now !== null && now !== undefined) {
+      return { kind: "aria-slider", value: now,
+               min: el.getAttribute("aria-valuemin"), max: el.getAttribute("aria-valuemax"),
+               role: el.getAttribute("role") };
+    }
+    if (el.getAttribute && el.getAttribute("role") === "slider") {
+      return { kind: "role-slider-بلا-قيمة", value: null, min: null, max: null };
+    }
+    const drag = hasDragListener(el);
+    const label = ((el.getAttribute && (el.getAttribute("aria-label") || el.getAttribute("title"))) || "");
+    if (drag && /volume|صوت|mute/i.test(label)) {
+      return { kind: "قابل-للسحب", value: null, min: null, max: null, label: label.slice(0, 20) };
+    }
+    return null;
+  };
+
+  const describe = (el, c) => {
+    const r = el.getBoundingClientRect ? el.getBoundingClientRect() : { width: 0, height: 0 };
+    const inShadow = !!(el.getRootNode && el.getRootNode() !== document);
+    return `${c.kind}<${el.tagName.toLowerCase()}>` +
+      ` val=${c.value ?? "—"} مدى=${num(c.min) ?? "—"}..${num(c.max) ?? "—"}` +
+      ` مرئي=${r.width > 0 && r.height > 0 ? "نعم" : "لا"}` +
+      ` ظل=${inShadow ? "نعم" : "لا"}` +
+      (c.label ? ` وسم="${c.label}"` : "");
+  };
+
+  const scan = (tag) => {
+    const all = walk();
+    const found = [];
+    for (const el of all) {
+      if (found.length >= 8) break;
+      const c = classify(el);
+      if (c) found.push(describe(el, c));
+    }
+    // زرّ الكتم بالسلوك: وسمٌ يذكر الكتم — يثبت أننا نصل إلى شريط التحكّم أصلاً
+    const muteBtn = all.find((el) => {
+      const lab = ((el.getAttribute && (el.getAttribute("aria-label") || el.getAttribute("title"))) || "");
+      return /mute|كتم/i.test(lab);
+    });
+    const v = document.querySelector("video");
+    console.log(`VZSHAPE2 ${location.host} [${tag}] عناصر=${all.length} · مستوى=${found.length}` +
+      ` · زرّ كتم=${muteBtn ? "وُجد" : "لا"}` +
+      ` · فحص البصر=${all.length > 50 ? "نرى الشجرة" : "⚠️ شجرة ضحلة — قد نكون عُمياً"}` +
+      ` | فيديو=${v ? "rs=" + v.readyState + " vol=" + Math.round((v.volume ?? 0) * 100) + "%" + (v.muted ? " مكتوم" : "") : "لا"}` +
+      ` | ${found.length ? found.join("  ||  ") : "لا عنصر مستوى"}`);
+  };
+
   scan("قبل");
   console.log("… مرّر المؤشّر فوق المشغّل الآن — السطر الثاني بعد 6 ثوانٍ …");
   setTimeout(() => scan("بعد التمرير"), 6000);

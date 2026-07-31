@@ -1976,8 +1976,14 @@ function showVolumeIndicator(video) {
   // own. Side effect worth having: "0" on the badge now means one thing only.
   // A text mark, not an emoji: a colour emoji ignores --vz-volume-color, and the
   // badge has to keep honouring the user's soundDisplay colour and size.
+  // ⚠️ **الشارة تعرض ما سيسمعه المستخدم عند الفكّ، لا ما يقرأه العنصر وهو مكتوم**
+  // (عقد الصوت ع3، قرار المالك 2026-07-31). فحيث يكتم المضيف بتصفير المستوى
+  // ويخفي الكامن — تويتش — تُعرض **العلامة وحدها بلا رقم**.
+  // **«مكتوم 0» ممنوعة: رقم نعلم أنه كاذب أسوأ من غياب الرقم.**
   const percent = Math.round((video.volume ?? 1) * 100);
-  vzVolumeBadge.textContent = video.muted ? `مكتوم ${percent}` : String(percent);
+  vzVolumeBadge.textContent = video.muted
+    ? (hostAdapterFor()?.hidesLevelWhenMuted ? "مكتوم" : `مكتوم ${percent}`)
+    : String(percent);
   vzOverlay?.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
   vzOverlay?.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
   vzVolumeBadge.classList.remove("vzHidden");
@@ -2403,7 +2409,17 @@ function runHostAdapter(video, op, applyDirect) {
   if (!adapter || typeof adapter[op] !== "function") return false;
   const before = audioStateOf(video);
   try {
-    if (adapter[op](video) === false) return false;
+    const res = adapter[op](video);
+    if (res === false) return false;
+    // ⚠️ **«skip» = تولّاها المحوّل بأن قرّر ألا يقع شيء** (عقد الصوت ع2 على
+    // مضيف يكتم بتصفير المستوى). لا تحقّق ولا سقوط: **السقوط هنا ضرر لا احتياط**
+    // — يكتب قيمة يمحوها المضيف فتتحرّك الشارة ولا يتغيّر شيء.
+    if (res === "skip") {
+      // وحتى حين لا يقع شيء **تُعرض الشارة**: المستخدم فعل، فيستحقّ جواباً
+      // صادقاً عن الحالة (عقد الصوت ع3). صمتٌ تامّ يبدو تعطّلاً.
+      showVolumeIndicator(video);
+      return true;
+    }
   } catch (err) {
     console.debug(`[VIDEO-ZONES] محوّل ${op} رمى، والمسار المباشر يتولّاه:`, err);
     return false;
@@ -2541,7 +2557,8 @@ function makeKeyStepAdapter({ playerSelector, upKey, downKey, unmuteKey, minSend
 // فالبحث بـ`input[type=range]` **داخل حاوية المشغّل**، والمرئي منهما هو المستهدَف
 // بقاعدة صريحة — لا «أول ما يُطابِق». `tools/test-host-adapter.js` يُفشل البناء
 // إن تسلّل UUID أو بصمة صنف إلى الكود.
-function makeSliderAdapter({ playerSelector, stepFraction = 0.05, unmuteKey }) {
+function makeSliderAdapter({ playerSelector, stepFraction = 0.05, unmuteKey,
+                             mutesByZeroing = false, latentReadable = false }) {
   let queue = [], timer = null, lastSentAt = 0;
 
   // المنزلق المستهدَف: داخل المشغّل · **ليس من عناصرنا** · والمرئي يفوز.
@@ -2559,21 +2576,28 @@ function makeSliderAdapter({ playerSelector, stepFraction = 0.05, unmuteKey }) {
     }) || all[0];
   };
 
+  // ⚠️ **لا رقم مدى محفوظ في الكود إطلاقاً — لا 100 ولا 1.** قِيس مدى تويتش
+  // **0..1** بينما قراءة المالك من متصفّحه **0..100**، والتناقض لم يُحسم
+  // (ملاحظة مفتوحة في `AUDIT.md`). فالمدى **يُقرأ من العنصر وقت التنفيذ**،
+  // ومنزلق بلا مدى معلن **يُرفض** ولا يُفترض له مدى.
   const bounds = (el) => {
-    const min = Number(el.min === "" ? 0 : el.min);
-    const max = Number(el.max === "" ? 1 : el.max);
-    return { min, max, span: (max - min) || 1 };
+    if (el.min === "" || el.min == null || el.max === "" || el.max == null) return null;
+    const min = Number(el.min), max = Number(el.max);
+    if (!isFinite(min) || !isFinite(max) || max === min) return null;
+    return { min, max, span: max - min };
   };
 
   // ⚠️ الكسر لا الرقم المطلق: مدى تويتش **0..1** لا 0..100، ورقمٌ مطلق يفترض
   // مدىً لم يُقس. قِيس فسقط شاهد موجب حين كُتب 60 على مدى 0..1 فقُصّ إلى 1.
   const readFraction = (el) => {
-    const { min, span } = bounds(el);
-    return (Number(el.value) - min) / span;
+    const b = bounds(el);
+    return b ? (Number(el.value) - b.min) / b.span : null;
   };
 
   const applyFraction = (el, frac) => {
-    const { min, max, span } = bounds(el);
+    const b = bounds(el);
+    if (!b) return false;
+    const { min, max, span } = b;
     const target = Math.max(min, Math.min(max, min + span * frac));
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
     if (!setter) return false;
@@ -2611,7 +2635,8 @@ function makeSliderAdapter({ playerSelector, stepFraction = 0.05, unmuteKey }) {
           } finally { adapterSending = false; }
         }
       } else {
-        applyFraction(el, readFraction(el) + (op === "up" ? stepFraction : -stepFraction));
+        const cur = readFraction(el);
+        if (cur !== null) applyFraction(el, cur + (op === "up" ? stepFraction : -stepFraction));
       }
     }
     if (queue.length) schedule(video);
@@ -2620,10 +2645,11 @@ function makeSliderAdapter({ playerSelector, stepFraction = 0.05, unmuteKey }) {
   const step = (video, dir) => {
     if (shouldIgnoreKeyBecauseTyping()) return false;
     if (!sliderFor(video)) return false;
-    // ⚠️ **الكتم عند هذا المضيف هو المنزلق على صفر**، فالخفض عليه لا معنى له:
-    // المستوى في قاعه أصلاً. نعتذر عن العملية فيتولّاها المسار المباشر — سلوك
-    // اليوم — بدل أن نفكّ كتماً لم يطلبه المستخدم (عقد الصوت ع2).
-    if (dir === "down" && video.muted) return false;
+    // ⚠️ **عقد الصوت ع2 على مضيف يكتم بتصفير المستوى** (قرار المالك 2026-07-31):
+    // لا مستوى ظاهر يُخفَض، **فالعملية لا تُنفَّذ ولا تسقط إلى الكتابة المباشرة**.
+    // السقوط ضرر لا احتياط: يكتب قيمة يمحوها المضيف فتتحرّك الشارة ولا يتغيّر
+    // شيء. **والفكّ غير المطلوب مرفوض**: المستخدم قال «أخفض» لا «أسمعني».
+    if (dir === "down" && video.muted && mutesByZeroing) return "skip";
     // ورفعٌ على مكتوم: **يفكّه المضيف بنفسه عند الضبط** (مقيس)، ومع ذلك نُقدّم
     // فكّاً صريحاً كي يُستعاد **المستوى الكامن** بدل أن نبني الخطوة على صفر.
     if (dir === "up" && video.muted && unmuteKey) {
@@ -2634,7 +2660,13 @@ function makeSliderAdapter({ playerSelector, stepFraction = 0.05, unmuteKey }) {
     return true;
   };
 
-  return { stepUp: (video) => step(video, "up"), stepDown: (video) => step(video, "down") };
+  // القدرات مُعلَنة على المحوّل: العقد يقرأها، والشارة تقرأ `hidesLevelWhenMuted`.
+  return {
+    stepUp: (video) => step(video, "up"),
+    stepDown: (video) => step(video, "down"),
+    mutesByZeroing,
+    hidesLevelWhenMuted: mutesByZeroing && !latentReadable
+  };
 }
 
 // ⚠️ **الخطوة الفعلية خطوة المضيف لا خطوتنا:** سهم يوتيوب يحرّك منزلقه **±5%**
@@ -2647,7 +2679,9 @@ function makeSliderAdapter({ playerSelector, stepFraction = 0.05, unmuteKey }) {
 hostAdapters.set("twitch.tv", makeSliderAdapter({
   playerSelector: "[data-a-player-state], .video-player",
   stepFraction: 0.05,
-  unmuteKey: "m"
+  unmuteKey: "m",
+  mutesByZeroing: true,    // قِيس: زرّ الكتم يضع المنزلق على 0 ويرفع muted معاً
+  latentReadable: false    // والمستوى الكامن يختفي — لا نقرؤه من أي عنصر
 }));
 
 hostAdapters.set("youtube.com", makeKeyStepAdapter({
