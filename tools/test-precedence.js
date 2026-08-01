@@ -23,7 +23,9 @@ const SRC = "content.js";
 const PARTS = [
   slice(SRC, "function lookupRemap", "function remappingEnabled"),
   slice(SRC, "function normalizeMappedActions", 'window.addEventListener("mousemove"'),
-  slice(SRC, "function normalizeMouseEvent", "function getVideoUnderPointerStrict"),
+  // ‏#30: كان المُنتهى `getVideoUnderPointerStrict` — حُذف بتوحيد التعريفين،
+  // فانتقل المرساة إلى الدالّة التالية. **مرساةٌ باسمٍ محذوف تكسر الاختبار لا الكود.**
+  slice(SRC, "function normalizeMouseEvent", "function shouldLetNativeLinkHandlingRun"),
   // one slice: ZONE_TRIGGER_BY_BUTTON + zoneClickBinding + zoneKeyBinding +
   // handleZoneClick + suppressMiddleClickDefault, always tested together
   slice(SRC, "const ZONE_TRIGGER_BY_BUTTON", 'window.addEventListener("click", handleZoneClick'),
@@ -39,7 +41,8 @@ function makeWorld({ zone = 5, zoneClick = null, zoneKey = null, site = null, gl
     // --- stubs for everything outside the precedence logic ---
     zonesActive: () => zonesOn,
     getZoneAtEvent: () => (video ? { video, zone } : null),
-    getVideoUnderPointerStrict: () => video,
+    // ‏#30: توحّد التعريفان في `getVideoUnderPointer` — والاسم الثاني حُذف
+    getVideoUnderPointer: () => video,
     getZoneNumber: () => (video ? zone : null),
     zoneRectForVideo: () => ({ left: 0, top: 0, width: 640, height: 360 }),
     shouldLetNativeLinkHandlingRun: () => false,

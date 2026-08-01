@@ -2443,11 +2443,6 @@ function normalizeMouseEvent(e) {
   const mapBtns = ["Mouse1", "Mouse2", "Mouse3", "Mouse4", "Mouse5"];
   return mapBtns[e.button] || `Mouse${e.button + 1}`;
 }
-function getVideoUnderPointerStrict(e) {
-  if (typeof e.clientX !== "number" || typeof e.clientY !== "number") return null;
-  const v = findVideoAtPoint(e.clientX, e.clientY);
-  return v || null;
-}
 
 function shouldLetNativeLinkHandlingRun(e, video) {
   const target = e.target;
@@ -3429,7 +3424,7 @@ function handleMouse(e) {
     if (t - lastMouse2At < 350) return; // يمنع double-trigger
     lastMouse2At = t;
 
-    const v = getVideoUnderPointerStrict(e);
+    const v = getVideoUnderPointer(e);
     if (!v) return; // خارج الفيديو = لا تسوي شي
     if (shouldLetNativeLinkHandlingRun(e, v)) return;
     e.__videoUnderPointer = v;
@@ -3439,7 +3434,7 @@ function handleMouse(e) {
   if (sig === "Mouse3") {
     if (!(e.type === "mousedown" || e.type === "contextmenu")) return;
 
-    const v = getVideoUnderPointerStrict(e);
+    const v = getVideoUnderPointer(e);
     if (!v) return;
     if (shouldLetNativeLinkHandlingRun(e, v)) return;
     e.__videoUnderPointer = v;
