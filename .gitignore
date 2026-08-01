@@ -30,3 +30,8 @@ build/
 
 # Audit report: AUDIT.md is tracked, the rendered HTML view is generated from it
 AUDIT.html
+
+# Measurement raw output: a bench writes its raw reading next to itself so the
+# report can be re-printed (--from-raw) without re-measuring. Derived data is
+# never stored in the repo — it is kept during the session and dropped after.
+tools/.*-raw.json
