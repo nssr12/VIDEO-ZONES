@@ -1326,7 +1326,12 @@ const CLEAN_PLAYER_ITEMS = {
   autoplay_toggle:         ["button.ytp-button[data-tooltip-target-id='ytp-autonav-toggle-button']", "button.ytp-autonav-toggle", ".ytp-autonav-toggle-button"],
   subtitles_button:        [".ytp-subtitles-button"],
   settings_button:         [".ytp-settings-button"],
-  multicam_button:         [".ytp-multicam-button"],
+  // حُذف `multicam_button` في #66 (2026-08-02): `.ytp-multicam-button` **لا أثر
+  // لاسمه في أي ملف يشحنه يوتيوب** — 27 ملفاً · 19MB · بحث نصّيّ
+  // (`tools/bench-clean-player.mjs`). وكان **محدِّده الوحيد**، فالمربّع لم يكن
+  // يستطيع أن يفعل شيئاً. **ومفتاح مخزَّن عند مستخدم يبقى يتيماً بلا هجرة**
+  // بقرار المالك: الحلقة في `applyCleanPlayerCSS` تمرّ على السجلّ لا على المخزَّن،
+  // فما ليس في السجلّ لا يُقرأ — **ولا تُكتب في تخزين المستخدم لإزالة ما لا يضرّه**.
   miniplayer_button:       [".ytp-miniplayer-button"],
   pip_button:              [".ytp-pip-button"],
   size_button:             [".ytp-size-button"],

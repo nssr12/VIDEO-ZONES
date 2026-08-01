@@ -48,7 +48,7 @@ const CLEAN_PLAYER_OPTIONS = [
   { key: "autoplay_toggle",         label: "Auto-play toggle" },
   { key: "subtitles_button",        label: "Subtitles button" },
   { key: "settings_button",         label: "Settings button" },
-  { key: "multicam_button",         label: "Multicam button" },
+  // «Multicam button» حُذف في #66 — انظر التعليق في CLEAN_PLAYER_ITEMS بـcontent.js
   { key: "miniplayer_button",       label: "Miniplayer button" },
   { key: "pip_button",              label: "PiP button" },
   { key: "size_button",             label: "Default view / cinema mode" },
