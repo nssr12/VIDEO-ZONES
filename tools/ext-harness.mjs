@@ -160,14 +160,14 @@ const PAGE = `<!doctype html><meta charset="utf-8"><body style="margin:0;backgro
 <video id="v" width="640" height="360" src="/tone.wav" loop muted playsinline
        style="display:block"></video></body>`;
 
-export async function serveTestPage(port) {
+export async function serveTestPage(port, html = PAGE) {
   const srv = http.createServer((q, res) => {
     if (q.url.startsWith("/tone.wav")) {
       res.writeHead(200, { "content-type": "audio/wav", "content-length": WAV.length });
       return res.end(WAV);
     }
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(PAGE);
+    res.end(html);
   });
   await new Promise((r) => srv.listen(port, "127.0.0.1", r));
   return { srv, url: `http://127.0.0.1:${port}/` };
