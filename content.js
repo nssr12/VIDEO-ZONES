@@ -1503,8 +1503,8 @@ function zonesActive() {
 // نقرة فوق فيديو **قبل أن يُعرف هل للمربّع ربط أصلاً**، فيُنشأ DOM لا يُعرض.
 // صار البناء في **مسارَي العرض** بعد تأكّد الربط — وهو النمط الذي يتبعه مسار
 // المفاتيح سلفاً (`zoneKeyBinding` ثم `ensureVideoOverlay`)، فتوحّدت الثلاثة.
-function getZoneAtEvent(e) {
-  const video = getVideoUnderPointer(e);
+function getZoneAtEvent(e, blockScrollable) {
+  const video = getVideoUnderPointer(e, blockScrollable);
   if (!video) return null;
   const rect = zoneRectForVideo(video);
   const zone = getZoneNumber(rect, e.clientX, e.clientY);
@@ -1521,14 +1521,50 @@ function getZoneAtEvent(e) {
 // can never turn a wheel event into a tree walk. See tools/bench-shadow.js.
 const SHADOW_MAX_DEPTH = 5;
 
-// The original light-DOM scan, unchanged, factored out so the shadow walk reuses it.
-function videoFromStack(stack, x, y) {
+// ── البند #65: الطبقة التي فوق الفيديو تملك عجلتها ──────────────────────────
+// كنا نسأل «هل تحت المؤشّر فيديو؟» ولا نسأل **«هل فوق الفيديو شيءٌ يملك هذا
+// الحدث؟»** — فكانت كل قائمة مرسومة على الفيديو تصير جزءاً من منطقتنا: العجلة
+// تُنفّذ أمر المربّع **وتمنع تمرير القائمة**، فلا صعود ولا نزول بين خيارات
+// قائمة الجودة (`AUDIT.md` القسم التاسع).
+//
+// **الحكم بنيويّ من الأنماط المحسوبة، ولا قائمة محدِّدات ولا استثناء لموقع:**
+// `.ytp-panel` و`Layout-sc-…` أسماء تتغيّر، والقياس أثبت أن المميِّز ليس مكان
+// القائمة في الشجرة — قائمة تويتش **خارج** حاوية المشغّل وتقع في الفخّ نفسه —
+// بل **أنها مرسومة فوق مستطيل الفيديو**.
+//
+// **و«قابل للتمرير» هو تعريف المتصفّح نفسه** (`overflow-y: auto|scroll` مع
+// `scrollHeight > clientHeight`) لا عتبة مخترَعة: هو ما يقرّر به المتصفّح تسليم
+// العجلة، فمطابقته أدقّ من أي هامش نضيفه (قرار 31).
+const BLOCKED_BY_LAYER = { blockedByLayer: true };
+
+function isScrollableLayer(el) {
+  if (!el || el.nodeType !== 1) return false;
+  if (isOwnElement(el)) return false;   // شبكتنا ليست طبقة مضيف (قاعدة isOwnElement)
+  let style;
+  try { style = getComputedStyle(el); } catch { return false; }
+  if (!style) return false;
+  const oy = style.overflowY;
+  if (oy !== "auto" && oy !== "scroll") return false;
+  return el.scrollHeight > el.clientHeight;
+}
+
+// The original light-DOM scan, factored out so the shadow walk reuses it — and
+// **الحكم واحد للمسارين لأن `videoFromShadowStack` تستدعي هذه نفسها** لكل مستوى
+// ظلّ، فلا نسخة ثانية تتباعد (درس #60 و#38ج: العلاج النصفيّ يعود من باب جديد).
+//
+// ⇒ عنصر · أو `null` (لا فيديو) · أو `BLOCKED_BY_LAYER` (فوقه طبقة تملك الحدث).
+function videoFromStack(stack, x, y, blockScrollable) {
   for (const el of stack) {
     if (!el) continue;
     if (el.tagName === "VIDEO") return el;
 
     const closestVideo = el.closest?.("video");
     if (closestVideo) return closestVideo;
+
+    // ⚠️ الترتيب مقصود: `elementsFromPoint` تُرجع الأعلى طلاءً أولاً والأسلاف
+    // بعد أبنائها، فما يسبق الفيديو هنا **مرسومٌ فوقه** لا حاوٍ له. ولذلك لا
+    // يُحجب مشغّلٌ بحاوية صفحة قابلة للتمرير: الفيديو يسبقها في الكومة.
+    if (blockScrollable && isScrollableLayer(el)) return BLOCKED_BY_LAYER;
 
     const descendantVideos = el.querySelectorAll?.("video");
     if (!descendantVideos?.length) continue;
@@ -1550,7 +1586,8 @@ function videoFromStack(stack, x, y) {
 }
 
 // Descends host → shadowRoot.elementsFromPoint, breadth-first, depth-capped.
-function videoFromShadowStack(stack, x, y) {
+// يمرّر `blockScrollable` كما هي: **الحكم نفسه لا نسخة منه** (#65).
+function videoFromShadowStack(stack, x, y, blockScrollable) {
   // Allocate only if a shadow host is actually present — pages without Web
   // Components (the overwhelming majority) then pay one cheap scan and nothing else.
   let hosts = null;
@@ -1564,8 +1601,8 @@ function videoFromShadowStack(stack, x, y) {
     for (const host of hosts) {
       const inner = host.shadowRoot.elementsFromPoint?.(x, y);
       if (!inner?.length) continue;
-      const hit = videoFromStack(inner, x, y);
-      if (hit) return hit;
+      const hit = videoFromStack(inner, x, y, blockScrollable);
+      if (hit) return hit;   // ومنه BLOCKED_BY_LAYER: طبقةٌ داخل الظلّ تملك الحدث
       for (const el of inner) if (el?.shadowRoot) next.push(el);
     }
     hosts = next;
@@ -1573,21 +1610,25 @@ function videoFromShadowStack(stack, x, y) {
   return null;
 }
 
-function findVideoAtPoint(x, y) {
+// `blockScrollable` يُمرَّر من مسار العجلة وحده (#65): «قابل للتمرير» دلالةٌ
+// خاصّة بالعجلة، ولا معنى لها في نقرة ولا في مفتاح — فلا يُغيَّر مسارٌ لم يُقس.
+function findVideoAtPoint(x, y, blockScrollable) {
   if (typeof x !== "number" || typeof y !== "number") return null;
 
   const stack = typeof document.elementsFromPoint === "function"
     ? document.elementsFromPoint(x, y)
     : [document.elementFromPoint(x, y)].filter(Boolean);
 
-  const direct = videoFromStack(stack, x, y);
+  const direct = videoFromStack(stack, x, y, blockScrollable);
+  if (direct === BLOCKED_BY_LAYER) return null;   // الحدث ليس لنا — ولا يُبحث في الظلّ
   if (direct) return direct;          // المسار الشائع: يخرج قبل أي عمل إضافي
-  return videoFromShadowStack(stack, x, y);
+  const shadow = videoFromShadowStack(stack, x, y, blockScrollable);
+  return shadow === BLOCKED_BY_LAYER ? null : shadow;
 }
 
-function getVideoUnderPointer(e) {
+function getVideoUnderPointer(e, blockScrollable) {
   if (typeof e.clientX === "number" && typeof e.clientY === "number") {
-    const v = findVideoAtPoint(e.clientX, e.clientY);
+    const v = findVideoAtPoint(e.clientX, e.clientY, blockScrollable);
     if (v) return v;
   }
   return null;
@@ -1626,7 +1667,9 @@ window.addEventListener("wheel", (e) => {
   wakeIfVideoPresent(); // إطار نائم قد يكون حصل على فيديو لا يُطلق أحداث وسائط
   if (!zonesActive()) return;
 
-  const hit = getZoneAtEvent(e);
+  // #65: طبقة قابلة للتمرير فوق الفيديو تملك عجلتها — ولا تُفحص إلا حين يسبق
+  // الفيديوَ شيءٌ في الكومة، فالمسار الشائع (المؤشّر على الفيديو) صفر فحص.
+  const hit = getZoneAtEvent(e, true);
   if (!hit) return;
 
   const entry = zoneSettings?.wheel?.map?.[String(hit.zone)];

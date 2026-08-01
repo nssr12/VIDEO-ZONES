@@ -38,7 +38,8 @@ console.log("\n=== #38أ+ب — نظافة الـoverlay ===\n");
 // ── [١] (أ) البناء بعد تأكّد الربط ─────────────────────────────────────────
 console.log("[١] (أ) الـoverlay يُبنى بعد تأكّد الربط لا قبله");
 {
-  const g = body("function getZoneAtEvent(e)");
+  // بلا قوس إغلاق: التوقيع صار `(e, blockScrollable)` في #65 (قرار 33).
+  const g = body("function getZoneAtEvent(e");
   check("[١] `getZoneAtEvent` لا تبني الـoverlay", !!g && !g.includes("ensureVideoOverlay("), g);
   check("[١] وما زالت تُرجع {video, zone}", !!g && /return zone \? \{ video, zone \} : null;/.test(g));
 

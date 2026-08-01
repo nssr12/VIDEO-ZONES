@@ -34,7 +34,9 @@ console.log("[١] الحارس النصّي");
   const defs = (SRC.match(/function getVideoUnderPointer\(/g) || []).length;
   check("[١] وتعريف واحد فقط لـ`getVideoUnderPointer`", defs === 1, `العدد ${defs}`);
   // يستهلكه الطريقان: مسار المربّعات ومسار الفأرة
-  const calls = (SRC.match(/getVideoUnderPointer\(e\)/g) || []).length;
+  // المرساة بلا قوس إغلاق: التوقيع صار `(e, blockScrollable)` في #65، ومرساةٌ
+  // تشترط `(e)` تكسر اختباراً تغطيتُه سليمة (قرار 33).
+  const calls = (SRC.match(/getVideoUnderPointer\(e[,)]/g) || []).length;
   check("[١] ويستهلكه أكثر من مسار", calls >= 3, `مواضع النداء ${calls}`);
 }
 
@@ -42,7 +44,7 @@ console.log("[١] الحارس النصّي");
 console.log("\n[٢] صفر تغيّر سلوكي — الصياغتان على مصفوفة مدخلات واحدة");
 {
   // الصياغة الباقية، مقتطعة من `content.js` نفسه
-  const kept = SRC.slice(SRC.indexOf("function getVideoUnderPointer(e)"));
+  const kept = SRC.slice(SRC.indexOf("function getVideoUnderPointer(e"));
   const keptBody = kept.slice(0, kept.indexOf("\n}") + 2);
   // ⚠️ **الصياغة المحذوفة مجمَّدة هنا نصّاً** — مرجعُ «ما كان» يُقاس عليه، ولا
   // تُحدَّث مع الكود: قيمتها كلّها في أنها لا تتغيّر.

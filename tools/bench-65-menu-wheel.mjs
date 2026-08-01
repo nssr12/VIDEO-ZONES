@@ -240,6 +240,110 @@ async function runHost({ withExtension, url, port, open, menu, player }) {
   }
 }
 
+// ── طرفا القائمة: ماذا يفعل المضيف **بلا إضافة** عند الحافة؟ ────────────────
+// السؤال ليس تنظيمياً: القيد 2 يقترح أن نترك الحدث لنا عند الطرف. فإن كان
+// المضيف يُطبق القائمة أو يُمرّر الصفحة خلفها عند الحافة، فتركُ الحدث لنا يغيّر
+// سلوكاً قائماً — والقرار عندها للمالك لا للتنفيذ (قرار 16).
+const EDGE_SET = (which) => `(() => {
+  const t = window.__vz65;
+  if (!t) return { ok: false, why: "لا عنصر مقيس" };
+  t.scrollTop = ${which === "top" ? "0" : "t.scrollHeight"};
+  const menu = t.getBoundingClientRect();
+  return { ok: true, scrollTop: t.scrollTop, max: t.scrollHeight - t.clientHeight,
+    visible: menu.width > 0 && menu.height > 0,
+    pageY: window.scrollY, docY: document.documentElement.scrollTop };
+})()`;
+
+const EDGE_READ = `(() => {
+  const t = window.__vz65;
+  const r = t ? t.getBoundingClientRect() : null;
+  return { scrollTop: t ? t.scrollTop : null,
+    visible: !!r && r.width > 0 && r.height > 0,
+    inDom: !!t && document.contains(t),
+    pageY: window.scrollY, docY: document.documentElement.scrollTop };
+})()`;
+
+async function runEdges({ url, port, open, menu, player }) {
+  let h = null, page = null;
+  try {
+    h = await launch(port, { withExtension: false });
+    page = await openPage(port, url);
+    await sleep(7000);
+    const opened = await evalIn(page, HOST_OPEN(open));
+    if (!opened?.ok) return { ok: false, why: opened?.why || "لم تُفتح" };
+    const st = await evalIn(page, HOST_STATE(menu, player));
+    if (!st?.ok) return st || { ok: false, why: "لم تُقرأ الحالة" };
+
+    const out = { ok: true, point: st.point };
+    for (const which of ["top", "bottom"]) {
+      const before = await evalIn(page, EDGE_SET(which));
+      await trustedWheel(page, st.point.x, st.point.y, which === "top" ? -120 : 120);
+      const after = await evalIn(page, EDGE_READ);
+      out[which] = { before, after };
+    }
+    return out;
+  } catch (e) {
+    return { ok: false, why: "فشل: " + String(e?.message || e).slice(0, 90) };
+  } finally {
+    try { page?.ws?.close(); } catch {}
+    try { h?.browser?.ws?.close(); } catch {}
+    try { h?.proc?.kill(); } catch {}
+  }
+}
+
+// ── تكلفة الحكم في المسار الساخن — تُقاس قبل القبول لا بعده ─────────────────
+// تُنفَّذ **داخل العالم المعزول** فتنادي `findVideoAtPoint` نفسها لا محاكياً لها،
+// و`getComputedStyle` مرقَّعة هناك فيُعدّ كم عنصراً يُفحص فعلاً.
+const COST = (point, n) => `(() => {
+  const orig = getComputedStyle;
+  let calls = 0;
+  window.getComputedStyle = function (...a) { calls++; return orig.apply(this, a); };
+  const round = (flag) => {
+    calls = 0;
+    const t0 = performance.now();
+    for (let i = 0; i < ${n}; i++) findVideoAtPoint(${point.x}, ${point.y}, flag);
+    return { ms: (performance.now() - t0) / ${n}, styleCalls: calls / ${n} };
+  };
+  try {
+    for (let i = 0; i < 200; i++) { findVideoAtPoint(${point.x}, ${point.y}, true); findVideoAtPoint(${point.x}, ${point.y}, false); }
+    // ⚠️ الترتيب متبادل (A·B·B·A): أوّل قياس طبع فارقاً على مسارٍ **صفر عمل
+    // إضافي فيه**، أي أنه كان يقيس ترتيب التشغيل لا التكلفة.
+    const w1 = round(true), o1 = round(false), o2 = round(false), w2 = round(true);
+    const avg = (a, b) => ({ ms: (a.ms + b.ms) / 2, styleCalls: (a.styleCalls + b.styleCalls) / 2 });
+    return { ok: true, withGuard: avg(w1, w2), without: avg(o1, o2),
+             spread: { withGuard: Math.abs(w1.ms - w2.ms), without: Math.abs(o1.ms - o2.ms) } };
+  } finally { window.getComputedStyle = orig; }
+})()`;
+
+async function runCost({ url, port }) {
+  let h = null, page = null;
+  try {
+    h = await launch(port, { withExtension: true });
+    await configure(port, h.extensionId, {
+      globalSiteRules: { enabled: true, mappings: [] },
+      settings: { zones: { enabled: true, fullscreenOnly: false, gridCoverage: "player",
+        wheel: { map: { "4": { up: ["ACTION:VOLUME:+4"], down: ["ACTION:VOLUME:-4"] },
+                        "6": { up: ["ACTION:VOLUME:+4"], down: ["ACTION:VOLUME:-4"] },
+                        "9": { up: ["ACTION:VOLUME:+4"], down: ["ACTION:VOLUME:-4"] } } } } }
+    });
+    page = await openPage(port, url);
+    await sleep(2500);
+    const world = await contentWorld(page);
+    if (!world) return { ok: false, why: "لا عالم معزول — لا يُقاس" };
+    const setup = await evalIn(page, SETUP);
+    if (!setup?.ok) return { ok: false, why: setup?.why || "لم يُقرأ المِجَسّ" };
+    const onVideo = await evalIn(page, COST(setup.videoPoint, 2000), world.id);
+    const onMenu = await evalIn(page, COST(setup.menuPoint, 2000), world.id);
+    return { ok: true, onVideo, onMenu };
+  } catch (e) {
+    return { ok: false, why: "فشل: " + String(e?.message || e).slice(0, 90) };
+  } finally {
+    try { page?.ws?.close(); } catch {}
+    try { h?.browser?.ws?.close(); } catch {}
+    try { h?.proc?.kill(); } catch {}
+  }
+}
+
 // ── التشغيل ──────────────────────────────────────────────────────────────────
 let port = 9701;
 const srv = await serveTestPage(8951, PAGE);
@@ -284,6 +388,57 @@ if (!pos.ok) {
       : "لا شيء"));
 }
 srv.srv.close();
+
+if (process.argv.includes("--cost")) {
+  const s2 = await serveTestPage(8952, PAGE);
+  const c = await runCost({ url: s2.url, port: port++ });
+  console.log("\n=== تكلفة الحكم في المسار الساخن (2000 نداء لكل قياس) ===\n");
+  if (!c.ok) console.log(`  ⚠️ ${c.why}`);
+  else {
+    for (const [name, r] of [["على الفيديو (المسار الشائع)", c.onVideo], ["على القائمة", c.onMenu]]) {
+      if (!r?.ok) { console.log(`  ⚠️ ${name}: لم يُقس`); continue; }
+      console.log(`  ${name}`);
+      console.log(`     بالحكم : ${r.withGuard.ms.toFixed(5)}ms · getComputedStyle ${r.withGuard.styleCalls} لكل نداء`);
+      console.log(`     بدونه  : ${r.without.ms.toFixed(5)}ms · getComputedStyle ${r.without.styleCalls}`);
+      const d = (r.withGuard.ms - r.without.ms) * 1e6;      // ms ⇒ نانوثانية
+      const noise = Math.max(r.spread.withGuard, r.spread.without) * 1e6;
+      console.log(`     الفارق : ${d.toFixed(0)} نانوثانية لكل نداء · وتشتّت التكرار ${noise.toFixed(0)}ns` +
+        `${Math.abs(d) <= noise ? "  ⇒ **داخل الضجيج، لا فارق مقيس**" : ""}`);
+    }
+  }
+  s2.srv.close();
+  console.log("");
+  process.exit(0);
+}
+
+if (process.argv.includes("--edges")) {
+  const HOSTS_E = [
+    { name: "youtube.com", url: "https://www.youtube.com/watch?v=V9PVRfjEBTI",
+      open: [".ytp-settings-button"],
+      menu: [".ytp-panel-menu", ".ytp-settings-menu", ".ytp-popup.ytp-settings-menu"],
+      player: ["#movie_player"] },
+    { name: "twitch.tv", url: "https://www.twitch.tv/",
+      open: ["[data-a-target='player-settings-button']", "button[aria-label*='Settings']"],
+      menu: ["[data-a-target='player-settings-menu']", ".tw-balloon", "[role='dialog']"],
+      player: ["[data-a-target='video-player']", ".video-player"] }
+  ];
+  console.log("\n=== طرفا القائمة — بلا إضافة، سلوك المضيف وحده ===");
+  for (const host of HOSTS_E) {
+    const r = await runEdges({ port: port++, ...host });
+    console.log(`\n── ${host.name}`);
+    if (!r.ok) { console.log(`   ⚠️ ${r.why}`); continue; }
+    for (const which of ["top", "bottom"]) {
+      const e = r[which];
+      console.log(`   ${which === "top" ? "أعلى القائمة + عجلة لأعلى " : "أسفل القائمة + عجلة لأسفل"}: ` +
+        `scrollTop ${e.before.scrollTop} ⇒ ${e.after.scrollTop} (السقف ${e.before.max})` +
+        ` · القائمة ظاهرة ${e.before.visible} ⇒ ${e.after.visible}` +
+        ` · في الشجرة ${e.after.inDom}` +
+        ` · الصفحة خلفها ${e.before.pageY}/${e.before.docY} ⇒ ${e.after.pageY}/${e.after.docY}`);
+    }
+  }
+  console.log("");
+  process.exit(0);
+}
 
 if (process.argv.includes("--hosts")) {
   const HOSTS = [
