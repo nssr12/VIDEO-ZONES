@@ -7,6 +7,10 @@
 //
 //   node tools/run-tests.js            # سطر واحد لكل ملف + المجموع
 //   node tools/run-tests.js --quiet    # المجموع وحده
+//   node tools/run-tests.js --list     # ماذا يحرس كل ملف، بلا تشغيل
+//
+// و`--list` **يشتقّ الوصف من السطر الأول في الملف نفسه**، فلا تبقى في `HANDOFF.md`
+// قائمةٌ تُحدَّث بيد — وقد رأينا أين تنتهي القوائم اليدوية (قرار 34).
 //
 // ويخرج بـ 1 عند أي فشل، **وعند أي ملف لم يُفهَم خرْجه**: مشغّل يعدّ ما يفهمه
 // ويسكت عمّا لا يفهمه يطبع مجموعاً أصغر من الحقيقة ويبدو أخضر (قرار 26).
@@ -17,6 +21,21 @@ const path = require("path");
 const dir = path.join(__dirname);
 const files = fs.readdirSync(dir).filter((f) => /^test-.*\.js$/.test(f)).sort();
 const quiet = process.argv.includes("--quiet");
+
+// ── --list: ماذا يحرس كل ملف ────────────────────────────────────────────────
+// الوصف = السطر الأول من الملف، بعد `//`. مصدره الملف نفسه فلا يتباعد عنه، وملفٌ
+// بلا سطر وصف **يُطبع موسوماً** لا يُتخطّى صامتاً.
+if (process.argv.includes("--list")) {
+  let described = 0;
+  for (const f of files) {
+    const first = fs.readFileSync(path.join(dir, f), "utf8").split("\n")[0].trim();
+    const desc = first.startsWith("//") ? first.replace(/^\/+\s*/, "") : "";
+    if (desc) described++;
+    console.log(`  ${f.padEnd(30)} ${desc || "⚠️ بلا سطر وصف في أعلى الملف"}`);
+  }
+  console.log(`\n${described === files.length ? "✅" : "⚠️"} ${files.length} ملفاً · موصوفة: ${described}`);
+  process.exit(described === files.length ? 0 : 1);
+}
 
 // الصيغتان القائمتان في المجموعة. أي ملف لا يطابق واحدة منهما يُحسب مجهولاً
 // لا صفراً — والفرق بينهما هو الفرق بين «لا يوجد» و«لا أرى».

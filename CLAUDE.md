@@ -33,11 +33,16 @@ There is no test suite. Verify UI changes manually in the browser.
 |------|------|
 | `manifest.json` | MV3 manifest, permissions, content-script declaration |
 | `content.js` | Single content script injected at `document_start` in all frames. Contains: zone detection, action runner, overlay, subtitle styling, YouTube caption automation, site-profile resolver |
-| `popup.html` / `popup.js` | Toolbar popup: global enable, per-site rules, blocked-site toggle, page status, manual injection, overlay duration slider |
+| `popup.html` / `popup.js` | Toolbar popup: master switch, global enable, per-site rules, blocked-site toggle, page status, manual injection, overlay duration slider, Sound Booster slider, subtitles toggle |
 | `options.html` / `options.js` / `options.css` | Full settings page: zone editor, grid appearance, volume indicator, overlay timing, subtitles, blocked sites, backup/restore, settings guide |
+| `storage.js` | Shared by popup/options/background: sync quota guards (`safeSyncSet`), schema migration (`migrateAll`), and the verbatim-paired blocks with `content.js`. Classic script, **not** an ES module |
+| `background.js` | Service worker. **Migration only** — one `chrome.runtime.onInstalled` listener, nothing else (owner decision) |
+| `yt_quality_main.js` | Runs in the page MAIN world to drive the YouTube player quality API, which the isolated world cannot reach |
 | `icons/` | Extension icons (16/32/48/128) referenced by `manifest.icons` + `action.default_icon` |
 | `tools/` | Dev-only scripts run with `node`, **never shipped** — see Packaging below |
 | `README.md` | User-facing Arabic readme |
+| `HANDOFF.md` | **Read first.** Current work state, owner decisions, permanent regression platforms |
+| `AUDIT.md` | Audit report — every numbered item and its status |
 
 ## Packaging
 
@@ -48,15 +53,64 @@ they are development artefacts and must not reach the Chrome Web Store package:
 tools/        # e.g. tools/make-icons.js — regenerates icons/*.png, needs only node's zlib
 AUDIT.md      # audit report
 AUDIT.html    # rendered audit view (already gitignored)
+HANDOFF.md    # work-state handoff
 .git/ .gitignore CLAUDE.md
 ```
 
 Regenerate the icons after editing the generator: `node tools/make-icons.js icons`
 (output is deterministic — identical bytes for identical input).
 
-## Storage schema (`chrome.storage.sync`)
+## Tests
 
-Three top-level keys:
+Pure `node`, no dependencies, never shipped. **Run the whole suite before every
+commit, not after** — a commit that precedes verification makes the revert point
+a lie.
+
+```bash
+node tools/run-tests.js            # one line per file + the total
+node tools/run-tests.js --quiet    # the total only
+node tools/run-tests.js --list     # what each file guards (derived from its first line)
+```
+
+`run-tests.js` is the **single source** for the assertion count and the file
+list — never hand-write either number anywhere. It exits non-zero on a failure
+**and on any file whose output it cannot parse**: a runner that counts what it
+understands and silently skips the rest prints a total smaller than the truth and
+still looks green.
+
+`tools/bench-*.mjs` and `repro-*.mjs` need a real Chrome and load the extension
+through `tools/ext-harness.mjs` (`Extensions.loadUnpacked` over CDP —
+`--load-extension` was measured to silently load nothing on Chrome 150). Every
+expected failure in those is listed in `tools/KNOWN-DEFECTS.md`; anything not
+listed there is a regression you introduced.
+
+## Manual regression platforms
+
+There is no browser automation for the UI paths, so a handful of pages and
+step-lists in `HANDOFF.md` are **mandatory, not optional** — each item runs the
+platform it touches, in full:
+
+| Platform | Runs when you touch |
+|---|---|
+| §8 — popup truth (9 steps) | `GVZ_STATUS`, `blockedHosts`, `findVideoFrameId` |
+| §9 — Shadow DOM (`vz-test-player`, local canvas stream) | video discovery, overlay, top layer |
+| §10 + `tools/manual-59-body.html` | fullscreen, container choice, the fill gate |
+| §10ب | `seek()` or the `seekable` window |
+| §10ج | `activateOnCurrentPage` or page-world injection |
+| §10د | `extensionActive()`, `remappingEnabled()`, any feature entry point |
+| `tools/manual-35-volume.html` | volume or mute |
+
+`manual-35-volume.html` is **neutral by design** — no host player, no host volume
+model — so it proves our own logic and says **nothing** about host behaviour.
+`manual-59-body.html` is a video that is a direct child of `<body>` on a short
+page with a single button: the exact shape that used to make `<body>` win the
+fullscreen container score (#59). Both are permanent fixtures, not scratch files.
+
+Before reporting any fullscreen bug, paste `tools/report-fullscreen-bug.js` into
+the page console — it prints one copyable line with the URL, the chosen
+container, both rects, the ratio and the gate verdict.
+
+## Storage schema (`chrome.storage.sync`)
 
 ```js
 // 1) Global remap (key/mouse → action)
@@ -65,15 +119,17 @@ globalSiteRules = {
   mappings: [{ from: "ArrowRight"|"Mouse2"|"Ctrl+K", to: "ACTION:..." }]
 }
 
-// 2) Per-site profile overrides
-siteProfiles = {
-  "youtube.com": { enabled: boolean, mappings: [{from, to}] },
-  "twitch.tv":   { ... }
-}
+// 2) Per-site profile overrides — ONE KEY PER DOMAIN (sharded)
+"sp:youtube.com" = { enabled: boolean, mappings: [{from, to}] }
+"sp:twitch.tv"   = { ... }
+// The legacy single `siteProfiles` blob is migrated to shards by migrateSiteProfiles()
+// and then removed. A shard that already exists with different content is NEVER
+// overwritten — it is reported as a conflict and the legacy entry is kept.
 // Resolution order at runtime: siteMap[sig] || globalMap[sig]
 
 // 3) Everything else
 settings = {
+  enabled: boolean,                    // MASTER SWITCH — absent/true = on. Gates EVERYTHING
   zones: {
     enabled, fullscreenOnly,
     gridCoverage: "player" | "video",  // "player" (default) = zones/grid span the whole player frame incl. black bars
@@ -84,12 +140,13 @@ settings = {
     click: { map: { "1": { left:[...], right:[...], middle:[...] }, ... } }, // click-runtime projection
     key:   { map: { "1": { "Space":[...], "ArrowUp":[...] }, ... } }        // keyboard-runtime projection
   },
-  overlay: { autoHideMs, volumeAutoHideMs, enabled },
+  overlay: { autoHideMs, volumeAutoHideMs, enabled, hintEnabled },  // hintEnabled default true (#63)
   blockedHosts: ["youtube.com", ...],
   soundDisplay: { color, fontSize },
   gridAppearance: { cellBg, cellBorder, numberColor, radius },
   subtitles: {
-    enabled, defaultLang, fontSize, color, bgColor, bgOpacity, fontFamily, position
+    enabled, defaultLang, fontSize, color, bgColor, bgOpacity, fontFamily, position,
+    hideOnPreviews                     // default true (#51): absence means HIDE, not show
   },
   ytAutoQuality: "" | "hd1080" | ...,   // YouTube default quality ("" = auto)
   ytShortsRedirect: boolean,            // default true: rewrite /shorts/<id> → /watch?v=<id>
@@ -134,10 +191,10 @@ When adding a new action you MUST touch:
 
 | Type | Sender | Effect |
 |------|--------|--------|
-| `GVZ_STATUS` | popup | Returns `{ok, blocked, globalEnabled, siteProfileEnabled, hasVideoUnderPointer, host}` |
+| `GVZ_STATUS` | popup | Returns **only what the frame alone can know**: `{ok, hasVideo, hasVideoUnderPointer, ytQualityGap}`. A frame that exited early (#13b) answers `{ok:false, reason:"not-started"}` and **never wakes for a message**. Whether the extension is enabled and whether the host is blocked are facts the *popup* owns — storage and the tab URL (#56) |
 | `SITE_RULES_UPDATED` | popup | Hot-applies new `globalSiteRules` without storage read |
 | `RELOAD_SITE_RULES` | popup | Re-reads `globalSiteRules` from storage |
-| `RELOAD_SITE_PROFILE` | popup | Re-reads `siteProfiles[currentHost]` |
+| `RELOAD_SITE_PROFILE` | popup | Re-reads the `sp:<currentHost>` shard |
 | `GVZ_RELOAD` / `RELOAD_ZONE_SETTINGS` | options | Re-reads `settings.zones`, `blockedHosts`, `soundDisplay` |
 | `RELOAD_OVERLAY_SETTINGS` | popup/options | Re-reads `settings.overlay` |
 | `RELOAD_SUBTITLES` | options | Re-reads `settings.subtitles` and re-applies styles + language |
@@ -145,8 +202,17 @@ When adding a new action you MUST touch:
 | `RELOAD_YT_SHORTS` | options | Re-reads `settings.ytShortsRedirect` and redirects if currently on a /shorts/ URL |
 | `RELOAD_CLEAN_PLAYER` | options | Re-reads `settings.cleanPlayer` and re-injects the hide-elements CSS |
 | `GVZ_ACTIVATED` | popup | Sent after manual activation. Re-runs `applyYtQualityStep()` — the *same* definition the startup step consumes. Needed because a page that already has `content.js` ignores re-injection (`__GVZ_CONTENT_LOADED__`), so nothing would re-trigger the quality request. **Not** a `RELOAD_*`: those go through `flushReload`, which returns early when the settings snapshot is unchanged — and in a wake nothing has changed by definition (audit #38ج) |
+| `SET_VOLUME_BOOST` | popup | Applies the Sound Booster gain (clamped 100–600) to every video in the frame and **answers with the result**, so the popup can explain a silent no-op instead of moving a slider that does nothing |
+| `GET_VOLUME_BOOST` | popup | Returns `{pct, reason}` — `reason: "silent"` outranks any earlier failure because it means audio is gone |
 
-`chrome.storage.onChanged` is a backup trigger that re-loads the relevant slice when `settings` / `globalSiteRules` / `siteProfiles` changes from any source.
+`chrome.storage.onChanged` is a backup trigger that re-loads the relevant slice when `settings` / `globalSiteRules` / `sp:*` changes from any source.
+
+**Every message the popup sends resolves a frame first.** There is no
+`sendMessage` without a `frameId` on any path (audit #24): a broadcast makes every
+frame build its own `AudioContext` and lets a random frame answer
+`GET_VOLUME_BOOST`. `findVideoFrameId` is the single resolver for both the status
+path and the booster path; with no frame resolved the send is refused and the
+slider is **disabled with a reason** rather than moving with no effect.
 
 ## Architecture notes
 
@@ -207,6 +273,87 @@ Idempotency is enforced via `ytCaptionAttemptKey = pathname+search+lang` so we d
 
 This flow is brittle by definition — if YouTube renames classes or restructures the menu, the matching fallback in `YT_SUBTITLE_LABELS` / `YT_LANG_NAMES` must be extended.
 
+### The master gate — one call site, guarded by a count
+
+`settings.enabled` is the master switch (absent or `true` = on, so an existing
+user sees **zero behaviour change**). Everything the extension does — zones,
+remap, subtitles, YouTube quality, Clean Player, Sound Booster — passes through:
+
+```js
+function extensionActive() { return masterEnabled && !isBlockedHost(); }
+```
+
+`isBlockedHost()` has **exactly one call site: inside `extensionActive()`**, and
+`tools/test-master-gate.js` counts it and fails if a second one appears. This is
+deliberate and is the whole point of the item (#64): a list that enumerates entry
+points guards what is in it and lets through whatever is added later, while a
+guard that forbids calling from outside the gate **guards what has not been
+written yet**.
+
+Two semantics that are easy to get wrong:
+- **Off means "not applied from now on", not "undo what was applied."** A quality
+  already set before switching off stays. Never roll a user's state backwards.
+- **Manual activation deliberately overrides a blocked host** (the user pressed
+  the button on that page), but is **disabled outright** when the master switch
+  is off — a button that can be pressed and does nothing is a regression.
+
+`remappingEnabled()` stays separate and narrower: it is true when the global
+toggle **or** the current site profile is on. The "this site only" workflow
+(global off + site profile on) is a live feature with its own popup status
+string; do not collapse it into the master switch.
+
+### Host volume adapters
+
+Some hosts re-assert their own volume model over whatever we write to
+`video.volume` — measured: YouTube snaps back to **56.2%**, Twitch to **50%**,
+while Vimeo does not interfere and `d.tube` keeps our value. A blanket fix would
+break the two that work in order to fix the two that don't, so the treatment is
+**per-host adapters** in `content.js`:
+
+```js
+const hostAdapters = new Map();   // baseDomain ⇒ adapter. Empty = today's behaviour, verbatim
+```
+
+Four structural constraints, none of them negotiable:
+1. **Default is no adapter.** A host without one takes the direct-write path
+   exactly as before. "Zero measured change on Vimeo and d.tube" is an
+   acceptance condition, not an intention.
+2. **Relative operations only** — step up, step down, toggle mute. **Never an
+   absolute set.** Our wheel is relative by nature; absolute costs without buying
+   anything.
+3. **Verify then fall back.** Each adapter declares how it sets *and* how it
+   confirms the set landed. If it did not, it falls back to the direct write —
+   i.e. today's behaviour, so a host redesign degrades to the status quo, never
+   to a defect. The fallback is logged **once**, not per keystroke.
+4. **The badge always reads live state after the operation** — it shows what the
+   user will actually hear, not what we asked for.
+
+**`tools/volume-contract.js` is the only definition of volume semantics.** A new
+semantic goes into the contract first and into the paths second, never the
+reverse; `tools/test-volume-contract.js` counts every `hostAdapters.set(...)` in
+`content.js` and fails unless each has a measured host model. It also holds
+`DECLARED_LIMITS` — hosts deliberately left without an adapter, with the
+measurement and the reason (first: `kick.com`, whose volume slider is `0×0` until
+a **real** pointer hovers the volume group, which a synthetic event cannot do).
+Registering an adapter for a host with a declared limit turns the suite red.
+
+Any page scan an adapter performs must exclude our own elements via
+`isOwnElement()` — otherwise the adapter drives our own badge and reads it back
+as the host's.
+
+### Sound Booster
+
+A `Web Audio` chain (`createMediaElementSource` → `GainNode`) per video, driven
+by the popup slider from 100% to 600%. The floor is 100 because the booster only
+amplifies — attenuation is `ACTION:VOLUME`'s job.
+
+Measured facts that decide the design, not assumptions:
+- `video.muted` **does silence the boosted chain** — total zero at gain 1 and
+  gain 6. That question is closed.
+- `video.volume` **scales the boosted path proportionally** (RMS `0.1769 /
+  0.3537` = exactly 0.500), so an adapter falling back to the direct write is
+  still audible to the user.
+
 ### Per-site profiles
 
 Two maps are built in `content.js`:
@@ -219,10 +366,14 @@ Two maps are built in `content.js`:
 
 - **`baseDomain()` is naive**: it returns the last two labels (e.g. `youtube.com`, `co.uk` would mismatch). Fine for the common case but watch for `co.uk` / `com.au` style TLDs if you extend per-site logic.
 - **Video parent style mutation**: `attachOverlayTo` used to set `parent.style.position = "relative"`. The new fixed-overlay strategy no longer touches host styles, but if you reintroduce DOM-attached overlays, remember this side-effect.
-- **Mouse2 (right-click) is double-handled**: in `handleMouse`, Mouse2 has its own block for event-type gating + debounce + setting `e.__videoUnderPointer`. The previously duplicated second `if (sig === "Mouse2")` block has been consolidated — don't re-introduce it.
+- **`Mouse2` is the MIDDLE button, not the right one.** The signature is `event.button + 1`, so `Mouse1` = left, `Mouse2` = middle, `Mouse3` = right. This doc said "right-click" for a long time and it was simply wrong (audit doc-conflict #6) — check `ZONE_TRIGGER_BY_BUTTON` in `content.js` before writing anything about mouse buttons. Mouse2 also carries its own event-type gating + debounce and sets `e.__videoUnderPointer`; the duplicated second `if (sig === "Mouse2")` block was consolidated — don't re-introduce it. Chrome opens its autoscroll cursor on middle **mousedown**, which is why that path is special-cased at all.
 - **Volume = 0 auto-mutes on some hosts**: `runAction` for `ACTION:VOLUME:` clamps the lower bound to `0.0001` and force-unmutes on positive delta. Don't "fix" the magic-number floor without re-checking YouTube behavior.
 - **Settings page section overlap**: `.sectionPage` rules must keep specificity high enough that a sibling class (like `.header`) can't override `display:none`. `.sectionPage[hidden]{display:none !important}` is the safety net — don't remove it.
 - **RTL grid order**: `.grid` in `options.css` and the in-video `.vzWrap`/`.vzGrid` both force `direction: ltr` so cells stay A1 → C3 regardless of whether the host page is RTL.
+- **Never write a template string into `innerHTML` on a render path.** Values reaching the popup rule rows and the zone-editor cells come from storage and from an imported backup file, so they can carry `<` or `&`. Build elements and assign `value` / `textContent` (`ruleRow()` in `popup.js`, `actionLine()` in `options.js`). `tools/test-escape-render.js` enforces that **every** `innerHTML` assignment in `popup.js` and `options.js` is a static literal — no `${…}`, no concatenation (audit #32).
+- **The suite must be green before the commit, not after.** A commit that precedes verification makes the revert point a lie, and the fix that lands later mixes two items into one history entry.
+- **A hand-written number in the docs drifts by construction.** The assertion count lived in four places and all four were wrong. Derive it (`node tools/run-tests.js`) or delete it.
+- **Never print a success message for work you have not confirmed happened.** The import path used to print "تم استيراد الإعدادات ✅" while the zone migration had silently not run. A false success is worse than a silent failure: silence leaves the user suspicious, a false success reassures them of a mistake (audit #57).
 
 ## Conventions
 
@@ -230,6 +381,10 @@ Two maps are built in `content.js`:
 - Storage reads use `chrome.storage.sync.get({ key: <default> })` form to get an inline default. Stick to that pattern.
 - All cross-tab fan-out (e.g. on settings save) iterates `chrome.tabs.query({})` and sends a `RELOAD_*` message wrapped in `.catch(() => {})`.
 - Action defaults for new zones live in `defaultZoneActions()` in `options.js` and `ensureZonesDefaults()` in `content.js` — keep them in sync.
+- **`storage.js` and `content.js` share three verbatim-paired blocks** — `baseDomain`, `normalizeKeyCombo`, `gridAppearance` — delimited by `// ---- BEGIN <name> ----` / `END`, because a content script cannot load `storage.js` without injecting it into every frame. Edit both copies together; `tools/test-migration.js` diffs them textually. Never add a new function *inside* a paired block.
+- **`safeSyncSet` is the only write path to `storage.sync`** (it pre-checks the 8KB/100KB/512-item quotas and translates a real rejection into Arabic). The single deliberate exception is `importAllSettings`, whose guard would measure a store it is about to clear — its safety net is the snapshot-restore instead.
+- **One migration entry point: `migrateAll()` in `storage.js`.** `background.js` calls it on install/update, the options page calls it on load, and the import path calls it after writing the file. Whichever arrives second finds the work done and writes nothing. Never write a smaller local copy of any part of it.
+- **Any script that copies a block of product code carries a guard that fails when it drifts** — `tools/test-fs-report-sync.js` for the fullscreen report, `tools/test-migration.js` for the paired blocks. A copy that silently falls behind its original measures the past and prints plausible numbers about code that no longer runs.
 
 ## When you change things
 
@@ -242,6 +397,9 @@ Two maps are built in `content.js`:
 | Add a new subtitle-host selector | `applySubtitleStyles` CSS template in `content.js` |
 | Add a new Clean Player item | `CLEAN_PLAYER_ITEMS` in `content.js` **and** `CLEAN_PLAYER_OPTIONS` in `options.js` (same key) |
 | Add a new known player wrapper | `KNOWN_PLAYER_WRAPPER_SELECTOR` in `content.js` (used by zones full-frame + fullscreen logic) |
+| Add a new host volume adapter | `hostAdapters.set(...)` in `content.js` **and** a measured host model in `tools/volume-contract.js` — the suite counts them |
+| Add a new migration part | the object `migrateAll()` returns in `storage.js` **and** `MIGRATION_PART_TEXT` in `options.js` — the guard reads the parts from `migrateAll`'s own structure, so a part with no message turns the suite red |
+| Add a new test file | nothing — `tools/run-tests.js` discovers it. Give it a first-line `//` description; `--list` prints it and fails without it |
 | Bump version | `manifest.json` `version` field (semver-ish: feature bump = minor, fix = patch) |
 
 ## Useful one-liners
