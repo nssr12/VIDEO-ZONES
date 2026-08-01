@@ -34,6 +34,34 @@ function normalizeMouseFromEvent(e) {
   return map[e.button] || `Mouse${e.button + 1}`;
 }
 
+// صفّ قاعدة واحد، عناصرَ لا نصّ HTML (البند #32). قيمتا `from` و`to` تأتيان من
+// التخزين ومن ملفّ نسخة احتياطية، فقد تحملان `<` أو `&` — وقالبٌ نصّي كان يهرب
+// من `"` وحدها فيمرّ الباقي ويُفسد العرض. التعيين على `value` لا يُفسَّر أبداً.
+// (وليست ثغرة: CSP في MV3 يمنع المعالجات السطرية — العطب في العرض لا في الأمان.)
+function ruleRow(m, idx, delKey) {
+  const div = document.createElement("div");
+  div.className = "rule";
+
+  for (const k of ["from", "to"]) {
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.value = m[k] || "";
+    inp.dataset.i = String(idx);
+    inp.dataset.k = k;
+    div.appendChild(inp);
+  }
+
+  const del = document.createElement("button");
+  del.className = "btnDanger delBtn";
+  del.type = "button";
+  del.title = "حذف";
+  del.dataset[delKey] = String(idx);
+  del.textContent = "🗑️";
+  div.appendChild(del);
+
+  return div;
+}
+
 function renderList() {
   const list = $("list");
   list.innerHTML = "";
@@ -41,19 +69,7 @@ function renderList() {
   const c = $("count");
   if (c) c.textContent = String(mappings.length);
 
-  mappings.forEach((m, idx) => {
-    const fromVal = (m.from || "").replaceAll('"', "&quot;");
-    const toVal = (m.to || "").replaceAll('"', "&quot;");
-
-    const div = document.createElement("div");
-    div.className = "rule";
-    div.innerHTML = `
-      <input value="${fromVal}" data-i="${idx}" data-k="from" type="text">
-      <input value="${toVal}" data-i="${idx}" data-k="to" type="text">
-      <button class="btnDanger delBtn" title="حذف" type="button" data-del="${idx}">🗑️</button>
-    `;
-    list.appendChild(div);
-  });
+  mappings.forEach((m, idx) => list.appendChild(ruleRow(m, idx, "del")));
 
   list.querySelectorAll("button[data-del]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -356,19 +372,7 @@ function renderSiteList() {
   const c = $("siteCount");
   if (c) c.textContent = String(siteMappings.length);
 
-  siteMappings.forEach((m, idx) => {
-    const fromVal = (m.from || "").replaceAll('"', "&quot;");
-    const toVal = (m.to || "").replaceAll('"', "&quot;");
-
-    const div = document.createElement("div");
-    div.className = "rule";
-    div.innerHTML = `
-      <input value="${fromVal}" data-i="${idx}" data-k="from" type="text">
-      <input value="${toVal}" data-i="${idx}" data-k="to" type="text">
-      <button class="btnDanger delBtn" title="حذف" type="button" data-sdel="${idx}">🗑️</button>
-    `;
-    list.appendChild(div);
-  });
+  siteMappings.forEach((m, idx) => list.appendChild(ruleRow(m, idx, "sdel")));
 
   list.querySelectorAll("button[data-sdel]").forEach((btn) => {
     btn.addEventListener("click", async () => {

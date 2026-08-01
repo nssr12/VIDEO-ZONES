@@ -371,6 +371,19 @@ function defaultZoneActions() {
   };
 }
 
+// شارة المفتاح ثم نصّ الأوامر، عنصرين لا قالباً نصّياً (البند #32). الاسمان
+// مشتقّان من قيم التخزين، وكان الهروب يدوياً ومن `<` وحدها — فـ`&` تمرّ كما هي
+// و`&amp;` تُعرض حرفياً. `textContent` لا يُفسَّر فلا يبقى ما يُهرَّب منه.
+function actionLine(label, text) {
+  const line = document.createElement("div");
+  line.className = "actionLine";
+  const badge = document.createElement("span");
+  badge.className = "badge";
+  badge.textContent = label;
+  line.append(badge, text);
+  return line;
+}
+
 function renderGrid(actionsByZone) {
   const g = $("grid");
   g.innerHTML = "";
@@ -395,17 +408,10 @@ function renderGrid(actionsByZone) {
     }
 
     if (groups.size === 0) {
-      const empty = document.createElement("div");
-      empty.className = "actionLine";
-      empty.innerHTML = `<span class="badge">—</span>اضغط للإضافة`;
-      cell.appendChild(empty);
+      cell.appendChild(actionLine("—", "اضغط للإضافة"));
     } else {
       for (const [label, summaries] of groups) {
-        const line = document.createElement("div");
-        line.className = "actionLine";
-        const safe = summaries.join(" + ").replace(/</g, "&lt;");
-        line.innerHTML = `<span class="badge">${label.replace(/</g, "&lt;")}</span>${safe}`;
-        cell.appendChild(line);
+        cell.appendChild(actionLine(label, summaries.join(" + ")));
       }
     }
 
