@@ -857,7 +857,19 @@ document.addEventListener("mousedown", (e) => {
   });
   $("subtitlesEnabled")?.addEventListener("change", saveSubtitlesToggle);
   $("fullscreenOnly")?.addEventListener("change", saveFullscreenOnlyToggle);
-  $("blockSiteBtn").addEventListener("click", () => saveBlockedSiteState().then(loadBlockedSiteUI));
+  // كان `save().then(load)` بلا `.catch` (البند #36): رفضٌ من التخزين يبقى في
+  // كونسول الـ popup وحده، **والزرّ يبقى على حالته القديمة** فيقرأها المستخدم
+  // «لم يقع شيء» وهي «وقع خطأ لم يُقَل». والنجاح يبقى صامتاً (قرار 7): لا يظهر
+  // سطر إلا عند خلل فعليّ. وفشل الحفظ المعروف يُعالَج داخل saveBlockedSiteState
+  // برسالته المفصَّلة، وهذا يلتقط ما لا تلتقطه: رفض القراءة نفسها.
+  $("blockSiteBtn").addEventListener("click", async () => {
+    try {
+      await saveBlockedSiteState();
+      await loadBlockedSiteUI();
+    } catch (err) {
+      setStatus("bad", `تعذّر تغيير حالة الحظر: ${syncErrorText(err)}`);
+    }
+  });
   $("checkStatus").addEventListener("click", checkPageStatus);
 
   $("boostSlider").addEventListener("input", () => {
