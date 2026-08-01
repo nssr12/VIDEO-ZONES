@@ -1499,10 +1499,13 @@ function zonesActive() {
   return true;
 }
 
+// ⚠️ **#38أ — لا يُبنى الـoverlay هنا.** كانت هذه الدالّة تبنيه لكل حدث عجلة أو
+// نقرة فوق فيديو **قبل أن يُعرف هل للمربّع ربط أصلاً**، فيُنشأ DOM لا يُعرض.
+// صار البناء في **مسارَي العرض** بعد تأكّد الربط — وهو النمط الذي يتبعه مسار
+// المفاتيح سلفاً (`zoneKeyBinding` ثم `ensureVideoOverlay`)، فتوحّدت الثلاثة.
 function getZoneAtEvent(e) {
   const video = getVideoUnderPointer(e);
   if (!video) return null;
-  ensureVideoOverlay(video);
   const rect = zoneRectForVideo(video);
   const zone = getZoneNumber(rect, e.clientX, e.clientY);
   return zone ? { video, zone } : null;
@@ -1632,6 +1635,7 @@ window.addEventListener("wheel", (e) => {
   const dir = e.deltaY < 0 ? "up" : "down";
   const actions = normalizeMappedActions(entry[dir]);
   if (!actions.length) return;
+  ensureVideoOverlay(hit.video);   // #38أ: بعد تأكّد الربط لا قبله
   showOverlay(`Zone ${zoneLabel(hit.zone)} • ${dir.toUpperCase()} → ${actions.join(" + ")}`);
 
   let ok = false;
@@ -1690,6 +1694,7 @@ function handleZoneClick(e) {
   const { actions } = bind;
 
   e.__videoUnderPointer = bind.video;
+  ensureVideoOverlay(bind.video);   // #38أ: بعد تأكّد الربط لا قبله
   showOverlay(`Zone ${zoneLabel(bind.zone)} • ${which.toUpperCase()} CLICK → ${actions.join(" + ")}`);
 
   let ok = false;
@@ -1929,6 +1934,15 @@ function startOverlayTracking() {
   const tick = () => {
     if (!anySubElementVisible()) {
       vzTrackRafId = null;
+      // ⚠️ **#38ب — تفريغ المرجع القويّ، بلا آلة دورة حياة جديدة.**
+      // `vzOverlayVideo` كان يبقى مُمسِكاً بعنصر فيديو **بعد خروجه من الـDOM**
+      // إلى نهاية عمر الصفحة (`teardownOverlay` لا تُنادى إلا عند التحوّل إلى
+      // فيديو آخر، و`hideOverlayNow` تُخفي ولا تُفرّغ).
+      // **والموضع هنا يجعل التغيير محايداً بالبرهان لا بالرجاء:** لا شيء معروض
+      // (شرط الحلقة)، والعنصر **منفصل** — والمسار الوحيد الذي يقرأ المرجع بعدها
+      // هو المسار السريع في `ensureVideoOverlay` وهو يشترط `video.isConnected`،
+      // فكان سيسقط إلى الهدم وإعادة البناء على أي حال.
+      if (vzOverlayVideo && !vzOverlayVideo.isConnected) vzOverlayVideo = null;
       return;
     }
     positionOverlayToVideo();
