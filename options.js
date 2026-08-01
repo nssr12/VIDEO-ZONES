@@ -1219,6 +1219,27 @@ function validateBackup(parsed) {
   return null;
 }
 
+// نصّ لكل جزء من أجزاء migrateAll. الرسالة تُركَّب من **نتيجة الهجرة نفسها** فتصف
+// ما فشل فعلاً: جزءٌ واحد يُسمَّى وحده، والاثنان يُسمَّيان معاً في رسالة واحدة.
+// و«أو» ممنوعة: النتيجة تعرف الجواب، فرسالة تقول «أحدهما» تُعلم المستخدم بالفشل
+// ولا تُعينه عليه (قرار المالك 2026-08-01).
+//
+// وأي جزء يُضاف إلى migrateAll بلا نصّ هنا يُحمّر tools/test-import-migration.js —
+// وهو يعدّ الأجزاء من **بنية migrateAll نفسها** لا من قائمة مكتوبة بجوارها.
+const MIGRATION_PART_TEXT = {
+  profiles: "تجزئة قواعد المواقع",
+  zones: "ترقية أوامر المربّعات"
+};
+
+function migrationFailureText(result) {
+  const failed = Object.keys(MIGRATION_PART_TEXT)
+    .filter((part) => result?.[part]?.ok === false)
+    .map((part) => MIGRATION_PART_TEXT[part]);
+  // لا جزء معروف ⇒ الهجرة رُفضت قبل أن تُنتج نتيجة، فلا يُسمَّى ما لا يُعلم.
+  const what = failed.length ? failed.join(" و") : "ترقية الإعدادات القديمة";
+  return `استُوردت الإعدادات لكن تعذّرت ${what} — افتح الصفحة مجدداً`;
+}
+
 async function importAllSettings(file) {
   if (!file) return;
 
@@ -1258,10 +1279,14 @@ async function importAllSettings(file) {
     return;
   }
 
-  // A v1 file lands as a legacy blob; shard it before anything reads it.
-  const migrated = await migrateSiteProfiles().catch(() => ({ ok: false }));
+  // مدخل الهجرة الواحد نفسه، لا نسخة أصغر منه (البند #57). كانت هنا
+  // migrateSiteProfiles() وحدها، وترقية wheel.map ⇒ wheel.actions تقع **بأثر**
+  // location.reload() أدناه ⇒ DOMContentLoaded ⇒ migrateAll(). فأي تغيير يُسقط
+  // إعادة التحميل كان يُسقط الهجرة معه **بصمت**. الإعادة باقية أدناه، لكنها
+  // صارت تجميلاً للمحرّر لا شرطاً للصحّة.
+  const migrated = await migrateAll().catch(() => ({ ok: false }));
   if (!migrated.ok) {
-    setBackupStatus("bad", "استُوردت الإعدادات لكن تعذّرت تجزئة قواعد المواقع — افتح الصفحة مجدداً");
+    setBackupStatus("bad", migrationFailureText(migrated));
     return;
   }
 

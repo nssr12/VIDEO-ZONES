@@ -14,7 +14,7 @@
 |---|---|
 | **الفرع النشط** | **`fix/audit-wave5`** — مدفوع، **والشجرة نظيفة** |
 | **آخر كومِتاته** | `dabd401` [30] · `a413277` [38أ+ب] · `ad73784` [38د] · `3f42c5b` إغلاق #64 |
-| **اختباراته** | **1325 تأكيداً في 44 ملفاً**، كلها ناجحة |
+| **اختباراته** | **1359 تأكيداً في 45 ملفاً**، كلها ناجحة — **الرقم يُحدَّث من `node tools/run-tests.js` وحده، ولا يُكتب في موضع ثانٍ** (§7) |
 | **`main`** | **`2.11.2` بلا تغيير**. الموجة 5 **لم تُدمج ولا نسخة رُفعت** |
 | **المنجز على الفرع** | **27 · 28 · 29 · 35 · 60 · 34 · 62 · 63 · 61** (بلا كود) **· 38ج · 64 · 38د · 38أ+ب · 30** |
 | **المؤكَّدة ميدانياً** | **#35 · #60 · #62 · #63 · #34 · #38ج · #64** — كلها من المالك في المتصفح |
@@ -115,7 +115,7 @@
 | **#58** | ✅ **مغلق ومدموج** — `ed48128` + `4a07651` · دمج `0ef6003` · نسخة 2.11.1 |
 | **#59** | ✅ **مغلق ومدموج** — `4d55d0a` + `9aef011` · دمج `3fb4df0` · نسخة 2.11.2 |
 | **البند التالي مباشرةً** | **#35** على `fix/audit-wave5` — نطاقه مقرَّر في §0 |
-| **الاختبارات** | `main`: **976 في 32** · `fix/audit-wave5`: **992 في 33** |
+| **الاختبارات** | **لا رقم هنا** — العدد في §0 وحده، ويُطبع من `node tools/run-tests.js`. كان هذا السطر يقول «992 في 33» وهو **ثالث موضع** تباعد |
 
 ### الموجات
 
@@ -347,7 +347,7 @@
     بارتفاع 0 لحظةً، فيُرفض بحارس المستطيل الصفري ويفوز مرشّح آخر. من يكتب منصّة
     قياس ينتظر التخطيط **ويتحقّق أن المستطيل غير صفري** قبل أن يبني على الرقم.
 20. **العطب المعروف يُثبَّت في مجموعة الاختبارات ويُبرهَن في منصّة القياس،
-    ومجموعة الاختبارات تبقى خضراء دائماً.** قيمة الـ949 تأكيداً كلها في أن الأحمر
+    ومجموعة الاختبارات تبقى خضراء دائماً.** قيمة المجموعة كلها في أن الأحمر
     يعني «كسرتَ شيئاً **الآن**» لا «شيء مكسور منذ أسبوع» — **مجموعة حمراء دائماً
     مجموعة ميتة**. وكل تثبيت عطب يحمل فوقه نصّاً صريحاً: «فشل هذا التثبيت يعني أن
     `<البند>` أُصلح، فحدّثه ولا تُصلح الاختبار». والعطب المعروفة كلها في موضع
@@ -863,55 +863,43 @@ node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8'))"
 **والمجموعة كاملة بأمر واحد، بلا معرفة معاملات أي ملف:**
 
 ```bash
-for f in tools/test-*.js; do node "$f" >/dev/null || echo "❌ $f"; done
+node tools/run-tests.js            # سطر لكل ملف + المجموع
+node tools/run-tests.js --quiet    # المجموع وحده
 ```
+
+> ⚠️ **`tools/run-tests.js` هو الموضع الواحد لعدد التأكيدات — لا يُكتب رقم
+> المجموع في هذا الملف ولا في غيره إلا في سطر واحد في §0، ويُحدَّث من خرْج هذا
+> الأمر.** كان الرقم مكتوباً بيد في موضعين فتباعدا: قال §7 «1169 في 37» وقال §0
+> «1325 في 44»، **والمقيس على الكومِت نفسه `1301` في 44** — أي أن **كليهما كان
+> ميتاً**، وواحدٌ منهما كان يُقرأ حجّةً. **ورقم متضارب في ملفّ يُقرأ قبل كل جلسة
+> أخطر من رقم غائب:** الغائب يُسأل عنه، والمتضارب يُبنى عليه.
+> والمشغّل **يفشل على أي ملف لا يفهم خرْجه** بدل أن يتخطّاه صامتاً — مشغّل يعدّ
+> ما يفهمه ويسكت عمّا لا يفهمه يطبع مجموعاً أصغر من الحقيقة **ويبدو أخضر**.
 
 **ولا ملف في المجموعة يشترط معاملاً** — كان `test-migration.js` يشترطه وحده
 فأُعطي مساره افتراضاً (2026-07-31)، لأن مشغّلاً يمرّ على `tools/test-*.js`
 كان يسقط عنده ويُقرأ **فشلاً** لا اصطلاحاً.
 
-**وواحداً واحداً عند الحاجة:**
+**وواحداً واحداً عند الحاجة** — والقائمة **تعريفية لا حصر**: الحصر والعدّ من
+`run-tests.js` وحده، **ولا رقم هنا كي لا يعود موضعٌ ثانٍ يتباعد**:
 
 ```bash
-node tools/test-migration.js              # 127  (والمسار افتراضيّ: storage.js)
-node tools/test-volume-mute.js            #  47  #35: الكتم مستقل عن المستوى + الشارة
-node tools/test-sw-migration.js           #  56
-node tools/test-dead-code.js              #  16  حرّاس الكود الميت 27·28·29 (الموجة 5)
-node tools/test-fs-fill-gate.js           #  38  بوابة تمديد الفيديو + كل المخارج
-node tools/test-container-choice.js        #  64  اختيار الحاوية + الحتمية + #59
-node tools/test-fs-report-sync.js         #  29  حارس انحراف مقطع الإبلاغ
-node tools/test-top-layer.js              #  54
-node tools/test-frame-wake.js             #  42
-node tools/test-caption-size.js           #  39
-node tools/test-startup-read.js           #  39
-node tools/test-grid-appearance.js        #  38
-node tools/test-quality-gap.js            #  33
-node tools/test-subtitle-observer.js      #  31
-node tools/test-caption-window.js         #  30
-node tools/test-caption-box.js            #  28
-node tools/test-popup-truth.js            #  26
-node tools/test-clean-player-captions.js  #  25
-node tools/test-preview-hide.js           #  23
-node tools/test-precedence.js             #  22
-node tools/test-overlay-host.js           #  21
-node tools/test-middle-click.js           #  19
-node tools/test-opacity-naming.js         #  19
-node tools/test-shadow-dom.js             #  19
-node tools/test-yt-quality.js             #  19
-node tools/test-shorts-gate.js            #  18
-node tools/test-reload-once.js            #  17
-node tools/test-fullscreen-result.js      #  15
-node tools/test-import-failure.js         #  15
-node tools/test-safe-set.js               #  15
-node tools/test-validate.js               #  15
-node tools/test-zone-defaults.js          #  15
-node tools/test-boost-frame.js            #  14
-node tools/test-native-fs-button.js       #  11
+node tools/test-migration.js              # الهجرة + الكتل المقترنة (المسار افتراضيّ: storage.js)
+node tools/test-import-migration.js       # #57: الهجرة في مسار الاستيراد بلا إعادة تحميل + حارس الرسالة
+node tools/test-sw-migration.js           # هجرة الـ service worker وعدّ مستمعيه
+node tools/test-volume-mute.js            # #35: الكتم مستقل عن المستوى + الشارة
+node tools/test-volume-contract.js        # عقد الصوت: كل محوّل مسجَّل له مسار مُعايَر
+node tools/test-host-adapter.js           # محوّلات المضيفين وقاعدة المدى
+node tools/test-master-gate.js            # #64: البوّابة الواحدة وموضع النداء الوحيد
+node tools/test-dead-code.js              # حرّاس الكود الميت 27·28·29 (الموجة 5)
+node tools/test-fs-fill-gate.js           # بوابة تمديد الفيديو + كل المخارج
+node tools/test-container-choice.js       # اختيار الحاوية + الحتمية + #59
+node tools/test-fs-report-sync.js         # حارس انحراف مقطع الإبلاغ
+node tools/test-name-unified.js           # #38د: اسم المنتج موحَّد في كل موضع
 node tools/bench-shadow.js                # قياس أداء بـ node، لا اختبار
 ```
 
-**المجموع على `main`: 976 تأكيداً في 32 ملفاً · وعلى `fix/audit-wave5`: 1169 في 37.**
-كلها ناجحة. شغّلها كلها قبل أي كومِت.
+**كلها ناجحة دائماً. شغّل المجموعة كاملةً قبل أي كومِت — لا بعده (قرار 32).**
 
 **أدوات القياس — تحتاج كروم مثبَّتاً، لا تعمل بـ node وحده:**
 
