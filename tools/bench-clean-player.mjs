@@ -43,6 +43,11 @@ import { launch, openPage, evalIn, serveTestPage, connect, ROOT } from "./ext-ha
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WITNESS_ONLY = process.argv.includes("--witness");
+// `--overlap` يجيب سؤالَي #67 قبل أي سطر إصلاح: **هل `.annotation` يشمل
+// `.iv-branding`؟** و**هل يخفي مفتاح `annotations` شيئاً آخر يراه المستخدم غير
+// العلامة؟** — والثاني يغيّر **شكل** العلاج لا تفاصيله: إن لم يطابق المحدِّد إلا
+// العلامة فالمفتاحان في الحقيقة واحد.
+const OVERLAP_ONLY = process.argv.includes("--overlap");
 
 // ── المحدِّدات تُقرأ من المنتج، لا تُنسخ ─────────────────────────────────────
 function readItems() {
@@ -310,6 +315,78 @@ async function measureEmbed(url, label, states) {
   }
 }
 
+// ── قياس التداخل (#67) — على المشغّل الحيّ، وبشاهديه ──────────────────────
+const OVERLAP_PROBE = `(() => {
+  const clsOf = (el) => String(el.className && el.className.baseVal !== undefined
+    ? el.className.baseVal : el.className || "");
+  const list = (sel) => { try { return [...document.querySelectorAll(sel)]; } catch { return null; } };
+  const shape = (el) => {
+    const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
+    const op = parseFloat(cs.opacity);
+    return { tag: el.tagName, cls: clsOf(el).slice(0, 90), w: Math.round(r.width), h: Math.round(r.height),
+             why: cs.display === "none" ? "display:none" : cs.visibility === "hidden" ? "visibility:hidden"
+                : op === 0 ? "opacity:0" : (r.width > 0 && r.height > 0) ? "" : "مستطيل صفريّ",
+             // ⚠️ **النصّ يُرجَع خاماً، وطيُّ الفراغات يقع في node لا في الصفحة.**
+             // ثلاث محاولات سقطت هنا لسببٍ واحد: **قالبٌ نصّيّ يبتلع ما يُكتب فيه**
+             // — شرطةُ s صارت محدِّداً يمحو كل حرف s (فطُبعت class هكذا "cla ")،
+             // وشرطةُ n صارت سطراً حقيقياً داخل محدِّد نمطيّ فأسقطت السكربت كلّه.
+             // **وما يُكتب في الصفحة يبقى بلا هروب، وما يحتاج هروباً يُعالَج هنا.**
+             html: el.outerHTML.slice(0, 160) };
+  };
+  const ann = list(".annotation") || [], brand = list(".iv-branding") || [];
+  const both = list(".annotation.iv-branding") || [];
+  const annOnly = ann.filter((e) => !brand.includes(e));      // تعليق ليس علامة
+  const brandOnly = brand.filter((e) => !ann.includes(e));    // علامة بلا صنف التعليق
+  const cont = list(".video-annotations") || [];
+  // **سؤال النسل (#67):** إن كانت العلامة داخل .video-annotations فإخفاء الحاوية
+  // يُخفيها معها، ويبقى مفتاح annotations «يفعل ما لا يُسمّى به» بطريق ثانٍ —
+  // والاستبعاد على .annotation وحده لا ينفع حينها.
+  const inCont = brand.filter((b) => cont.some((c) => c.contains(b) && c !== b));
+  const chain = (el) => { const out = []; let p = el.parentElement, i = 0;
+    while (p && i++ < 6) { out.push(p.tagName + "." + (clsOf(p).split(" ")[0] || "")); p = p.parentElement; }
+    return out; };
+  return {
+    brandInsideContainer: inCont.length,
+    brandChain: brand.map(chain),
+    contChain: cont.map(chain),
+    n: { annotation: ann.length, ivBranding: brand.length, both: both.length,
+         annotationOnly: annOnly.length, brandingOnly: brandOnly.length,
+         videoAnnotations: cont.length },
+    // **السؤال الأول:** هل كل ما يطابق .iv-branding يطابق .annotation كذلك؟
+    brandIsSubsetOfAnn: brand.every((e) => ann.includes(e)),
+    // **السؤال الثاني:** ما الذي يخفيه مفتاح annotations غير العلامة؟
+    annOnlyShapes: annOnly.map(shape),
+    contShapes: cont.map(shape),
+    brandShapes: brand.map(shape),
+    // شاهد سالب داخل المِجَسّ: صنف مخترَع يجب أن يكون صفراً
+    fake: (list(".vz-fake-annotation-xyz") || []).length,
+    // وشاهد موجب: عنصرٌ نعلم وجوده
+    player: (list("#movie_player") || []).length
+  };
+})()`;
+
+async function runOverlap() {
+  const h = await launch(PORT, { withExtension: false, extra: ["--window-size=1600,1000"] });
+  const out = { chrome: h.chrome, samples: [] };
+  try {
+    const page = await openPage(PORT, `https://www.youtube.com/watch?v=${VIDEO}`);
+    const ready = await waitPlayer(page);
+    if (!ready) throw new Error("لم يستقرّ مستطيل الفيديو — لا يُقرأ رقم (قرار 22)");
+    await hoverPlayer(page);
+    // ⚠️ عناصر التعليقات **تأتي متأخّرة** (قِيس في S7: صفر عند t=6 ثم واحد لاحقاً)،
+    // فتُؤخذ ثلاث عيّنات متباعدة **ولا يُقرأ صفرٌ من عيّنة واحدة**.
+    for (const wait of [2000, 9000, 12000]) {
+      await sleep(wait);
+      const o = await evalIn(page, OVERLAP_PROBE);
+      o.t = await evalIn(page, `Math.round(document.querySelector("video")?.currentTime || 0)`);
+      out.samples.push(o);
+    }
+    try { page.ws.close(); } catch {}
+  } catch (e) { out.error = String(e?.message || e).slice(0, 120); }
+  finally { try { h.browser?.ws?.close(); } catch {} try { h.proc.kill(); } catch {} }
+  return out;
+}
+
 async function run() {
   const h = await launch(PORT, { withExtension: false, extra: ["--window-size=1600,1000"] });
   const report = { chrome: h.chrome, states: {}, sources: null };
@@ -406,6 +483,34 @@ async function run() {
 // `--from-raw` يُعيد طباعة **القياس المحفوظ** بلا متصفّح: يُصلَح عيبُ طباعةٍ بلا
 // إعادة قياسٍ يغيّر الأرقام تحت التصحيح.
 const RAW = path.join(ROOT, "tools", ".s7-raw.json");
+const flat = (t) => String(t || "").replace(/[\s]+/g, " ").trim();
+if (OVERLAP_ONLY) {
+  const o = await runOverlap();
+  console.log(`\n=== #67 — تداخل .annotation و.iv-branding على المشغّل الحيّ · كروم ${o.chrome} ===`);
+  if (o.error) { console.log(`⚠️ ${o.error}`); process.exit(1); }
+  const seen = o.samples.filter((s2) => s2.n.annotation > 0 || s2.n.ivBranding > 0);
+  console.log(`\n── فحص البصر (قرار 26)`);
+  console.log(`   موجب: #movie_player ⇒ ${o.samples.map((s2) => s2.player).join("/")} ${o.samples.every((s2) => s2.player === 1) ? "✅" : "❌"}`);
+  console.log(`   سالب: صنف مخترَع ⇒ ${o.samples.map((s2) => s2.fake).join("/")} ${o.samples.every((s2) => s2.fake === 0) ? "✅" : "❌"}`);
+  console.log(`   وعيّنة فيها عناصر تعليق: ${seen.length} من ${o.samples.length} ${seen.length ? "✅" : "❌ **لم تظهر العناصر — لا يُقرأ صفرها** (S7: تأتي متأخّرة)"}`);
+  if (!seen.length) process.exit(1);
+  for (const s2 of o.samples) {
+    console.log(`\n── عيّنة عند t=${s2.t}s`);
+    console.log(`   .annotation ${s2.n.annotation} · .iv-branding ${s2.n.ivBranding} · الاثنان معاً ${s2.n.both}`);
+    console.log(`   .annotation وليس .iv-branding ⇒ **${s2.n.annotationOnly}** · .iv-branding وليس .annotation ⇒ **${s2.n.brandingOnly}**`);
+    console.log(`   .video-annotations ⇒ ${s2.n.videoAnnotations}`);
+    console.log(`   هل كل .iv-branding داخل .annotation؟ **${s2.brandIsSubsetOfAnn ? "نعم — الشمول ثابت" : "لا"}**`);
+    console.log(`   **وهل العلامة من نسل .video-annotations؟ ${s2.brandInsideContainer > 0 ? `**نعم — ${s2.brandInsideContainer} منها داخلها**` : "**لا — صفر**"}**`);
+    for (const c of s2.brandChain) console.log(`     سلسلة آباء العلامة: ${c.join(" ⇐ ")}`);
+    for (const c of s2.contChain) console.log(`     سلسلة آباء الحاوية: ${c.join(" ⇐ ")}`);
+    for (const x of s2.brandShapes) console.log(`     [العلامة] ${x.tag}.${flat(x.cls)} ${x.w}×${x.h}${x.why ? " (" + x.why + ")" : " **مرئية**"}\n        ${flat(x.html)}`);
+    for (const x of s2.annOnlyShapes) console.log(`     [تعليق آخر] ${x.tag}.${flat(x.cls)} ${x.w}×${x.h}${x.why ? " (" + x.why + ")" : " **مرئي**"}\n        ${flat(x.html)}`);
+    for (const x of s2.contShapes) console.log(`     [الحاوية] ${x.tag}.${flat(x.cls)} ${x.w}×${x.h}${x.why ? " (" + x.why + ")" : ""}\n        ${flat(x.html)}`);
+  }
+  fs.writeFileSync(path.join(ROOT, "tools", ".s7-overlap-raw.json"), JSON.stringify(o, null, 1));
+  console.log(`\n(الخام في tools/.s7-overlap-raw.json)`);
+  process.exit(0);
+}
 const report = process.argv.includes("--from-raw")
   ? JSON.parse(fs.readFileSync(RAW, "utf8"))
   : await run();

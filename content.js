@@ -1290,11 +1290,26 @@ const CLEAN_PLAYER_ITEMS = {
   quick_actions:           [".ytp-fullscreen-quick-actions"],
   paid_content:            [".ytp-paid-content-overlay"],
   suggested_action:        [".ytp-suggested-action", ".ytp-suggested-action-badge"],
-  annotations:             [".video-annotations", ".annotation", ".iv-branding"],
+  // ── #67 (2026-08-02): العلامة تُستبعَد من التعليقات بنيوياً ──────────────
+  // **المقيس على المشغّل الحيّ** (`tools/bench-clean-player.mjs --overlap`، ثلاث
+  // عيّنات متطابقة): علامة القناة عنصرٌ **واحد يحمل الصنفين معاً**
+  // `annotation annotation-type-custom iv-branding`، فـ`.annotation` و`.iv-branding`
+  // كانا يطابقانه معاً — **صفر عنصر يطابق أحدهما دون الآخر**. فكان مربّع
+  // «التعليقات» يُخفي العلامة، ومربّع «العلامة» لا يُخفي شيئاً.
+  // **ولم يُدمج المفتاحان رغم أنهما اليوم شيء واحد** (قرار المالك): القياس وقع
+  // على فيديو **بلا تعليقات فعلية** والحاوية موجودة **فارغة**، و«حالٌ لم تُنتَج
+  // لا تُقرأ نفياً» — فالدمج يحذف فئةً لم يثبت موتها، والاستبعاد يُصلح الكذب بلا
+  // أن يقرّر في المجهول.
+  // **وإخفاء الحاوية لا يُخفي العلامة** — مقيس: العلامة **ليست من نسلها** (صفر)،
+  // وسلسلتاهما تفترقان عند `.html5-video-player`.
+  annotations:             [".video-annotations", ".annotation:not(.iv-branding)"],
   cards:                   [".ytp-cards-button", ".iv-drawer"],
   endscreen:               [".html5-endscreen", ".ytp-ce-element", ".ytp-endscreen-content", ".ytp-fullscreen-grid-stills-container"],
   embed_more_videos:       [".ytp-pause-overlay-container", ".ytp-pause-overlay"],
-  watermark:               [".ytp-watermark"],
+  // `.ytp-watermark` **يبقى** (#67): قِيس أنه صفرٌ على صفحة watch، **لكن قاعدة
+  // يوتيوب تحصره في `.ytp-muted-autoplay-bottom-buttons`** أي مشغّل المعاينة
+  // الصامتة — **حالٌ لم تُنتَج لا محدِّدٌ ميّت**، وحذفه ليس مكافئاً لنقله.
+  watermark:               [".ytp-watermark", ".iv-branding"],
   large_play_button:       [".ytp-large-play-button"],
   // ── وميض وسط الشاشة (bezel) — البند #62 ───────────────────────────────────
   // ⚠️ **غير أزرار الشريط السفلي**: `play_button` و`mute_button` و`volume_slider`
