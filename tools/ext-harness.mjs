@@ -55,10 +55,20 @@ export async function connect(url) {
 }
 
 // يُشغّل كروم، ويحمّل الإضافة إن طُلب. `withExtension: false` هو **الشاهد السالب**.
-export async function launch(port, { withExtension = true, extra = [], extPath = ROOT } = {}) {
+export const HARNESS_LANG = "ar-EG";   // بيئة المنتج — تُعلَن ولا تُورَث (انظر أدناه)
+export async function launch(port, { withExtension = true, extra = [], extPath = ROOT,
+                                     lang = HARNESS_LANG } = {}) {
   const proc = spawn(CHROME, [
     "--headless=new", "--disable-gpu", "--no-first-run", "--mute-audio",
     "--no-default-browser-check", "--autoplay-policy=no-user-gesture-required",
+    // ⚠️ **اللغة تُعلَن ولا تُترك للصدفة (2026-08-02).** كانت غائبة، فكان كروم
+    // يأخذ لغة النظام ويوتيوب يضيف إليها الموقع الجغرافي — **فوقعت قياساتنا على
+    // `ar_EG` مصادفةً**، وهي بيئة المالك فسلمت النتيجة. وعلى جهازٍ آخر (أو في
+    // تشغيلٍ آليّ) كانت ستقع على `en_US`، **فيُقاس مشغّلٌ بتخطيط معكوس عن تخطيط
+    // المالك** — أي بيئة أخرى تُنشر أرقامها باسم بيئته.
+    // ⇒ **العربية مقصودة هنا لأنها بيئة المنتج**: واجهته RTL، ومنصّاته اليدوية
+    // تُنفَّذ على واجهة عربية. ومن أراد قياس تخطيط آخر **يُعلنه صراحةً** ولا يرثه.
+    `--lang=${lang}`, `--accept-lang=${lang}`,
     ...extra,
     `--user-data-dir=/tmp/vz-ext-${port}-${process.pid}-${Math.floor(port * 7919 % 100000)}`,
     `--remote-debugging-port=${port}`, "about:blank"
