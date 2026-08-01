@@ -220,18 +220,18 @@ content.js OK · popup.js OK · options.js OK · yt_quality_main.js OK · manife
 
 | # | البند | الدليل |
 |---|---|---|
-| 1 | **Sound Booster** كاملاً — ميزة كبيرة بمُنزلق 50–600% | ✅ **وُثّق `<doc>`** — ميزة في `README.md` وقسم مستقلّ في `CLAUDE.md` بأرقامه المقيسة: `video.muted` يُسكت المسار المعزَّز تماماً، و`video.volume` يقصّه بنسبة 0.500 |
-| 2 | `yt_quality_main.js` | ✅ **وُثّق `<doc>`** — ومعه `storage.js` و`background.js` و`HANDOFF.md` و`AUDIT.md` في الجدول نفسه |
-| 3 | رسالتا `SET_VOLUME_BOOST` / `GET_VOLUME_BOOST` | ✅ **وُثّقتا `<doc>`** — ومعهما قاعدة «لا بثّ بلا `frameId`» و`findVideoFrameId` مصدراً واحداً |
-| 4 | ميزة **Subtitles** كاملة (قسم مستقل في الإعدادات + مفتاح في الـ popup) | ✅ **وُثّقت `<doc>`** — التنسيق واللغة التلقائية وإخفاء المعاينات |
+| 1 | **Sound Booster** كاملاً — ميزة كبيرة بمُنزلق 50–600% | ✅ **وُثّق `1954ba9`** — ميزة في `README.md` وقسم مستقلّ في `CLAUDE.md` بأرقامه المقيسة: `video.muted` يُسكت المسار المعزَّز تماماً، و`video.volume` يقصّه بنسبة 0.500 |
+| 2 | `yt_quality_main.js` | ✅ **وُثّق `1954ba9`** — ومعه `storage.js` و`background.js` و`HANDOFF.md` و`AUDIT.md` في الجدول نفسه |
+| 3 | رسالتا `SET_VOLUME_BOOST` / `GET_VOLUME_BOOST` | ✅ **وُثّقتا `1954ba9`** — ومعهما قاعدة «لا بثّ بلا `frameId`» و`findVideoFrameId` مصدراً واحداً |
+| 4 | ميزة **Subtitles** كاملة (قسم مستقل في الإعدادات + مفتاح في الـ popup) | ✅ **وُثّقت `1954ba9`** — التنسيق واللغة التلقائية وإخفاء المعاينات |
 
 ## موثّق وغير منفَّذ أو خاطئ
 
 | # | البند | الدليل |
 |---|---|---|
 | 5 | `options.html:51` يَعِد بأن Grid Appearance تخصّص "الشبكة الظاهرة **داخل الفيديو**" | غير منفَّذ إطلاقاً — انظر البند #7 في القسم الأول |
-| 6 | `CLAUDE.md` تحت "Known quirks": «**Mouse2 (right-click)** is double-handled» | ✅ **صُحّح `<doc>`** — `Mouse1` أيسر · `Mouse2` **أوسط** · `Mouse3` أيمن، والتوقيع `event.button + 1`. وأُضيف إلى `README.md` كذلك |
-| 7 | `README.md:93` يشير للمستودع `nssr12/my-first-extension` | ✅ **صُحّح `<doc>`** — الرابط الآن `nssr12/VIDEO-ZONES` في الملفين |
+| 6 | `CLAUDE.md` تحت "Known quirks": «**Mouse2 (right-click)** is double-handled» | ✅ **صُحّح `1954ba9`** — `Mouse1` أيسر · `Mouse2` **أوسط** · `Mouse3` أيمن، والتوقيع `event.button + 1`. وأُضيف إلى `README.md` كذلك |
+| 7 | `README.md:93` يشير للمستودع `nssr12/my-first-extension` | ✅ **صُحّح `1954ba9`** — الرابط الآن `nssr12/VIDEO-ZONES` في الملفين |
 
 ---
 
@@ -292,7 +292,7 @@ content.js OK · popup.js OK · options.js OK · yt_quality_main.js OK · manife
 | 26 | احذف الكود الميت: `tryEnableYouTubeCC`، الفرع الفارغ، الكتلة المعلّقة، ازدواج `getVideoUnderPointer*`، الحقول الميتة | `content.js:303`, `307-313`, `468-470`, `1506-1509`, `804-810`, `1224-1228`, `114`, `116`, `137` | #27–#31 |
 | 27 | استبدل `innerHTML` بـ `createElement` + `textContent` | `popup.js:59-70`, `216-227`, `options.js:376-383` | #32 |
 | 28 | أصلح `seek` في البث المباشر عبر `video.seekable`، وافصل فكّ الكتم عن حساب دلتا الصوت | `content.js:1251-1256`, `1323-1326` | #34, #35 |
-| 29 | حدّث `README.md` و `CLAUDE.md` | `README.md`, `CLAUDE.md` | ✅ **تمّ `<doc>`** — التعارضات 1–4 و6–7 مغلقة (و5 سقط بتنفيذ #7). وأُضيف ما استقرّ في الموجة 5: **المفتاح الرئيسي وبوّابة `extensionActive`** · **محوّلات الصوت و`volume-contract`** · **`ext-harness`** · منصّات الانحدار السبع · وقواعد `run-tests.js` |
+| 29 | حدّث `README.md` و `CLAUDE.md` | `README.md`, `CLAUDE.md` | ✅ **تمّ `1954ba9`** — التعارضات 1–4 و6–7 مغلقة (و5 سقط بتنفيذ #7). وأُضيف ما استقرّ في الموجة 5: **المفتاح الرئيسي وبوّابة `extensionActive`** · **محوّلات الصوت و`volume-contract`** · **`ext-harness`** · منصّات الانحدار السبع · وقواعد `run-tests.js` |
 | 30 | وحّد اسم المنتج في المانيفست والـ popup | `manifest.json:3`, `16`, `popup.html:78` | #38 |
 | 31 | نفّذ بنود التجربة اليدوية S1–S8 ووثّق نتائجها في ذيل هذا الملف | — | S1–S8 |
 
