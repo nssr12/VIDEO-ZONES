@@ -34,6 +34,34 @@ function normalizeMouseFromEvent(e) {
   return map[e.button] || `Mouse${e.button + 1}`;
 }
 
+// صفّ قاعدة واحد، عناصرَ لا نصّ HTML (البند #32). قيمتا `from` و`to` تأتيان من
+// التخزين ومن ملفّ نسخة احتياطية، فقد تحملان `<` أو `&` — وقالبٌ نصّي كان يهرب
+// من `"` وحدها فيمرّ الباقي ويُفسد العرض. التعيين على `value` لا يُفسَّر أبداً.
+// (وليست ثغرة: CSP في MV3 يمنع المعالجات السطرية — العطب في العرض لا في الأمان.)
+function ruleRow(m, idx, delKey) {
+  const div = document.createElement("div");
+  div.className = "rule";
+
+  for (const k of ["from", "to"]) {
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.value = m[k] || "";
+    inp.dataset.i = String(idx);
+    inp.dataset.k = k;
+    div.appendChild(inp);
+  }
+
+  const del = document.createElement("button");
+  del.className = "btnDanger delBtn";
+  del.type = "button";
+  del.title = "حذف";
+  del.dataset[delKey] = String(idx);
+  del.textContent = "🗑️";
+  div.appendChild(del);
+
+  return div;
+}
+
 function renderList() {
   const list = $("list");
   list.innerHTML = "";
@@ -41,19 +69,7 @@ function renderList() {
   const c = $("count");
   if (c) c.textContent = String(mappings.length);
 
-  mappings.forEach((m, idx) => {
-    const fromVal = (m.from || "").replaceAll('"', "&quot;");
-    const toVal = (m.to || "").replaceAll('"', "&quot;");
-
-    const div = document.createElement("div");
-    div.className = "rule";
-    div.innerHTML = `
-      <input value="${fromVal}" data-i="${idx}" data-k="from" type="text">
-      <input value="${toVal}" data-i="${idx}" data-k="to" type="text">
-      <button class="btnDanger delBtn" title="حذف" type="button" data-del="${idx}">🗑️</button>
-    `;
-    list.appendChild(div);
-  });
+  mappings.forEach((m, idx) => list.appendChild(ruleRow(m, idx, "del")));
 
   list.querySelectorAll("button[data-del]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -136,6 +152,17 @@ function isRestrictedUrl(url) {
   return !url || /^(chrome|edge|about|brave|opera|vivaldi|moz-extension|chrome-extension):/i.test(url);
 }
 
+// ⚠️ **نظير `"matches": ["*://*.youtube.com/*"]` في `manifest.json` حرفياً**
+// (البند #38ج). الغرض أن يحقن التفعيل اليدوي **ما يحقنه المانيفست، حيث يحقنه، لا
+// أوسع**: توسيعه هنا يجعل اليدوي يفعل ما لا يفعله التلقائي، فينكسر «صفر تغيّر»
+// من الجهة الأخرى. وإن تغيّر النمط في المانيفست **يُغيَّر هنا معه**، ويحرسه
+// `tools/test-manual-inject.js`.
+function isYouTubeUrl(url) {
+  let host;
+  try { host = new URL(url).hostname.toLowerCase(); } catch { return false; }
+  return host === "youtube.com" || host.endsWith(".youtube.com");
+}
+
 // Reads from storage what the popup already owns: whether the extension is enabled
 // for this host and whether the host is blocked. Both used to be asked of a content
 // script — a frame cannot know them better than storage does, and a sleeping frame
@@ -162,6 +189,15 @@ async function checkPageStatus() {
   if (isRestrictedUrl(url)) {
     setYtQualityGap(null);
     setStatus("bad", "هذه الصفحة محمية من المتصفح ولا يمكن تشغيل الإضافة عليها");
+    return;
+  }
+
+  // ── البند #64 — الرئيسي أعلى الترتيب هنا كما هو في `content.js` ────────────
+  // بلا هذا الفحص تقول الحالة «الإضافة شغالة» والمفتاح الرئيسي مطفأ — وهو **كذب
+  // في الاتجاه المعاكس**: كنّا نُطفئ ولا يُطفأ شيء، فلا نُبدله بأن نُطفئ ونقول شغّالة.
+  if (!(await getMasterEnabled())) {
+    setYtQualityGap(null);
+    setStatus("bad", "المفتاح الرئيسي مطفأ — الإضافة متوقفة كلياً");
     return;
   }
 
@@ -222,15 +258,100 @@ async function activateOnCurrentPage() {
     return;
   }
 
+  // ── البند #64 — لا صمت بلا معنى ───────────────────────────────────────────
+  // **التفعيل اليدوي يخرق الحظر عمداً، ولا يخرق المفتاح الرئيسي.** فلو تُرك
+  // الزرّ يعمل والرئيسي مطفأ لضُغط **فلا يحدث شيء** — وهو **درس `skip` الذي كان
+  // يبتلع الشارة: صمتٌ تامّ يبدو تعطّلاً**. فيُعطَّل ظاهراً **بسبب مقروء**.
+  // (وهذا حارس ثانٍ: `syncMasterUi` يعطّل الزرّ بصرياً، وهذا يمنع المسار نفسه.)
+  const master = await getMasterEnabled();
+  if (!master) {
+    setStatus("bad", "المفتاح الرئيسي مطفأ — شغّل «تشغيل الإضافة» أولاً");
+    return;
+  }
+
   try {
+    // ── البند #38ج ────────────────────────────────────────────────────────────
+    // **المانيفست يحقن سكربتين، وهذا المسار كان يحقن واحداً.**
+    // `yt_quality_main.js` يعيش في عالم الصفحة (`world: "MAIN"`) لأن واجهة جودة
+    // يوتيوب لا تُرى من العالم المعزول، وهو **المستمع الوحيد** لـ`__vz_setq__`
+    // الذي يرسله `content.js`. فبلا حقنه هنا **تذهب الرسالة إلى لا أحد بصمت**.
+    // **قِيس:** المستمع يردّ خلال **202ms** حيث يوجد، و**لا ردّ إطلاقاً** حيث لا
+    // يوجد — والتمييز بينهما هو ما بُني عليه هذا الإصلاح، لا قيمة الجودة نفسها
+    // (فـABR يوتيوب يغيّرها من تلقائه، ورُصد ذلك).
+    //
+    // **وقبل `content.js` عمداً:** بدء `content.js` ينادي `triggerYtQuality()`
+    // مباشرةً، فبوجود المستمع سلفاً **تُطبَّق الجودة فوراً عند التفعيل** بلا
+    // انتظار `yt-navigate-start` — والحقن المتأخّر يفوته ما سبقه.
+    //
+    // **ومقيَّد بمضيفي يوتيوب وحدهم:** لا يُحقن حيث لا فائدة.
+    if (isYouTubeUrl(url)) {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        files: ["yt_quality_main.js"],
+        world: "MAIN"
+      });
+    }
     await chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
       files: ["content.js"]
     });
+    // ── البند #38ج — الإيقاظ ──────────────────────────────────────────────────
+    // **الحقن وحده لا يكفي، وقِيس:** إن كان `content.js` حاضراً سلفاً فحقنه
+    // **لا عمل له** (حارس `__GVZ_CONTENT_LOADED__`) ⇒ **لا بدء جديد فلا نداء**،
+    // وعدّاد الإرسال بقي كما هو — بينما في الحالة الأخرى (غائب) يبدأ وينادي.
+    // **فتُرسَل الرسالة في الحالتين** كي تنتهيا إلى **الحالة نفسها**، لا كي
+    // «تعملا كلتاهما»: في الحالة الغائبة تصل بعد بدءٍ نفّذ الخطوة، فتجدها
+    // مُنفَّذة ولا تكرّرها (idempotent).
+    // ولا `await` ولا ردّ يُنتظر: إطار خرج مبكراً لا يستيقظ، وغياب مستقبِل ليس خطأً.
+    chrome.tabs.sendMessage(tab.id, { type: "GVZ_ACTIVATED" }).catch(() => {});
     await checkPageStatus();
   } catch {
     setStatus("bad", "فشل التفعيل اليدوي على هذه الصفحة");
   }
+}
+
+
+// ── البند #64 — المفتاح الرئيسي ─────────────────────────────────────────────
+// **افتراضه مُشغَّل بنمط `!== false`** — نظير `loadMasterEnabled` في
+// `content.js` حرفياً: ملفّ لم يُفتح إعداده قط يسلك سلوك اليوم، **فصفر تغيّر
+// سلوكي افتراضياً**. أي انحراف بين النسختين يجعل الواجهة تكذب على المستخدم.
+async function getMasterEnabled() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  return (data.settings || {}).enabled !== false;
+}
+
+// الحفظ يمرّ بـ`safeSyncSet` كبقيّة الكتابات، ولا يطمس بقيّة `settings`.
+async function saveMasterEnabled(on) {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const settings = data.settings && typeof data.settings === "object" ? data.settings : {};
+  settings.enabled = !!on;
+  const res = await safeSyncSet({ settings });
+  if (!res?.ok) {
+    setStatus("bad", res?.error || "تعذّر حفظ المفتاح الرئيسي");
+    return false;
+  }
+  // كل تبويب يعيد القراءة فوراً — بلا إعادة تحميل، كبقيّة قنوات التحديث
+  const tabs = await chrome.tabs.query({});
+  for (const t of tabs) {
+    if (t.id) chrome.tabs.sendMessage(t.id, { type: "GVZ_RELOAD" }).catch(() => {});
+  }
+  return true;
+}
+
+// **الزرّ يُعطَّل ظاهراً بسبب مقروء** — لا زرٌّ يُضغط فلا يحدث شيء (#64).
+function syncMasterUi(on) {
+  const btn = $("manualActivate");
+  if (!btn) return;
+  btn.disabled = !on;
+  btn.style.opacity = on ? "" : "0.5";
+  btn.style.cursor = on ? "" : "not-allowed";
+  btn.title = on ? "" : "المفتاح الرئيسي مطفأ — شغّل «تشغيل الإضافة» أولاً";
+}
+
+async function loadMasterUi() {
+  const on = await getMasterEnabled();
+  $("masterEnabled").checked = on;
+  syncMasterUi(on);
 }
 
 async function loadGlobalData() {
@@ -251,19 +372,7 @@ function renderSiteList() {
   const c = $("siteCount");
   if (c) c.textContent = String(siteMappings.length);
 
-  siteMappings.forEach((m, idx) => {
-    const fromVal = (m.from || "").replaceAll('"', "&quot;");
-    const toVal = (m.to || "").replaceAll('"', "&quot;");
-
-    const div = document.createElement("div");
-    div.className = "rule";
-    div.innerHTML = `
-      <input value="${fromVal}" data-i="${idx}" data-k="from" type="text">
-      <input value="${toVal}" data-i="${idx}" data-k="to" type="text">
-      <button class="btnDanger delBtn" title="حذف" type="button" data-sdel="${idx}">🗑️</button>
-    `;
-    list.appendChild(div);
-  });
+  siteMappings.forEach((m, idx) => list.appendChild(ruleRow(m, idx, "sdel")));
 
   list.querySelectorAll("button[data-sdel]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -718,6 +827,7 @@ document.addEventListener("mousedown", (e) => {
   fillActionPreset();
   // Idempotent, and a no-op read once the legacy key is gone
   await migrateSiteProfiles().catch(() => {});
+  await loadMasterUi();
   await loadGlobalData();
   await loadSiteProfile();
   await loadOverlayUI();
@@ -738,9 +848,28 @@ document.addEventListener("mousedown", (e) => {
   }
 
   $("enabled").addEventListener("change", saveGlobalData);
+  $("masterEnabled").addEventListener("change", async (e) => {
+    const on = e.target.checked;
+    syncMasterUi(on);
+    const ok = await saveMasterEnabled(on);
+    if (!ok) { e.target.checked = !on; syncMasterUi(!on); return; }
+    await checkPageStatus();
+  });
   $("subtitlesEnabled")?.addEventListener("change", saveSubtitlesToggle);
   $("fullscreenOnly")?.addEventListener("change", saveFullscreenOnlyToggle);
-  $("blockSiteBtn").addEventListener("click", () => saveBlockedSiteState().then(loadBlockedSiteUI));
+  // كان `save().then(load)` بلا `.catch` (البند #36): رفضٌ من التخزين يبقى في
+  // كونسول الـ popup وحده، **والزرّ يبقى على حالته القديمة** فيقرأها المستخدم
+  // «لم يقع شيء» وهي «وقع خطأ لم يُقَل». والنجاح يبقى صامتاً (قرار 7): لا يظهر
+  // سطر إلا عند خلل فعليّ. وفشل الحفظ المعروف يُعالَج داخل saveBlockedSiteState
+  // برسالته المفصَّلة، وهذا يلتقط ما لا تلتقطه: رفض القراءة نفسها.
+  $("blockSiteBtn").addEventListener("click", async () => {
+    try {
+      await saveBlockedSiteState();
+      await loadBlockedSiteUI();
+    } catch (err) {
+      setStatus("bad", `تعذّر تغيير حالة الحظر: ${syncErrorText(err)}`);
+    }
+  });
   $("checkStatus").addEventListener("click", checkPageStatus);
 
   $("boostSlider").addEventListener("input", () => {

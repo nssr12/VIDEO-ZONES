@@ -13,9 +13,15 @@
 //   2. exactly ONE poll alive at any moment — a new request cancels the previous one
 //      instead of stacking on top of it;
 //   3. every poll ends at an explicit deadline, whether or not it succeeded.
+// ⚠️ **البند #38ج — العلم يُرفع بعد تسجيل المستمعين لا قبلهم.**
+// كان `window.__vzQB = true` أول سطر، فكانت الحالة «علمٌ مرفوع بلا مستمع فعّال»
+// **ممكنة**: يكفي أن يسقط ما بينهما أو يقع الحقن في عالم لا يرى واجهة المشغّل.
+// **وقِيست هذه الحالة فعلاً** في رِكاز #38ج (علمٌ مرفوع وردٌّ `no-player`)،
+// وأثرها أن الحقن الصحيح اللاحق **يُمنع** بالحارس نفسه.
+// وبنقله إلى الأسفل صار العلم **يصف واقعاً وقع** لا نيّة أُطلقت: مرفوعٌ ⇔
+// المستمعون مسجَّلون. **الحالة السيّئة مستحيلة بالبناء لا محروسة.**
 (function () {
   if (window.__vzQB) return;
-  window.__vzQB = true;
 
   var POLL_INTERVAL_MS = 400;
   var POLL_DEADLINE_MS = 10000;   // نفس السقف الفعلي القديم (25 × 400) لكنه صريح الآن
@@ -79,4 +85,7 @@
   // which is exactly how an old poll used to set the old quality on the new video.
   window.addEventListener("__vz_cancelq__", cancelPoll);
   document.addEventListener("yt-navigate-start", cancelPoll, true);
+
+  // آخر سطر عمداً — انظر التعليق أعلى الملف: العلم يصف مستمعين مسجَّلين بالفعل.
+  window.__vzQB = true;
 })();

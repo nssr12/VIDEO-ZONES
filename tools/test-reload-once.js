@@ -47,7 +47,7 @@ const CODE = [
 ].join("\n");
 
 const LOADERS = ["loadRulesForThisHost", "loadSiteProfile", "loadZoneSettings", "loadOverlaySettings",
-  "loadBlockedHosts", "loadSoundDisplaySettings", "loadGridAppearance", "loadSubtitleSettings",
+  "loadBlockedHosts", "loadSoundDisplaySettings", "loadMasterEnabled", "loadGridAppearance", "loadSubtitleSettings",
   "loadYtAutoQualitySettings", "loadYtShortsRedirectSetting", "loadCleanPlayerSettings"];
 
 function makeFrame({ awake = true, value = "A" } = {}) {
@@ -58,6 +58,8 @@ function makeFrame({ awake = true, value = "A" } = {}) {
     baseDomain: () => "example.com",
     chrome: { storage: { sync: { get: () => { st.reads++; return Promise.resolve({ settings: { v: st.value } }); } } } },
     triggerYtQuality: () => {}, maybeRedirectShorts: () => {},
+    // ‏#64: البوّابة الواحدة يستدعيها flushReload عند إخفاء الشبكة
+    extensionActive: () => true,
     remappingEnabled: () => true, hideOverlayNow: () => {},
     console
   };

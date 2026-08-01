@@ -103,7 +103,7 @@ console.log("\n[7] الحارس البنيوي (#50): cqw لا تُستعمل إ
   const tail = SRC.indexOf("function applySubtitleTrack");
   let css = null;
   const c = {
-    console, subtitleStyleEl: null, isBlockedHost: () => false,
+    console, subtitleStyleEl: null, isBlockedHost: () => false, extensionActive: () => true,
     subtitleSettings: { enabled: true, defaultLang: "ar", fontSize: 22, color: "#fff",
       bgColor: "#000", bgOpacity: 0.6, fontFamily: "sans-serif", position: "bottom" },
     hexToRgb: () => "0,0,0",

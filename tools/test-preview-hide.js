@@ -29,7 +29,7 @@ const BASE = { enabled: true, defaultLang: "ar", fontSize: 22, color: "#fff",
 function generate(sub, { blocked = false } = {}) {
   let css = null;
   const c = {
-    console, subtitleStyleEl: null, isBlockedHost: () => blocked,
+    console, subtitleStyleEl: null, isBlockedHost: () => blocked, extensionActive: () => !blocked,
     subtitleSettings: sub, hexToRgb: () => "0,0,0",
     KNOWN_PLAYER_WRAPPER_SELECTOR: "#movie_player,.html5-video-player",
     document: { createElement: () => ({ id: "", textContent: "", remove() {} }),

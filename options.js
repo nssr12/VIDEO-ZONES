@@ -30,6 +30,11 @@ const CLEAN_PLAYER_OPTIONS = [
   { key: "embed_more_videos",       label: "\"More videos\" overlay in embedded player" },
   { key: "watermark",               label: "Channel watermark" },
   { key: "large_play_button",       label: "Large play button" },
+  // البند #62 — وميض وسط الشاشة. الأسماء تصف **ما قِيس حرفياً** لا ما نتمنّاه:
+  // اسم يَعِد بما لا يفعل عيبٌ في المنتج لا تفصيل تحرير (قرار المالك).
+  { key: "bezel_text",              label: "Center flash: text (volume % and speed)" },
+  { key: "bezel_icon_valued",       label: "Center flash: icon with text (volume, speed)" },
+  { key: "bezel_icon_plain",        label: "Center flash: icon without text (play, pause, seek)" },
   { key: "spinner",                 label: "Loading spinner" },
   { key: "heatmap",                 label: "Progress bar heatmap" },
   { key: "prev_button",             label: "Previous button" },
@@ -258,6 +263,8 @@ async function getSettings() {
   // Default volumeAutoHideMs to existing autoHideMs for migration; keeps existing user choice for both
   if (typeof settings.overlay.volumeAutoHideMs !== "number") settings.overlay.volumeAutoHideMs = settings.overlay.autoHideMs;
   if (typeof settings.overlay.enabled !== "boolean") settings.overlay.enabled = settings.overlay.autoHideMs > 0;
+  // البند #63 — الافتراض **ظاهر**، فلا يتغيّر سلوك مستخدم قائم بلا طلبه
+  if (typeof settings.overlay.hintEnabled !== "boolean") settings.overlay.hintEnabled = true;
   if (typeof settings.ytAutoQuality !== "string") settings.ytAutoQuality = "";
   if (typeof settings.ytShortsRedirect !== "boolean") settings.ytShortsRedirect = true;
   settings.cleanPlayer ||= {};
@@ -364,6 +371,19 @@ function defaultZoneActions() {
   };
 }
 
+// شارة المفتاح ثم نصّ الأوامر، عنصرين لا قالباً نصّياً (البند #32). الاسمان
+// مشتقّان من قيم التخزين، وكان الهروب يدوياً ومن `<` وحدها — فـ`&` تمرّ كما هي
+// و`&amp;` تُعرض حرفياً. `textContent` لا يُفسَّر فلا يبقى ما يُهرَّب منه.
+function actionLine(label, text) {
+  const line = document.createElement("div");
+  line.className = "actionLine";
+  const badge = document.createElement("span");
+  badge.className = "badge";
+  badge.textContent = label;
+  line.append(badge, text);
+  return line;
+}
+
 function renderGrid(actionsByZone) {
   const g = $("grid");
   g.innerHTML = "";
@@ -388,17 +408,10 @@ function renderGrid(actionsByZone) {
     }
 
     if (groups.size === 0) {
-      const empty = document.createElement("div");
-      empty.className = "actionLine";
-      empty.innerHTML = `<span class="badge">—</span>اضغط للإضافة`;
-      cell.appendChild(empty);
+      cell.appendChild(actionLine("—", "اضغط للإضافة"));
     } else {
       for (const [label, summaries] of groups) {
-        const line = document.createElement("div");
-        line.className = "actionLine";
-        const safe = summaries.join(" + ").replace(/</g, "&lt;");
-        line.innerHTML = `<span class="badge">${label.replace(/</g, "&lt;")}</span>${safe}`;
-        cell.appendChild(line);
+        cell.appendChild(actionLine(label, summaries.join(" + ")));
       }
     }
 
@@ -553,6 +566,7 @@ function renderOverlayTiming(overlay) {
   const vol = Number(overlay?.volumeAutoHideMs ?? grid);
   $("gridDuration").value = String(grid);
   $("gridDurationValue").textContent = formatDurationMs(grid);
+  $("zoneHintEnabled").checked = overlay?.hintEnabled !== false;
   $("volumeDuration").value = String(vol);
   $("volumeDurationValue").textContent = formatDurationMs(vol);
 }
@@ -963,6 +977,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     s.overlay ||= {};
     s.overlay.autoHideMs = grid;
     s.overlay.volumeAutoHideMs = vol;
+    s.overlay.hintEnabled = $("zoneHintEnabled").checked;
     s.overlay.enabled = grid > 0 || vol > 0;
     await saveSettings(s);
     const tabs = await chrome.tabs.query({});
@@ -975,6 +990,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     $("gridDurationValue").textContent = formatDurationMs(Number($("gridDuration").value));
   });
   $("gridDuration").addEventListener("change", persistOverlayTiming);
+  $("zoneHintEnabled").addEventListener("change", persistOverlayTiming);
   $("volumeDuration").addEventListener("input", () => {
     $("volumeDurationValue").textContent = formatDurationMs(Number($("volumeDuration").value));
   });
@@ -1209,6 +1225,27 @@ function validateBackup(parsed) {
   return null;
 }
 
+// نصّ لكل جزء من أجزاء migrateAll. الرسالة تُركَّب من **نتيجة الهجرة نفسها** فتصف
+// ما فشل فعلاً: جزءٌ واحد يُسمَّى وحده، والاثنان يُسمَّيان معاً في رسالة واحدة.
+// و«أو» ممنوعة: النتيجة تعرف الجواب، فرسالة تقول «أحدهما» تُعلم المستخدم بالفشل
+// ولا تُعينه عليه (قرار المالك 2026-08-01).
+//
+// وأي جزء يُضاف إلى migrateAll بلا نصّ هنا يُحمّر tools/test-import-migration.js —
+// وهو يعدّ الأجزاء من **بنية migrateAll نفسها** لا من قائمة مكتوبة بجوارها.
+const MIGRATION_PART_TEXT = {
+  profiles: "تجزئة قواعد المواقع",
+  zones: "ترقية أوامر المربّعات"
+};
+
+function migrationFailureText(result) {
+  const failed = Object.keys(MIGRATION_PART_TEXT)
+    .filter((part) => result?.[part]?.ok === false)
+    .map((part) => MIGRATION_PART_TEXT[part]);
+  // لا جزء معروف ⇒ الهجرة رُفضت قبل أن تُنتج نتيجة، فلا يُسمَّى ما لا يُعلم.
+  const what = failed.length ? failed.join(" و") : "ترقية الإعدادات القديمة";
+  return `استُوردت الإعدادات لكن تعذّرت ${what} — افتح الصفحة مجدداً`;
+}
+
 async function importAllSettings(file) {
   if (!file) return;
 
@@ -1248,10 +1285,14 @@ async function importAllSettings(file) {
     return;
   }
 
-  // A v1 file lands as a legacy blob; shard it before anything reads it.
-  const migrated = await migrateSiteProfiles().catch(() => ({ ok: false }));
+  // مدخل الهجرة الواحد نفسه، لا نسخة أصغر منه (البند #57). كانت هنا
+  // migrateSiteProfiles() وحدها، وترقية wheel.map ⇒ wheel.actions تقع **بأثر**
+  // location.reload() أدناه ⇒ DOMContentLoaded ⇒ migrateAll(). فأي تغيير يُسقط
+  // إعادة التحميل كان يُسقط الهجرة معه **بصمت**. الإعادة باقية أدناه، لكنها
+  // صارت تجميلاً للمحرّر لا شرطاً للصحّة.
+  const migrated = await migrateAll().catch(() => ({ ok: false }));
   if (!migrated.ok) {
-    setBackupStatus("bad", "استُوردت الإعدادات لكن تعذّرت تجزئة قواعد المواقع — افتح الصفحة مجدداً");
+    setBackupStatus("bad", migrationFailureText(migrated));
     return;
   }
 

@@ -31,7 +31,7 @@ function makeWorld({ items = {}, enabled = true, subtitles = { enabled: false, d
   const injected = [];
   const ctx = {
     location: { hostname: host },
-    isBlockedHost: () => blocked,
+    isBlockedHost: () => blocked, extensionActive: () => !blocked,
     subtitleSettings: { ...subtitles },
     blockedHosts: [],
     chrome: { storage: { sync: { get: async (d) => d } } },
@@ -143,6 +143,50 @@ console.log("\n[6] تطابق المفاتيح بين content.js و options.js")
   check("والمفتاحان يستهدفان الزرّين اللذين تضغطهما الأتمتة",
     w.read(`CLEAN_PLAYER_ITEMS.subtitles_button.includes("${SUB_BTN}") &&
             CLEAN_PLAYER_ITEMS.settings_button.includes("${SET_BTN}")`));
+}
+
+console.log("\n[7] البند #62 — وميض وسط الشاشة، بمحدّداته المقيسة");
+{
+  const w = makeWorld();
+  const items = w.read("CLEAN_PLAYER_ITEMS");
+  const optionsSrc = fs.readFileSync("options.js", "utf8");
+  const BEZEL = {
+    bezel_text: ".ytp-bezel-text-wrapper",
+    bezel_icon_valued: ":not(.ytp-bezel-text-hide) > .ytp-bezel",
+    bezel_icon_plain: ".ytp-bezel-text-hide > .ytp-bezel"
+  };
+  // ⚠️ المحدّدات **مقيسة على صفحة watch حيّة**، بانتظار خبوّ كل وميض قبل قراءة
+  // التالي: يوتيوب يفرّق بين الوميضين **بصنف على الأب** لا بصنف على العنصر.
+  // تغييرها بلا قياس جديد يُسقط البند صامتاً.
+  for (const [key, sel] of Object.entries(BEZEL)) {
+    check(`«${key}» في CLEAN_PLAYER_ITEMS بمحدّده المقيس`,
+      Array.isArray(items[key]) && items[key].includes(sel), items[key]);
+    check(`  و«${key}» في CLEAN_PLAYER_OPTIONS`, optionsSrc.includes(`key: "${key}"`));
+  }
+  // **الفرق عن أزرار الشريط السفلي ظاهر في الوسم نفسه لا في تعليق** (قرار المالك)
+  for (const key of Object.keys(BEZEL)) {
+    const m = new RegExp(`key: "${key}",\\s*label: "([^"]+)"`).exec(optionsSrc);
+    check(`  ووسم «${key}» يقول إنه وميض الوسط`, !!m && /Center flash/i.test(m[1]), m && m[1]);
+  }
+  // ولا يلتبس بأزرار الشريط: لا تقاطع محدّدات مع الثلاثة القائمة
+  const bar = [].concat(items.play_button, items.mute_button, items.volume_slider);
+  const bez = Object.keys(BEZEL).flatMap((k) => items[k]);
+  check("ولا محدّد مشترك بين وميض الوسط وأزرار الشريط",
+    !bez.some((x) => bar.includes(x)), bez.filter((x) => bar.includes(x)));
+
+  // الوميض ذو النصّ والوميض بلا نصّ **ينفصلان بصنف الأب** — وهذا كل ما يسمح به
+  // القياس: الصوت والسرعة معاً في الأول، والتشغيل/الإيقاف والتقديم معاً في الثاني.
+  check("والفصل بصنف الأب ytp-bezel-text-hide لا بصنف على العنصر",
+    BEZEL.bezel_icon_valued.includes(":not(.ytp-bezel-text-hide)") &&
+    BEZEL.bezel_icon_plain.startsWith(".ytp-bezel-text-hide"));
+
+  const css = makeWorld({ items: { bezel_text: true, bezel_icon_plain: true } }).css();
+  check("وتأشيرهما يُدخل محدّديهما في الورقة",
+    css.includes(".ytp-bezel-text-wrapper") && css.includes(".ytp-bezel-text-hide > .ytp-bezel"));
+  check("ولا يُدخل الثالث غير المؤشَّر",
+    !css.includes(":not(.ytp-bezel-text-hide) > .ytp-bezel"));
+  check("والافتراض: غير مؤشَّرة ⇒ لا تُخفى",
+    !makeWorld({ items: {} }).css().includes("ytp-bezel"));
 }
 
 console.log(`\nالنتيجة: ${pass} ناجحة · ${fail} فاشلة`);

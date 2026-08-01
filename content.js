@@ -19,6 +19,11 @@ let subtitleSettings = {
 };
 let subtitleStyleEl = null;
 let subtitleTrackObserver = null;
+// ── البند #64 — المفتاح الرئيسي ──────────────────────────────────────────
+// **افتراضه مُشغَّل بنمط `!== false` لا `=== true`**: ملفّ لم يُفتح إعداده قط
+// يسلك **سلوك اليوم حرفياً**، فالشكل (ب) **صفر تغيّر سلوكي افتراضياً** — الجديد
+// الوحيد هو **وجود** المفتاح.
+let masterEnabled = true;
 let ytAutoQuality = ""; // "" = auto (don't override)
 let ytShortsRedirect = true; // تحويل روابط Shorts إلى المشغّل العادي (watch)
 
@@ -298,7 +303,7 @@ function pickBoostReason(reasons) {
 // So we re-apply to the new element, and when that fails we drop back to 100%
 // so the reported value always matches what is actually audible.
 async function reapplyBoostTo(video) {
-  if (isBlockedHost()) return;
+  if (!extensionActive()) return;
   if (boostPct <= 100) return;       // nothing to carry over
   if (!video || boostMap.has(video)) return; // same element, gain already live
   const res = await applyBoostToVideo(video, boostPct);
@@ -324,7 +329,7 @@ function startBoostReapply() {
 async function applyBoostToAllVideos(pct) {
   // A blocked site must stay untouched — routing its audio through Web Audio is
   // exactly the kind of interference the block button promises to stop.
-  if (isBlockedHost()) {
+  if (!extensionActive()) {
     lastBoostFailure = "blocked";
     return { ok: false, reason: "blocked" };
   }
@@ -537,7 +542,7 @@ function applySubtitleStyles() {
     subtitleStyleEl.remove();
     subtitleStyleEl = null;
   }
-  if (isBlockedHost()) return;
+  if (!extensionActive()) return;
 
   // Hiding captions on hover previews is its OWN setting: someone who turned the
   // custom styling off still gets it, so it is built before the styling block and
@@ -729,7 +734,7 @@ function injectSubtitleCss(css) {
 }
 
 function applySubtitleTrack() {
-  if (isBlockedHost()) return;
+  if (!extensionActive()) return;
   const lang = subtitleSettings.defaultLang;
   if (!subtitleSettings.enabled || !lang) return;
 
@@ -737,20 +742,14 @@ function applySubtitleTrack() {
     enableMatchingTextTrack(video, lang);
   }
 
+  // البند #27: كان هنا فرع `else` يستدعي `tryEnableYouTubeCC()`، وكان **ميتاً
+  // 100% بالبناء**: أول سطر في تلك الدالة `if (!isYouTubeHost()) return;`
+  // ومستدعيها الوحيد داخل فرع «ليس يوتيوب» — فلم تُنفَّذ سطراً بعد حارسها أبداً.
+  // إعادتها تعني إعادة كود لا يعمل، لا إضافة ميزة. حارسها: tools/test-dead-code.js
   if (isYouTubeHost()) {
     // Drive YouTube's CC + auto-translate menu via simulated clicks
     youtubeSetCaptionLanguage(lang);
-  } else {
-    tryEnableYouTubeCC(); // no-op outside YouTube
   }
-}
-
-function tryEnableYouTubeCC() {
-  if (!isYouTubeHost()) return;
-  const btn = document.querySelector(".ytp-subtitles-button");
-  if (!btn) return;
-  if (btn.getAttribute("aria-pressed") === "true") return;
-  try { btn.click(); } catch {}
 }
 
 function isYouTubeHost() {
@@ -827,7 +826,7 @@ function closeYTSettingsIfOpen() {
 async function youtubeSetCaptionLanguage(langCode) {
   // Guarded independently of applySubtitleTrack: this one drives the player with
   // synthetic clicks, the most intrusive thing the extension does.
-  if (isBlockedHost()) return false;
+  if (!extensionActive()) return false;
   if (!langCode || !isYouTubeHost()) return false;
 
   const targetNames = (YT_LANG_NAMES[langCode] || [langCode]).map((s) => s.toLowerCase());
@@ -909,9 +908,10 @@ function enableMatchingTextTrack(video, lang) {
     if (tLang.startsWith(target) || tLabel.includes(target)) {
       track.mode = "showing";
       foundMatch = true;
-    } else if (track.mode === "showing") {
-      // Leave other showing tracks alone unless user matched a different one
     }
+    // البند #28: كان هنا `else if (track.mode === "showing")` **جسمه تعليق فقط** —
+    // نيّة غير منفّذة لا سلوك، فالشرط يُحسب ولا يفعل شيئاً. حذفه لا يمسّ أي مسار.
+    // والسلوك المقصود («اترك المسارات الأخرى كما هي») هو **ما يحدث بلا فرع أصلاً**.
   }
   return foundMatch;
 }
@@ -919,7 +919,7 @@ function enableMatchingTextTrack(video, lang) {
 // True exactly when the observer has any work to do. Kept in one place so the
 // create path and the disconnect path can never drift apart.
 function subtitleTrackWatchWanted() {
-  return !!(subtitleSettings.enabled && subtitleSettings.defaultLang) && !isBlockedHost();
+  return !!(subtitleSettings.enabled && subtitleSettings.defaultLang) && extensionActive();
 }
 
 // Audit #21: the observer used to be created unconditionally with the guard INSIDE
@@ -1137,6 +1137,14 @@ async function loadSoundDisplaySettings(pre) {
   }
 }
 
+// ── البند #64 — مُحمِّل المفتاح الرئيسي ─────────────────────────────────────
+// `!== false` عمداً: غياب المفتاح = مُشغَّل، فلا هجرة بيانات ولا تغيّر لمن لم
+// يفتح الإعدادات قط.
+async function loadMasterEnabled(pre) {
+  const data = await settingsRead(pre);
+  masterEnabled = (data.settings || {}).enabled !== false;
+}
+
 async function loadYtAutoQualitySettings(pre) {
   const data = await settingsRead(pre);
   ytAutoQuality = (data.settings || {}).ytAutoQuality || "";
@@ -1163,6 +1171,7 @@ function ytQualityGap() {
 }
 
 function triggerYtQuality() {
+  if (!extensionActive()) return;   // #64: كانت بلا أي بوّابة
   if (!isYouTubeHost() || !ytAutoQuality) return;
   const key = `${location.pathname}${location.search}|${ytAutoQuality}`;
   if (key === ytQualityAttemptKey) return; // same video, same quality: already tried
@@ -1170,8 +1179,17 @@ function triggerYtQuality() {
   window.dispatchEvent(new CustomEvent("__vz_setq__", { detail: { q: ytAutoQuality } }));
 }
 
+// ⚠️ **البند #38ج — التسجيل مرّة واحدة مهما نودي.** صار لهذه الدالّة طريقان:
+// البدء، **والإيقاظ** عند الضغط على «تفعيل يدوي». وبلا هذا الحارس تُضاعَف
+// مستمعاتها الأربعة مع كل ضغطة. **يُختبَر بالعدّ لا بالنيّة**
+// (`tools/test-yt-wake.js`).
+let ytQualityWired = false;
+
 function startYtAutoQuality() {
+  if (!extensionActive()) return;   // #64
   if (!isYouTubeHost()) return;
+  if (ytQualityWired) return;
+  ytQualityWired = true;
   // Leaving the video cancels a poll still running for it. Without this the old
   // poll survives the navigation and sets the previous video's quality on the new
   // one — the MAIN world listens for yt-navigate-start too, this is the belt.
@@ -1199,6 +1217,28 @@ function startYtAutoQuality() {
   });
 }
 
+// ── البند #38ج — **تعريف واحد يستهلكه الطريقان** ────────────────────────────
+// **لماذا دالّة بدل تكرار السطرين:** للجودة الآن طريقان — **البدء** و**الإيقاظ**
+// عند «تفعيل يدوي» على صفحة `content.js` حاضر فيها سلفاً (فحقنه لا عمل له بحارس
+// `__GVZ_CONTENT_LOADED__`، **فلا بدء جديد ولا نداء** — مقيس في `AUDIT.md` §26).
+// **ولا يُكتب تسلسل تشغيل ثانٍ في الإيقاظ**: نسختان تتباعدان مع الوقت، وهو درس
+// عقد الصوت في #60 حرفياً — **عقد محفوظ في نسخة واحدة ليس عقداً** — وقد كلّفنا
+// مرة. فالطريقان يستهلكان **هذه الدالّة وحدها**.
+//
+// **وهي idempotent بالبناء لا بالحراسة الخارجية:** `startYtAutoQuality` تُسجّل
+// مستمعاتها مرّة (`ytQualityWired`)، و`triggerYtQuality` محروسة بمفتاح المحاولة
+// (`ytQualityAttemptKey`) — فضغطتان متتاليتان **لا تزيدان مستمعاً ولا طلباً**.
+//
+// **و`pre` اختياري بنفس عقد بقيّة المُحمِّلات:** البدء يمرّر قراءته الواحدة
+// (#13)، والإيقاظ يستدعيها بلا معامل **فيقرأ التخزين من جديد** — وهو المطلوب
+// تحديداً، إذ قد يكون المستخدم غيّر الجودة بعد فتح الصفحة.
+function applyYtQualityStep(pre) {
+  return Promise.resolve(loadYtAutoQualitySettings(pre)).then(() => {
+    startYtAutoQuality();
+    triggerYtQuality();
+  });
+}
+
 // -------- Shorts → المشغّل العادي --------
 async function loadYtShortsRedirectSetting(pre) {
   const data = await settingsRead(pre);
@@ -1213,7 +1253,7 @@ function maybeRedirectShorts() {
   // Bound to the global enable: switching the extension off stops this too, with
   // no exception (owner decision 4, audit #20). remappingEnabled() is the same
   // gate the zones, keyboard and mouse paths use — one switch, everything stops.
-  if (!ytShortsRedirect || !remappingEnabled() || !isYouTubeHost() || isBlockedHost()) return;
+  if (!ytShortsRedirect || !extensionActive() || !remappingEnabled() || !isYouTubeHost()) return;
   if (window.top !== window) return; // top frame only
   const m = /^\/shorts\/([A-Za-z0-9_-]+)/.exec(location.pathname);
   if (!m) return;
@@ -1256,6 +1296,21 @@ const CLEAN_PLAYER_ITEMS = {
   embed_more_videos:       [".ytp-pause-overlay-container", ".ytp-pause-overlay"],
   watermark:               [".ytp-watermark"],
   large_play_button:       [".ytp-large-play-button"],
+  // ── وميض وسط الشاشة (bezel) — البند #62 ───────────────────────────────────
+  // ⚠️ **غير أزرار الشريط السفلي**: `play_button` و`mute_button` و`volume_slider`
+  // أدناه تُخفي **أزراراً ثابتة**؛ وهذي تُخفي **وميضاً يومض لحظةً وسط الشاشة**.
+  // وُلدت من #60: صرنا نضغط مفتاح يوتيوب بدل الكتابة الصامتة، فصار يومض كل خطوة.
+  //
+  // **التقسيم من قياس حيّ لا من تخمين** (صفحة watch، بانتظار خبوّ كل وميض قبل
+  // قراءة التالي): يوتيوب نفسه يفرّق بينهما **بصنف على الأب**:
+  //   · بلا `ytp-bezel-text-hide` ⇒ **وميض له نصّ**: الصوت («0%» · «100%»)
+  //     **والسرعة** («1.25x» · «1x») — قِيسا معاً، فلا ينفصلان.
+  //   · مع `ytp-bezel-text-hide`  ⇒ **وميض بلا نصّ**: تشغيل/إيقاف **والتقديم
+  //     والإرجاع** — قِيسا معاً كذلك.
+  //   · وتغيير **الجودة لا يومض أصلاً** (قِيس: `bezel 0×0`).
+  bezel_text:              [".ytp-bezel-text-wrapper"],
+  bezel_icon_valued:       [":not(.ytp-bezel-text-hide) > .ytp-bezel"],
+  bezel_icon_plain:        [".ytp-bezel-text-hide > .ytp-bezel"],
   spinner:                 [".ytp-spinner"],
   heatmap:                 [".ytp-heat-map-container", ".ytp-heat-map-chapter"],
   prev_button:             [".ytp-prev-button"],
@@ -1315,7 +1370,7 @@ function applyCleanPlayerCSS() {
     cleanPlayerStyleEl.remove();
     cleanPlayerStyleEl = null;
   }
-  if (!cleanPlayerSettings.enabled || !isYouTubeFamilyHost() || isBlockedHost()) return;
+  if (!cleanPlayerSettings.enabled || !isYouTubeFamilyHost() || !extensionActive()) return;
 
   // The caption-language automation drives YouTube's menu by CLICKING these two
   // buttons, and findVisibleYTMenuItem requires a non-zero rect — so hiding them
@@ -1340,6 +1395,22 @@ function applyCleanPlayerCSS() {
 
 function isBlockedHost() {
   return blockedHosts.includes(baseDomain(location.host));
+}
+
+// ── البند #64 — **البوّابة الواحدة** ────────────────────────────────────────
+// **العطب لم يكن ميزةً بلا حارس، بل أحد عشر حارساً متفرّقاً يتباعدون بالبناء:**
+// المفتاح العام كان يحرس أربعة، والحظر عشرة، **والجودة لا شيء** — فأطفأ المستخدم
+// وحظر ولم يُطفأ شيء (`AUDIT.md` §27).
+//
+// **الترتيب المقرَّر (قرار المالك):** المفتاح الرئيسي ← حظر الموقع ←
+// `(siteRules || siteProfile)` للريماب ← مفتاح الميزة نفسها. **وهذه الدالّة
+// تملك الحلقتين الأوليين وحدهما**؛ ما تحتهما يبقى لكل ميزة كما كان.
+//
+// ⚠️ **وحارسها البنيويّ أن `isBlockedHost()` لها موضع نداء واحد — هنا.**
+// يحرسه `tools/test-master-gate.js` بالعدّ: أي ميزة تفحص الحظر بنفسها تُحمّر
+// المجموعة، **فيستحيل التفرّق الذي وُلد منه البند** بدل أن يُحرَس بالتذكّر.
+function extensionActive() {
+  return masterEnabled && !isBlockedHost();
 }
 
 
@@ -1421,17 +1492,20 @@ function zoneRectForVideo(video) {
 }
 
 function zonesActive() {
+  if (!extensionActive()) return false;   // #64: الرئيسي ثم الحظر
   if (!remappingEnabled()) return false;
-  if (isBlockedHost()) return false;
   if (!zoneSettings?.enabled) return false;
   if (zoneSettings?.fullscreenOnly && !document.fullscreenElement) return false;
   return true;
 }
 
+// ⚠️ **#38أ — لا يُبنى الـoverlay هنا.** كانت هذه الدالّة تبنيه لكل حدث عجلة أو
+// نقرة فوق فيديو **قبل أن يُعرف هل للمربّع ربط أصلاً**، فيُنشأ DOM لا يُعرض.
+// صار البناء في **مسارَي العرض** بعد تأكّد الربط — وهو النمط الذي يتبعه مسار
+// المفاتيح سلفاً (`zoneKeyBinding` ثم `ensureVideoOverlay`)، فتوحّدت الثلاثة.
 function getZoneAtEvent(e) {
   const video = getVideoUnderPointer(e);
   if (!video) return null;
-  ensureVideoOverlay(video);
   const rect = zoneRectForVideo(video);
   const zone = getZoneNumber(rect, e.clientX, e.clientY);
   return zone ? { video, zone } : null;
@@ -1561,6 +1635,7 @@ window.addEventListener("wheel", (e) => {
   const dir = e.deltaY < 0 ? "up" : "down";
   const actions = normalizeMappedActions(entry[dir]);
   if (!actions.length) return;
+  ensureVideoOverlay(hit.video);   // #38أ: بعد تأكّد الربط لا قبله
   showOverlay(`Zone ${zoneLabel(hit.zone)} • ${dir.toUpperCase()} → ${actions.join(" + ")}`);
 
   let ok = false;
@@ -1619,6 +1694,7 @@ function handleZoneClick(e) {
   const { actions } = bind;
 
   e.__videoUnderPointer = bind.video;
+  ensureVideoOverlay(bind.video);   // #38أ: بعد تأكّد الربط لا قبله
   showOverlay(`Zone ${zoneLabel(bind.zone)} • ${which.toUpperCase()} CLICK → ${actions.join(" + ")}`);
 
   let ok = false;
@@ -1651,7 +1727,7 @@ window.addEventListener("auxclick", handleZoneClick, true);
 window.addEventListener("contextmenu", handleZoneClick, true);
 window.addEventListener("mousedown", suppressMiddleClickDefault, true);
 // -------------------------------------------------------------------------
-let overlaySettings = { enabled: true, autoHideMs: 900, volumeAutoHideMs: 900 };
+let overlaySettings = { enabled: true, autoHideMs: 900, volumeAutoHideMs: 900, hintEnabled: true };
 
 async function loadOverlaySettings(pre) {
   const data = await settingsRead(pre);
@@ -1662,7 +1738,10 @@ async function loadOverlaySettings(pre) {
   overlaySettings = {
     enabled: o.enabled !== false && (grid > 0 || vol > 0),
     autoHideMs: grid,
-    volumeAutoHideMs: vol
+    volumeAutoHideMs: vol,
+    // البند #63 — افتراضه **الحالي (ظاهر)**: `!== false` لا `=== true`، فمن لم
+    // يفتح الإعدادات قط لا يتغيّر سلوكه بحرف.
+    hintEnabled: o.hintEnabled !== false
   };
 
   if (!overlaySettings.enabled) hideOverlayNow();
@@ -1855,6 +1934,15 @@ function startOverlayTracking() {
   const tick = () => {
     if (!anySubElementVisible()) {
       vzTrackRafId = null;
+      // ⚠️ **#38ب — تفريغ المرجع القويّ، بلا آلة دورة حياة جديدة.**
+      // `vzOverlayVideo` كان يبقى مُمسِكاً بعنصر فيديو **بعد خروجه من الـDOM**
+      // إلى نهاية عمر الصفحة (`teardownOverlay` لا تُنادى إلا عند التحوّل إلى
+      // فيديو آخر، و`hideOverlayNow` تُخفي ولا تُفرّغ).
+      // **والموضع هنا يجعل التغيير محايداً بالبرهان لا بالرجاء:** لا شيء معروض
+      // (شرط الحلقة)، والعنصر **منفصل** — والمسار الوحيد الذي يقرأ المرجع بعدها
+      // هو المسار السريع في `ensureVideoOverlay` وهو يشترط `video.isConnected`،
+      // فكان سيسقط إلى الهدم وإعادة البناء على أي حال.
+      if (vzOverlayVideo && !vzOverlayVideo.isConnected) vzOverlayVideo = null;
       return;
     }
     positionOverlayToVideo();
@@ -1948,9 +2036,12 @@ function showOverlay(text) {
   if (ms <= 0) return; // Grid overlay disabled
   if (!vzGridEl || !vzHintEl) return;
 
+  // البند #63: التلميح وحده يُطفأ — **والشبكة تبقى**، فمنصّات §8 و§9 و§10 تعتمد
+  // ظهور الشبكة لا نصّ التلميح. إطفاء أحدهما لا يُسقط الآخر.
   vzHintEl.textContent = text || "Zones";
   vzGridEl.classList.remove("vzHidden");
-  vzHintEl.classList.remove("vzHidden");
+  if (overlaySettings.hintEnabled) vzHintEl.classList.remove("vzHidden");
+  else vzHintEl.classList.add("vzHidden");
   positionOverlayToVideo();
   startOverlayTracking();
 
@@ -1974,8 +2065,21 @@ function showVolumeIndicator(video) {
   ensureVideoOverlay(video);
   if (!vzVolumeBadge || vzOverlayVideo !== video) return;
 
-  const percent = video.muted ? 0 : Math.round((video.volume ?? 1) * 100);
-  vzVolumeBadge.textContent = String(percent);
+  // Level and mute are independent facts (#35), so they get two channels in the
+  // badge instead of one field that conflates them: the level always reads the
+  // real value, and mute adds a mark beside it. Lowering the latent level of a
+  // muted video has to be visible — a change with no feedback is a defect of its
+  // own. Side effect worth having: "0" on the badge now means one thing only.
+  // A text mark, not an emoji: a colour emoji ignores --vz-volume-color, and the
+  // badge has to keep honouring the user's soundDisplay colour and size.
+  // ⚠️ **الشارة تعرض ما سيسمعه المستخدم عند الفكّ، لا ما يقرأه العنصر وهو مكتوم**
+  // (عقد الصوت ع3، قرار المالك 2026-07-31). فحيث يكتم المضيف بتصفير المستوى
+  // ويخفي الكامن — تويتش — تُعرض **العلامة وحدها بلا رقم**.
+  // **«مكتوم 0» ممنوعة: رقم نعلم أنه كاذب أسوأ من غياب الرقم.**
+  const percent = Math.round((video.volume ?? 1) * 100);
+  vzVolumeBadge.textContent = video.muted
+    ? (hostAdapterFor()?.hidesLevelWhenMuted ? "مكتوم" : `مكتوم ${percent}`)
+    : String(percent);
   vzOverlay?.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
   vzOverlay?.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
   vzVolumeBadge.classList.remove("vzHidden");
@@ -2118,6 +2222,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   // Every RELOAD_* now goes through the one applier — see requestReload (audit #14)
   if (RELOAD_MESSAGE_TYPES.has(msg?.type)) requestReload();
+
+  // ── البند #38ج — الإيقاظ ──────────────────────────────────────────────────
+  // **لماذا رسالة جديدة ولم تكفِ `RELOAD_YT_QUALITY` القائمة؟** لأنها تمرّ بـ
+  // `flushReload` التي تخرج مبكراً عند `snapshot === lastAppliedSnapshot` —
+  // **وفي الإيقاظ لم يتغيّر شيء بالتعريف**، فتخرج ولا تنادي `triggerYtQuality`.
+  // وإسقاط ذلك الخروج المبكر يهدم تجزئة #14 التي تجعل القناتين مجّانيتين
+  // (أيّهما وصلت أولاً كفت). **فالقائم لا يكفي، والدلالتان مختلفتان:**
+  // `RELOAD_*` تعني «تغيّر إعداد فأعد القراءة»، و`GVZ_ACTIVATED` تعني
+  // **«لم يتغيّر شيء، وأعد تنفيذ خطوة البدء»**.
+  //
+  // ⚠️ **وإطار خرج مبكراً لا يستيقظ برسالة** (#13ب و#56): جوابه أنه لم يبدأ،
+  // وإيقاظه هنا يفتح 122 إطاراً على صفحة أخبار. والفرع الآخر لا يحتاجه أصلاً —
+  // هناك يُحقن `content.js` من جديد فيبدأ بنفسه.
+  if (msg?.type === "GVZ_ACTIVATED") {
+    if (startupBegun) applyYtQualityStep();
+    return; // لا ردّ: المرسِل لا ينتظر شيئاً
+  }
   if (msg?.type === "SET_VOLUME_BOOST") {
     // Floor is 100: the booster only amplifies. Attenuation is ACTION:VOLUME's job.
     const pct = Math.max(100, Math.min(600, Number(msg.pct) || 100));
@@ -2257,12 +2378,13 @@ async function flushReload() {
   await Promise.all([
     loadRulesForThisHost(data), loadSiteProfile(data), loadZoneSettings(data),
     loadOverlaySettings(data), loadBlockedHosts(data), loadSoundDisplaySettings(data),
-    loadGridAppearance(data), loadSubtitleSettings(data), loadYtAutoQualitySettings(data),
+    loadMasterEnabled(data), loadGridAppearance(data), loadSubtitleSettings(data), loadYtAutoQualitySettings(data),
     loadYtShortsRedirectSetting(data), loadCleanPlayerSettings(data)
   ]);
   triggerYtQuality();
   maybeRedirectShorts();
-  if (!remappingEnabled()) hideOverlayNow();
+  // ‏#64: إطفاء الرئيسي يُخفي الشبكة كما يفعل إطفاء الريماب.
+  if (!extensionActive() || !remappingEnabled()) hideOverlayNow();
 }
 
 function runStartupSteps() {
@@ -2272,6 +2394,8 @@ function runStartupSteps() {
   // skip a redirect the user has switched on (audit #20).
   const globalRulesReady = startup("globalRules", () => read.then(loadRulesForThisHost));
   const siteProfileReady = startup("siteProfile", () => read.then(loadSiteProfile));
+  // ‏#64: الرئيسي يُقرأ مع الأوائل — بوّابة تُقرأ متأخّرة بوّابة مفتوحة لحظةً.
+  startup("master", () => read.then(loadMasterEnabled));
   startup("zones", () => read.then(loadZoneSettings)); // ✅ مهم: تشغيل zones بعد refresh مباشرة
   startup("overlay", () => read.then(loadOverlaySettings));
   startup("blockedHosts", () => read.then(loadBlockedHosts));
@@ -2279,10 +2403,8 @@ function runStartupSteps() {
   startup("gridAppearance", () => read.then(loadGridAppearance));
   startup("subtitles", () => read.then(loadSubtitleSettings));
   startup("subtitleObserver", startSubtitleTrackObserver);
-  startup("ytQuality", () => read.then(loadYtAutoQualitySettings).then(() => {
-    startYtAutoQuality();
-    triggerYtQuality();
-  }));
+  // البدء والإيقاظ يستهلكان `applyYtQualityStep` نفسها — لا تسلسل ثانٍ (#38ج)
+  startup("ytQuality", () => read.then(applyYtQualityStep));
   startup("ytShorts", () => Promise.all([
     read.then(loadYtShortsRedirectSetting), globalRulesReady, siteProfileReady
   ]).then(() => startYtShortsRedirect()));
@@ -2321,11 +2443,6 @@ function normalizeMouseEvent(e) {
   const mapBtns = ["Mouse1", "Mouse2", "Mouse3", "Mouse4", "Mouse5"];
   return mapBtns[e.button] || `Mouse${e.button + 1}`;
 }
-function getVideoUnderPointerStrict(e) {
-  if (typeof e.clientX !== "number" || typeof e.clientY !== "number") return null;
-  const v = findVideoAtPoint(e.clientX, e.clientY);
-  return v || null;
-}
 
 function shouldLetNativeLinkHandlingRun(e, video) {
   const target = e.target;
@@ -2348,12 +2465,384 @@ function togglePlay(video) {
   else video.pause();
 }
 
+// ── البند #34 · قياس `tools/bench-seek-edge.mjs` و`tools/bench-live-seek.mjs` ──
+// **المرجع `seekable` لا `duration`.** كان الحارس يرفض كل عنصر `duration`ه غير
+// منتهية، وقِيس أن ذلك **يطابق تويتش لا كل بثّ**: يوتيوب المباشر يعلن
+// `duration = 50380` منتهية ونافذة 14 ساعة **والتقديم يقع فيه اليوم فعلاً**.
+//
+// ⚠️ **ولماذا يُرفض التقديم بدل أن يُحرَس؟ لأن الضرر مقيس ولا تعافي ذاتيّ فيه:**
+// كتابة `currentTime` إلى ما بعد حافة بثّ نهايته **قيمة حدّية (2^30)** تُجمّد
+// المشغّل — قِيس على `twitch.tv/ow_esports` في **تشغيلتين**: الزمن ثابت عند
+// 36.5s طوال 15.6s، و`readyState = 1`، و`paused`/`seeking` مرفوعان، والأحداث
+// `seeking · waiting · pause`. **ولا يخرج منه إلا كتابة إلى الخلف.** فمراقبٌ
+// يرصد التجمّد ويتراجع **آلة غير متزامنة جديدة** تراهن على أن المشغّل لا يتعافى،
+// والرفض **يجعل التجمّد مستحيلاً بالبناء بسطر شرط** — وهو خيار #58 و#59 نفسه:
+// **المستحيل بالبناء أولى من المحروس.**
+//
+// **وما نخسره مكتوب عمداً:** التقديم **داخل** نافذة DVR على تويتش بعد إرجاع
+// **غير مدعوم قصداً**. ولو أُريد يوماً **فثمنه مراقب تجمّد** — يُقرأ هذا ولا
+// يُعاد النقاش من الصفر.
+//
+// ⚠️ **ونطاق فارغ ليس نطاقاً غائباً:** خادم بلا دعم نطاقات يعطي
+// `seekable = [[0, 0]]` — **طوله 1 لا 0**، فشرط `length === 0` وحده **لا يُطلق**.
+// ولذلك الشرط شرطان. **وهذا تغيّر سلوك مقصود ومقيس:** اليوم يُحسب الهدف 49.5
+// **فيقصّه المتصفّح إلى 0** فيضيع الموضع ويعود التشغيل من الأول، وبعد الإصلاح
+// **لا يحدث شيء**. ليس انحداراً.
 function seek(video, deltaSec) {
   if (!video) return;
-  // بعض الستريمات live ما تدعم seek
+
+  // (١) نافذة صالحة قبل أي شيء
+  const ranges = video.seekable;
+  if (!ranges || ranges.length === 0) return;
+  const start = ranges.start(0);
+  const end = ranges.end(ranges.length - 1);
+  if (!(end - start > 0)) return; // نافذة فارغة — يسقط [[0,0]] هنا لا بالشرط الأول
+
+  const target = video.currentTime + deltaSec;
+
+  // (٢) الإرجاع مسموح دائماً متى صحّت النافذة، ويُقصّ إلى بدايتها
+  if (deltaSec < 0) {
+    video.currentTime = Math.max(start, target);
+    return;
+  }
+
+  // (٣) التقديم مسموح فقط إذا كان الحدّ الأعلى موثوقاً. **والثقة معرَّفة بالمقيس
+  // لا بعتبة مخترعة: `end` موثوق إذا كانت `duration` منتهية** — فيوتيوب المباشر
+  // يعمل كما هو اليوم، وتويتش (`Infinity` ونهاية حدّية) يُرفض تقديمه.
   if (isNaN(video.duration) || !isFinite(video.duration)) return;
-  video.currentTime = Math.max(0, Math.min(video.currentTime + deltaSec, video.duration));
+  video.currentTime = Math.max(start, Math.min(target, Math.min(end, video.duration)));
 }
+
+// ── البند #60 · قرار المالك 25 — إطار محوّلات المضيفين ──────────────────────
+// **لماذا وُجد:** قِيس أن يوتيوب وتويتش يحتفظان بنموذج مستوى خاص بهما ويعيدان
+// رسمه على `video.volume` عند أي دورة كتم من طرفهما، **فتُمحى كتابتنا الصحيحة**
+// ويعود المستوى إلى قيمة ثابتة عندهما (56.2% و50%) مهما كتبنا. وقِيس أن قيادة
+// واجهة المضيف هي **الوحيدة** التي تجعل نموذجه يتبعنا. التفصيل: `AUDIT.md` §8.
+//
+// **وأربعة قيود بنيوية لا تُخفَّف** (قرار 25):
+//  ١. السجلّ مفتاحه المضيف و**افتراضه لا محوّل**. من لا محوّل له يسلك مسار اليوم
+//     **حرفياً** — ولذلك يخرج `hostAdapterFor` فوراً حين يكون السجلّ فارغاً، بلا
+//     حتى استدعاء `baseDomain`.
+//  ٢. **عمليات نسبية فقط**: خطوة أعلى · خطوة أسفل · قلب الكتم. **لا ضبط مطلق في
+//     الواجهة أصلاً** كي لا يُضاف لاحقاً سهواً — والقيد يُسقط حاجتنا إلى معرفة
+//     منحنى المضيف بين منزلقه و`video.volume`، وهو منحنى غير مقيس ولا نحتاجه.
+//  ٣. **تحقّق بعديّ ثم سقوط آمن**: إن لم تتغيّر حالة الصوت خلال مهلة قصيرة سقطنا
+//     إلى الكتابة المباشرة — أي **سلوك اليوم**. فإعادة تصميم المضيف تُنزلنا إلى
+//     ما نحن عليه الآن **لا إلى عطب** (درس #50)، **والسقوط يُسجَّل مرة لا في كل
+//     ضغطة**. والسقوط مسار عمل حقيقي لا اسم: قِيس أن `video.volume` يقصّ المسار
+//     المعزَّز بنسبة **0.500 بالضبط**، فالمستخدم يسمع فرقاً حتى مع المعزّز.
+//  ٤. **الشارة تقرأ الحالة الحيّة بعد العملية دائماً** — في المسار المباشر وبعد
+//     نجاح المحوّل وبعد السقوط على السواء.
+//
+// ⚠️ **وهذا الكومِت يُدخل الإطار وحده بصفر محوّل مسجَّل**، وشرط قبوله **صفر تغيّر
+// سلوكي**: `tools/test-host-adapter.js` يبرهنه، ومنه حارس دائم يعدّ الأحداث
+// المُرسَلة ويُفشل الاختبار إن تجاوزت المتوقَّع — أثراً لحادثة انفجار أحداث
+// رُئيت مرة ولم تُفسَّر (`AUDIT.md` §9).
+const hostAdapters = new Map();       // baseDomain ⇒ محوّل. **فارغ عمداً**
+const ADAPTER_OPS = ["stepUp", "stepDown", "toggleMute"]; // نسبية فقط، بلا مطلق
+const ADAPTER_VERIFY_MS = 150;
+const adapterFellBack = new Set();    // «مضيف|عملية» ⇒ سُجِّل سقوطه مرة واحدة
+
+function hostAdapterFor() {
+  if (!hostAdapters.size) return null; // المسار الشائع: خروج قبل أي عمل
+  return hostAdapters.get(baseDomain(location.host)) || null;
+}
+
+function audioStateOf(video) {
+  return { volume: video?.volume ?? 1, muted: !!video?.muted };
+}
+
+// يُرجع true إن تولّى المحوّل العملية (ومعه تحقّقه وسقوطه)، و false ⇒ نفّذ المسار
+// المباشر فوراً كما هو اليوم.
+function runHostAdapter(video, op, applyDirect) {
+  const adapter = hostAdapterFor();
+  if (!adapter || typeof adapter[op] !== "function") return false;
+  const before = audioStateOf(video);
+  try {
+    const res = adapter[op](video);
+    if (res === false) return false;
+    // ⚠️ **«skip» = تولّاها المحوّل بأن قرّر ألا يقع شيء** (عقد الصوت ع2 على
+    // مضيف يكتم بتصفير المستوى). لا تحقّق ولا سقوط: **السقوط هنا ضرر لا احتياط**
+    // — يكتب قيمة يمحوها المضيف فتتحرّك الشارة ولا يتغيّر شيء.
+    if (res === "skip") {
+      // وحتى حين لا يقع شيء **تُعرض الشارة**: المستخدم فعل، فيستحقّ جواباً
+      // صادقاً عن الحالة (عقد الصوت ع3). صمتٌ تامّ يبدو تعطّلاً.
+      showVolumeIndicator(video);
+      return true;
+    }
+  } catch (err) {
+    console.debug(`[VIDEO-ZONES] محوّل ${op} رمى، والمسار المباشر يتولّاه:`, err);
+    return false;
+  }
+  setTimeout(() => {
+    const now = audioStateOf(video);
+    if (now.muted !== before.muted || Math.abs(now.volume - before.volume) > 0.001) {
+      showVolumeIndicator(video); // نجح المحوّل — والشارة تقرأ ما صار إليه فعلاً
+      return;
+    }
+    const key = `${baseDomain(location.host)}|${op}`;
+    if (!adapterFellBack.has(key)) {
+      adapterFellBack.add(key);
+      console.debug(`[VIDEO-ZONES] محوّل ${op} لم يقع أثره، والسقوط إلى الكتابة المباشرة`);
+    }
+    applyDirect();
+    showVolumeIndicator(video);
+  }, ADAPTER_VERIFY_MS);
+  return true;
+}
+
+// ── محوّل يوتيوب (#60 · قرار 25) — عائلة «اختصار المضيف» ────────────────────
+// قِيس أن قيادة واجهة المضيف هي **الوحيدة** التي تجعل نموذجه يتبعنا، وأن
+// **حدثاً غير موثوق يكفيها** (`AUDIT.md` §8 §6) — فسكربت المحتوى يستطيعها.
+// ومصنع لا نسخة مفردة: يوتيوب عائلة «الاختصار»، وتويتش وكِك عائلة «المنزلق»،
+// فيُكتبان لاحقاً بمصنعهما لا بتكرار هذا.
+//
+// ⚠️ **حارس عدم الارتداد**: مستمع المفاتيح عندنا في `window`+`capture` **يرى ما
+// نُرسله** — قِيس **2 من 2** — فبلا هذا العلم يصير أمر الصوت يُطلق نفسه.
+let adapterSending = false;
+
+// ⚠️ **قاعدة عامة: أي مسح لعناصر الصفحة يستثني عناصر الإضافة صراحةً.**
+// واقعتها: مِجَسّ الشكل على كِك طابق عنصراً واحداً هو **`.vzVolume` — شارتنا
+// نحن** — اصطادها `[class*="volume"]`. **محوّل يمسح بلا استثناء يقود شارته**،
+// فيقرأ حالته هو ويحسبها حالة المضيف. تُستدعى في كل محوّل يمسح.
+function isOwnElement(el) {
+  if (!el || el.nodeType !== 1) return false;
+  if (typeof el.closest === "function" && el.closest(".vzWrap")) return true;
+  const cls = typeof el.className === "string" ? el.className : "";
+  return /\bvz[A-Z]/.test(cls) || /^vz_/.test(el.id || "");
+}
+
+function makeKeyStepAdapter({ playerSelector, upKey, downKey, unmuteKey, minSendMs = 60, maxQueue = 5 }) {
+  // الطابور صار **عمليات** لا عدداً: فكّ الكتم يسبق الخطوة في الطابور نفسه،
+  // فيقع بالترتيب المطلوب — فكّ ثم خطوة — بلا مسار ثانٍ ولا توقيت هشّ.
+  let queue = [], timer = null, lastSentAt = 0;
+
+  // ⚠️ **قاعدة أمان لا صوت:** الهدف عنصر المشغّل أو `<video>`، و**لا
+  // `document.activeElement` أبداً**. قِيس أن سهماً يصل إلى حقل مركَّز يقود قائمة
+  // اقتراحات يوتيوب **فيستبدل نصّ المستخدم** («hello» ⇒ «hello hello»)، والضغطة
+  // الموثوقة تفعلها كذلك — فالحارس **على الهدف لا على الاصطناع**.
+  const targetFor = (video) => {
+    const root = video?.getRootNode?.();
+    const scope = root && typeof root.querySelector === "function" ? root : document;
+    return scope.querySelector(playerSelector) || video || null;
+  };
+
+  // الإرسال مُلجَّم بالزمن **وبالسقف معاً**: واحد كل `minSendMs` على الأكثر،
+  // والطابور لا يتجاوز `maxQueue` فدفقة طويلة تُهدر زائدها بدل أن تنفجر إرسالاً.
+  // ⚠️ اللجام بالزمن يقيس **آخر إرسال فعلي** لا وجود مؤقّت: بلا `lastSentAt`
+  // كانت كل نقرة تجد المؤقّت فارغاً فتُرسل فوراً، فلا لجام أصلاً.
+  const schedule = (video) => {
+    if (timer) return;
+    timer = setTimeout(() => drain(video), Math.max(0, minSendMs - (nowMs() - lastSentAt)));
+  };
+
+  const KEY_CODES = { ArrowUp: 38, ArrowDown: 40, m: 77 };
+
+  const sendKey = (el, key) => {
+    const code = KEY_CODES[key] || 0;
+    adapterSending = true;
+    try {
+      for (const type of ["keydown", "keyup"]) {
+        el.dispatchEvent(new KeyboardEvent(type, {
+          key, code: key, keyCode: code, which: code,
+          bubbles: true, cancelable: true, composed: true
+        }));
+      }
+    } finally {
+      adapterSending = false;
+    }
+  };
+
+  const drain = (video) => {
+    timer = null;
+    const op = queue.shift();
+    if (!op) return;
+    lastSentAt = nowMs();
+    const el = targetFor(video);
+    if (el) {
+      // فكّ الكتم **مشروط عند التنفيذ لا عند الجدولة**: مفتاح المضيف قالبٌ، فلو
+      // انفكّ الكتم بين اللحظتين لكان إرسالُه يُعيد الكتم — عطباً من صنعنا.
+      if (op === "unmute") {
+        if (video.muted) sendKey(el, unmuteKey);
+      } else {
+        sendKey(el, op);
+      }
+    }
+    if (queue.length) schedule(video);
+  };
+
+  const step = (video, key) => {
+    // **نطابق المضيف لا نزيد عليه**: قِيس أن يوتيوب نفسه يتجاهل اختصاره والتركيز
+    // في حقل نصّ. والحارس هو `shouldIgnoreKeyBecauseTyping` القائم لا حارس ثانٍ.
+    if (shouldIgnoreKeyBecauseTyping()) return false;
+    if (!targetFor(video)) return false;
+    // ⚠️ **عقد الصوت ع1** (`tools/volume-contract.js`): خطوة لأعلى وهو مكتوم
+    // **تفكّ الكتم وتطبّق خطوة واحدة**. وسهم المضيف **لا يفكّ الكتم بنفسه** —
+    // قِيس حيّاً: 90 ⇒ 95 ⇒ 100 و`muted` باقٍ. فبلا هذا السطر يتسلّق المستوى
+    // صامتاً («مكتوم 100») وتُهدر الضغطة، وهو عطب #35 عائداً من باب المحوّل.
+    // **وفكّ الكتم يمرّ بواجهة المضيف** (مفتاحه) لا بكتابة `video.muted`: كتابتنا
+    // المباشرة يمحوها نموذجه، وهي عين ما بُني #60 ضدّه.
+    if (key === upKey && video.muted && unmuteKey) {
+      if (queue.length < maxQueue) queue.push("unmute");
+    }
+    if (queue.length < maxQueue) queue.push(key);  // الزائد يُهدر عمداً
+    schedule(video);
+    return true;
+  };
+
+  return { stepUp: (video) => step(video, upKey), stepDown: (video) => step(video, downKey) };
+}
+
+// ── عائلة «منزلق المضيف» (#60) — عضوها اليوم تويتش ─────────────────────────
+// **قِيس على قناة حيّة قبل كتابته، ولم يُفترض أنه كيوتيوب — فخالفه:**
+//   · منزلقان `input[type=range]` مداهما **0..1** (لا 0..100) بخطوة 0.01،
+//     كلاهما داخل المشغّل، **أحدهما مرئي والآخر مخفي، ويتحرّكان معاً**.
+//   · **الكتم عند تويتش هو المنزلق على صفر**: زرّه يضع 0 ويرفع `muted` معاً.
+//   · **وضبط المنزلق وهو مكتوم يفكّ الكتم بنفسه** (0% مكتوم ⇒ 80% مسموع) —
+//     **عكس يوتيوب** الذي يرفع ويبقى مكتوماً. ولذلك لا فكّ كتم صريح هنا.
+//   · و`m` **من إرسالنا** تفكّ الكتم وتستعيد المستوى الكامن (0.8).
+//
+// ⚠️ **المحدّد بالبنية لا بالاسم:** معرّفات تويتش `player-volume-slider-<UUID>`
+// وأصنافه `ScRangeInput-sc-…` بصمات styled-components **تتغيّر مع كل بناء**.
+// فالبحث بـ`input[type=range]` **داخل حاوية المشغّل**، والمرئي منهما هو المستهدَف
+// بقاعدة صريحة — لا «أول ما يُطابِق». `tools/test-host-adapter.js` يُفشل البناء
+// إن تسلّل UUID أو بصمة صنف إلى الكود.
+function makeSliderAdapter({ playerSelector, stepFraction = 0.05, unmuteKey,
+                             mutesByZeroing = false, latentReadable = false }) {
+  let queue = [], timer = null, lastSentAt = 0;
+
+  // المنزلق المستهدَف: داخل المشغّل · **ليس من عناصرنا** · والمرئي يفوز.
+  const sliderFor = (video) => {
+    const root = video?.getRootNode?.();
+    const scope = root && typeof root.querySelector === "function" ? root : document;
+    const player = scope.querySelector(playerSelector);
+    const all = [...(player || scope).querySelectorAll("input[type=range]")]
+      .filter((el) => !isOwnElement(el));
+    if (!all.length) return null;
+    // قاعدة صريحة مختبَرة: **المرئي** هو المستهدَف، وإن لم يكن أيٌّ مرئياً فالأول.
+    return all.find((el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    }) || all[0];
+  };
+
+  // ⚠️ **لا رقم مدى محفوظ في الكود إطلاقاً — لا 100 ولا 1.** قِيس مدى تويتش
+  // **0..1** بينما قراءة المالك من متصفّحه **0..100**، والتناقض لم يُحسم
+  // (ملاحظة مفتوحة في `AUDIT.md`). فالمدى **يُقرأ من العنصر وقت التنفيذ**،
+  // ومنزلق بلا مدى معلن **يُرفض** ولا يُفترض له مدى.
+  const bounds = (el) => {
+    if (el.min === "" || el.min == null || el.max === "" || el.max == null) return null;
+    const min = Number(el.min), max = Number(el.max);
+    if (!isFinite(min) || !isFinite(max) || max === min) return null;
+    return { min, max, span: max - min };
+  };
+
+  // ⚠️ الكسر لا الرقم المطلق: مدى تويتش **0..1** لا 0..100، ورقمٌ مطلق يفترض
+  // مدىً لم يُقس. قِيس فسقط شاهد موجب حين كُتب 60 على مدى 0..1 فقُصّ إلى 1.
+  const readFraction = (el) => {
+    const b = bounds(el);
+    return b ? (Number(el.value) - b.min) / b.span : null;
+  };
+
+  const applyFraction = (el, frac) => {
+    const b = bounds(el);
+    if (!b) return false;
+    const { min, max, span } = b;
+    const target = Math.max(min, Math.min(max, min + span * frac));
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+    if (!setter) return false;
+    setter.call(el, String(target));
+    // حقل يديره React لا يقبل `.value = x` مباشرةً — الـ native setter ثم
+    // `input`/`change` هي الطريقة **المقيسة** الوحيدة التي يتبعها نموذجه.
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  };
+
+  const schedule = (video) => {
+    if (timer) return;
+    timer = setTimeout(() => drain(video), Math.max(0, 60 - (nowMs() - lastSentAt)));
+  };
+
+  const drain = (video) => {
+    timer = null;
+    const op = queue.shift();
+    if (!op) return;
+    lastSentAt = nowMs();
+    const el = sliderFor(video);
+    if (el) {
+      if (op === "unmute") {
+        if (video.muted && unmuteKey) {
+          const player = (video.getRootNode?.() || document).querySelector?.(playerSelector) || video;
+          adapterSending = true;
+          try {
+            for (const type of ["keydown", "keyup"]) {
+              player.dispatchEvent(new KeyboardEvent(type, {
+                key: unmuteKey, code: unmuteKey, keyCode: 77, which: 77,
+                bubbles: true, cancelable: true, composed: true
+              }));
+            }
+          } finally { adapterSending = false; }
+        }
+      } else {
+        const cur = readFraction(el);
+        if (cur !== null) applyFraction(el, cur + (op === "up" ? stepFraction : -stepFraction));
+      }
+    }
+    if (queue.length) schedule(video);
+  };
+
+  const step = (video, dir) => {
+    if (shouldIgnoreKeyBecauseTyping()) return false;
+    if (!sliderFor(video)) return false;
+    // ⚠️ **عقد الصوت ع2 على مضيف يكتم بتصفير المستوى** (قرار المالك 2026-07-31):
+    // لا مستوى ظاهر يُخفَض، **فالعملية لا تُنفَّذ ولا تسقط إلى الكتابة المباشرة**.
+    // السقوط ضرر لا احتياط: يكتب قيمة يمحوها المضيف فتتحرّك الشارة ولا يتغيّر
+    // شيء. **والفكّ غير المطلوب مرفوض**: المستخدم قال «أخفض» لا «أسمعني».
+    if (dir === "down" && video.muted && mutesByZeroing) return "skip";
+    // ورفعٌ على مكتوم: **يفكّه المضيف بنفسه عند الضبط** (مقيس)، ومع ذلك نُقدّم
+    // فكّاً صريحاً كي يُستعاد **المستوى الكامن** بدل أن نبني الخطوة على صفر.
+    if (dir === "up" && video.muted && unmuteKey) {
+      if (queue.length < 5) queue.push("unmute");
+    }
+    if (queue.length < 5) queue.push(dir);
+    schedule(video);
+    return true;
+  };
+
+  // القدرات مُعلَنة على المحوّل: العقد يقرأها، والشارة تقرأ `hidesLevelWhenMuted`.
+  return {
+    stepUp: (video) => step(video, "up"),
+    stepDown: (video) => step(video, "down"),
+    mutesByZeroing,
+    hidesLevelWhenMuted: mutesByZeroing && !latentReadable
+  };
+}
+
+// ⚠️ **الخطوة الفعلية خطوة المضيف لا خطوتنا:** سهم يوتيوب يحرّك منزلقه **±5%**
+// بينما ربطنا الافتراضي `ACTION:VOLUME:+4` أي 4%. **هذا مقصود وموثَّق فلا يُسجَّل
+// عطباً لاحقاً** — المطلوب أن **يتحرّك منزلق المضيف**، وحركته بمقدار خطوته هو.
+// و**لا `toggleMute` هنا عمداً**: الكتم يبقى على مسار اليوم في هذا الكومِت،
+// والإطار يسقط لكل عملية على حدة فيتولّاه المسار المباشر بلا تغيير.
+// تويتش: عائلة المنزلق. `unmuteKey` مفتاحه هو — قِيس أن إرسالنا له يفكّ الكتم
+// **ويستعيد المستوى الكامن**، فالخطوة تُبنى على مستوى حقيقي لا على صفر.
+hostAdapters.set("twitch.tv", makeSliderAdapter({
+  playerSelector: "[data-a-player-state], .video-player",
+  stepFraction: 0.05,
+  unmuteKey: "m",
+  mutesByZeroing: true,    // قِيس: زرّ الكتم يضع المنزلق على 0 ويرفع muted معاً
+  latentReadable: false    // والمستوى الكامن يختفي — لا نقرؤه من أي عنصر
+}));
+
+hostAdapters.set("youtube.com", makeKeyStepAdapter({
+  playerSelector: "#movie_player",
+  upKey: "ArrowUp",
+  downKey: "ArrowDown",
+  // مفتاح كتم يوتيوب. قِيس أنه يفكّ الكتم **حتى مُرسَلاً منّا** (غير موثوق)،
+  // وأن نقر `.ytp-mute-button` يفكّه كذلك — واخترنا المفتاح لأنه من عائلة
+  // المحوّل نفسها فلا يضيف محدّداً ثانياً يتعفّن مع إعادة تصميم المشغّل.
+  unmuteKey: "m"
+}));
 
 function runAction(action, e) {
   // Play/Pause: فقط فيديو نفسه
@@ -2392,8 +2881,16 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
   if (action === "ACTION:TOGGLE_MUTE") {
     const video = findVideoLoose(e);
     if (!video) return false;
-    video.muted = !video.muted;
-    showVolumeIndicator(video);
+    // الكتابة المباشرة كما هي حرفياً — والمحوّل يستدعيها نفسها عند السقوط،
+    // فلا تُكتب مرتين ولا تتباعد نسختان.
+    const applyDirect = () => {
+      video.muted = !video.muted;
+    };
+    // الشارة للمسار المباشر وحده — انظر التعليق في كتلة ACTION:VOLUME أدناه.
+    if (!runHostAdapter(video, "toggleMute", applyDirect)) {
+      applyDirect();
+      showVolumeIndicator(video);
+    }
     return true;
   }
 
@@ -2426,16 +2923,33 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
     const video = findVideoLoose(e);
     if (!video) return false;
     const delta = n / 100;
-    // When raising volume, force unmute first — some sites auto-mute at 0.
-    if (delta > 0 && (video.muted || (video.volume ?? 1) === 0)) {
-      video.muted = false;
-      if ((video.volume ?? 0) === 0) video.volume = Math.min(1, delta);
-    } else {
-      // When lowering, clamp to a tiny non-zero floor to prevent host-site auto-mute.
+    // Mute state and level are two independent facts (audit #35): mute is never
+    // inferred from a zero level, and the level is never zeroed to mute.
+    // Raising unmutes AND applies the increment in the SAME press — unmuting on
+    // its own is what made the first press after a mute do nothing audible.
+    // Lowering leaves `muted` untouched on purpose: the user asked for less
+    // sound, not for sound, so a muted video stays muted and only its latent
+    // level moves.
+    // الكتابة المباشرة كما هي حرفياً — والمحوّل يستدعيها نفسها عند السقوط.
+    const applyDirect = () => {
+      if (delta > 0 && video.muted) video.muted = false;
       const next = (video.volume ?? 1) + delta;
+      // ⚠️ The floor is 0.0001 and never 0, and what it guards against is the HOST
+      // SITE inferring mute from a zero level — its own player watches
+      // volumechange and auto-mutes. It does NOT guard against an inference of
+      // ours: ours lived in this very block and went away with #35. An external
+      // inference does not disappear with our fix, so this floor is not a leftover
+      // from the defect — do not read it as one and delete it.
       video.volume = next <= 0 ? 0.0001 : Math.min(1, next);
+    };
+    // الخطوة نسبية: إشارة الدلتا وحدها تختار العملية. لا ضبط مطلق في أي مسار.
+    // ⚠️ والشارة **للمسار المباشر وحده هنا**: حين يتولّى المحوّل تكون الحالة بعد
+    // مهلته لا الآن، فنداؤها الآن يعرض القيمة **قبل** التغيير — وهو عَرَض #35
+    // نفسه عائداً من باب جديد. مسار المحوّل ينادي الشارة بنفسه بعد تحقّقه.
+    if (!runHostAdapter(video, delta > 0 ? "stepUp" : "stepDown", applyDirect)) {
+      applyDirect();
+      showVolumeIndicator(video);
     }
-    showVolumeIndicator(video);
     return true;
   }
 
@@ -2824,10 +3338,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
                changes[spKeyFor(baseDomain(location.host))];
   if (ours) requestReload();
 });
-/*chrome.tabs.query({active:true,currentWindow:true}, ([t])=>{
-  chrome.tabs.sendMessage(t.id, {type:"RELOAD_OVERLAY_SETTINGS"});
-});
-*/
+// البند #29: كانت هنا كتلة `chrome.tabs.query` معطّلة بالتعليق — **ميتة مرتين**:
+// معطّلة، و`chrome.tabs` غير متاح في سكربت المحتوى أصلاً فلو أُزيل التعليق لرمت
+// فوراً. قناة التوصيل الاحتياطية هي `chrome.storage.onChanged` أعلاه، لا هذه.
 
 
 
@@ -2839,9 +3352,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // ✅ ArrowRight/Left: نمنع الافتراضي ونطبق 5 ثواني
 window.addEventListener("keydown", (e) => {
+  // ⚠️ حارس عدم الارتداد (#60): هذا المستمع **يرى ما يُرسله محوّلنا** — قِيس 2 من
+  // 2 — فبلا هذا السطر يصير أمر الصوت يُطلق نفسه. أول سطر عمداً: قبل أي عمل.
+  if (adapterSending) return;
   updatePointerFromEvent(e);
   wakeIfVideoPresent();
-  if (isBlockedHost()) return;
+  if (!extensionActive()) return;   // #64: الرئيسي ثم الحظر
   if (!remappingEnabled()) return;
   if (shouldIgnoreKeyBecauseTyping()) return;
   const hoveredVideo = getVideoFromPointerPosition();
@@ -2883,7 +3399,7 @@ window.addEventListener("keydown", (e) => {
 function handleMouse(e) {
   updatePointerFromEvent(e);
   wakeIfVideoPresent();
-  if (isBlockedHost()) return;
+  if (!extensionActive()) return;   // #64: الرئيسي ثم الحظر
   if (!remappingEnabled()) return;
 
   // A zone binding owns this button here ⇒ the generic rule stays out entirely.
@@ -2908,7 +3424,7 @@ function handleMouse(e) {
     if (t - lastMouse2At < 350) return; // يمنع double-trigger
     lastMouse2At = t;
 
-    const v = getVideoUnderPointerStrict(e);
+    const v = getVideoUnderPointer(e);
     if (!v) return; // خارج الفيديو = لا تسوي شي
     if (shouldLetNativeLinkHandlingRun(e, v)) return;
     e.__videoUnderPointer = v;
@@ -2918,7 +3434,7 @@ function handleMouse(e) {
   if (sig === "Mouse3") {
     if (!(e.type === "mousedown" || e.type === "contextmenu")) return;
 
-    const v = getVideoUnderPointerStrict(e);
+    const v = getVideoUnderPointer(e);
     if (!v) return;
     if (shouldLetNativeLinkHandlingRun(e, v)) return;
     e.__videoUnderPointer = v;

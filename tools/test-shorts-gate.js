@@ -31,7 +31,7 @@ function makeWorld({ setting = true, globalOn = true, profileOn = false, blocked
     siteRules: { enabled: globalOn, mappings: [] },
     siteProfile: { enabled: profileOn, mappings: [] },
     isYouTubeHost: () => /(^|\.)youtube\.com$/.test(host),
-    isBlockedHost: () => blocked,
+    isBlockedHost: () => blocked, extensionActive: () => !blocked,
     location: {
       hostname: host, pathname: path, search, origin: "https://www.youtube.com",
       replace: (url) => nav.push({ how: "replace", url }),

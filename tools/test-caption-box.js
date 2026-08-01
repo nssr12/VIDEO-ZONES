@@ -31,7 +31,7 @@ const BG = "rgba(0,0,0,0.6)";
 function generate(over = {}) {
   let css = null;
   const c = {
-    console, subtitleStyleEl: null, isBlockedHost: () => false,
+    console, subtitleStyleEl: null, isBlockedHost: () => false, extensionActive: () => true,
     subtitleSettings: { enabled: true, hideOnPreviews: false, defaultLang: "ar", fontSize: 22,
       color: "#ffffff", bgColor: "#000000", bgOpacity: 0.6, fontFamily: "sans-serif",
       position: "bottom", ...over },

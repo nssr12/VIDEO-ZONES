@@ -28,6 +28,8 @@ function makeWorld({ active = true, video = { tagName: "VIDEO" }, zone = 5, midd
     getZoneAtEvent: () => (video ? { video, zone } : null),
     zoneSettings: { click: { map: { [String(zone)]: middle ? { middle } : {} } } },
     zoneLabel: (z) => "B" + z,
+    // ‏#38أ: صار مسار النقر يبني الـoverlay بعد تأكّد الربط، فيلزم في الإطار
+    ensureVideoOverlay: () => {},
     showOverlay: (t) => log.overlay.push(t),
     runAction: (a) => { log.ran.push(a); return true; },
     console

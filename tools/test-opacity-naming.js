@@ -77,7 +77,7 @@ console.log("\n[4] القسمان في اتجاه واحد — لا تناقض �
   const alphaFor = (op) => {
     let css = null;
     const c = {
-      console, subtitleStyleEl: null, isBlockedHost: () => false,
+      console, subtitleStyleEl: null, isBlockedHost: () => false, extensionActive: () => true,
       subtitleSettings: { enabled: true, hideOnPreviews: false, defaultLang: "ar", fontSize: 22,
         color: "#fff", bgColor: "#ff0000", bgOpacity: op, fontFamily: "sans-serif", position: "bottom" },
       hexToRgb: () => "255,0,0", KNOWN_PLAYER_WRAPPER_SELECTOR: "#movie_player",

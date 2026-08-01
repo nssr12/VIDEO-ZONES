@@ -1,7 +1,14 @@
 // Verification harness for migrateSiteProfiles() with a fake chrome.storage.sync.
+//
+// ⚠️ **المسار افتراضيّ عمداً — ولا يُعاد اشتراطه.** كان هذا الملف **وحده** في
+// المجموعة يشترط معاملاً (`node tools/test-migration.js storage.js`)، فأي مشغّل
+// يمرّ على `tools/test-*.js` بأمر واحد **يسقط عنده** بـ`ERR_INVALID_ARG_TYPE` —
+// ومن يشغّل المجموعة بعد شهر **يقرأها فشلاً** لا اصطلاحاً. المعرفة التي تعيش في
+// رأس من كتبها ليست معرفة (قرار المالك 2026-07-31).
+// والمعامل يبقى مقبولاً لمن أراد فحص نسخة أخرى من الملف.
 const fs = require("fs");
 const vm = require("vm");
-const src = fs.readFileSync(process.argv[2], "utf8");
+const src = fs.readFileSync(process.argv[2] || "storage.js", "utf8");
 
 function makeStore(initial, opts = {}) {
   let data = JSON.parse(JSON.stringify(initial));
