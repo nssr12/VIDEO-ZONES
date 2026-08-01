@@ -55,7 +55,7 @@ export async function connect(url) {
 }
 
 // يُشغّل كروم، ويحمّل الإضافة إن طُلب. `withExtension: false` هو **الشاهد السالب**.
-export async function launch(port, { withExtension = true, extra = [] } = {}) {
+export async function launch(port, { withExtension = true, extra = [], extPath = ROOT } = {}) {
   const proc = spawn(CHROME, [
     "--headless=new", "--disable-gpu", "--no-first-run", "--mute-audio",
     "--no-default-browser-check", "--autoplay-policy=no-user-gesture-required",
@@ -74,7 +74,7 @@ export async function launch(port, { withExtension = true, extra = [] } = {}) {
   if (withExtension) {
     browser = await connect(version.webSocketDebuggerUrl);
     // ⚠️ **لا يُفترض النجاح — تُقرأ نتيجة الاستدعاء نفسها.**
-    const res = await browser.send("Extensions.loadUnpacked", { path: ROOT });
+    const res = await browser.send("Extensions.loadUnpacked", { path: extPath });
     extensionId = res?.result?.id || null;
     if (!extensionId) {
       try { browser.ws.close(); } catch {} try { proc.kill(); } catch {}
@@ -173,23 +173,49 @@ export async function serveTestPage(port) {
   return { srv, url: `http://127.0.0.1:${port}/` };
 }
 
-// **الأثر الفعليّ**: عجلة فوق الفيديو ⇒ عناصر overlay في شجرة الصفحة.
-// الحدث يُرسَل **من الصفحة** لا بـ`Input.dispatchMouseEvent`: سكربت المحتوى
-// يستقبل أحداث الصفحة، والإرسال بـCDP بنوع `mouseWheel` كان أحد مرشّحَي عمى
-// `bench-zero-change.mjs` — فيُتفادى المرشّح بدل أن يُبنى عليه.
-export const WHEEL_PROBE = `(async () => {
+// **الأثر الفعليّ**: عجلة فوق الفيديو ⇒ عناصر overlay في شجرة الصفحة **ومستوى
+// صوت يتغيّر**. الحدث يُرسَل **من الصفحة** لا بـ`Input.dispatchMouseEvent`:
+// سكربت المحتوى يستقبل أحداث الصفحة، والإرسال بـCDP بنوع `mouseWheel` كان أحد
+// مرشّحَي عمى `bench-zero-change.mjs` — فيُتفادى المرشّح بدل أن يُبنى عليه.
+//
+// ⚠️ **والموضع ليس تفصيلاً: العجلة تُدار على المربّع 4 (B1) لا على المركز.**
+// المركز هو المربّع **5 وليس له ربط افتراضي** (`FIRST_RUN_ZONES`: 4 و6 و7 فقط)،
+// وبعد #38أ+ب لا يُبنى overlay أصلاً حيث لا ربط — **فالصفر هناك سلوكٌ صحيح لا
+// عمى**. وقد أعطى المِجَسّ `0 عنصر` بعد ذلك البند وهو يقيس مركزاً بلا ربط:
+// **رِكازٌ تخلّف عن تغيير مقصود في المنتج فقرأ صحّةً عطباً** (شاهد 13، قرار 26).
+// أي تغيير في `FIRST_RUN_ZONES` يُراجَع هنا.
+export const ZONE_B1 = { col: 1 / 6, row: 0.5 };   // المربّع 4: العمود الأيسر × الصفّ الأوسط
+export const ZONE_B2 = { col: 0.5, row: 0.5 };    // المربّع 5: المركز — **بلا ربط افتراضي**، شاهد سالب
+export function wheelProbe({ col = ZONE_B1.col, row = ZONE_B1.row,
+                             deltaY = -120, setVolume = 0.5, mute = true } = {}) {
+  return `(async () => {
   const v = document.querySelector("video");
   if (!v) return { ok: false, why: "لا فيديو" };
-  try { v.muted = true; await v.play().catch(() => {}); } catch {}
+  // ⚠️ **مدىً قبل الحكم على الحركة (قرار 26، الشاهد الثالث):** العجلة لأعلى
+  // والمستوى على 1.0 **لا مكان لها تصعد إليه**، فتطبع سكوناً يُقرأ عطباً.
+  // فيُهبَط المستوى أولاً ليصير للحركة مدى. والكتم مقصود: #35 يشترط أن يفكّ
+  // الرفعُ الكتمَ **ويرفع في الضغطة نفسها**، فيُقاس الاثنان معاً.
+  try {
+    ${mute ? "v.muted = true;" : ""}
+    ${setVolume === null ? "" : `v.volume = ${setVolume};`}
+    await v.play().catch(() => {});
+  } catch {}
   const r = v.getBoundingClientRect();
-  const x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2);
+  if (!(r.width > 0 && r.height > 0)) return { ok: false, why: "مستطيل صفريّ — لا يُقاس" };
+  const x = Math.round(r.left + r.width * ${col}), y = Math.round(r.top + r.height * ${row});
+  const before = Math.round(v.volume * 10000) / 10000;
+  const mutedBefore = v.muted;
   window.dispatchEvent(new MouseEvent("mousemove", { clientX: x, clientY: y, bubbles: true }));
   v.dispatchEvent(new WheelEvent("wheel", {
-    clientX: x, clientY: y, deltaY: -120, bubbles: true, cancelable: true, composed: true }));
+    clientX: x, clientY: y, deltaY: ${deltaY}, bubbles: true, cancelable: true, composed: true }));
   await new Promise((r2) => setTimeout(r2, 700));
   const nodes = [...document.querySelectorAll('[class^="vz"], [class*=" vz"]')];
-  return { ok: true, count: nodes.length, classes: nodes.slice(0, 6).map((n) => n.className) };
+  return { ok: true, count: nodes.length, classes: nodes.slice(0, 6).map((n) => n.className),
+           before, after: Math.round(v.volume * 10000) / 10000,
+           mutedBefore, mutedAfter: v.muted };
 })()`;
+}
+export const WHEEL_PROBE = wheelProbe();
 
 // ── شاهدا القبول ────────────────────────────────────────────────────────────
 async function witness(label, withExtension, port, httpPort) {
@@ -238,10 +264,16 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log(`   العالم المعزول    : ${w.world ? `✅ "${w.world.name}" (id=${w.world.id})` : "لا شيء"}`);
     console.log(`   العلم من الصفحة   : ${w.flagMain}  (يجب أن يبقى undefined: العلم في العالم المعزول لا في الصفحة)`);
     console.log(`   عجلة ⇒ overlay    : ${w.wheel?.ok ? `${w.wheel.count} عنصر ${w.wheel.count ? JSON.stringify(w.wheel.classes) : ""}` : w.wheel?.why}`);
+    console.log(`   وأثرها في الصوت   : ${w.wheel?.ok
+      ? `${w.wheel.before} ⇒ ${w.wheel.after} · مكتوم ${w.wheel.mutedBefore} ⇒ ${w.wheel.mutedAfter}` : "—"}`);
   }
 
-  const posOk = !!pos.world && (pos.wheel?.count > 0);
-  const negOk = !neg.world && !(neg.wheel?.count > 0);
+  // الموجب يشترط الاثنين معاً: عنصر overlay **وتغيّر مستوى** — عنصرٌ بلا أثر
+  // يثبت أن السكربت يعمل ولا يثبت أن الأمر نُفِّذ.
+  const moved = pos.wheel?.ok && pos.wheel.after !== pos.wheel.before;
+  const posOk = !!pos.world && pos.wheel?.count > 0 && moved;
+  const negOk = !neg.world && !(neg.wheel?.count > 0) &&
+                !(neg.wheel?.ok && neg.wheel.after !== neg.wheel.before);
   console.log(`\n── الحكم`);
   console.log(`   الشاهد الموجب : ${posOk ? "✅ الأداة ترى الإضافة **عاملةً** على صفحة" : "❌ **ساقط** — لا يُصدَّق خرج هذا الرِكاز ولا يُبنى عليه بند"}`);
   console.log(`   الشاهد السالب : ${negOk ? "✅ وتُميّز صفحةً بلا إضافة" : "❌ **ساقط** — الأداة تطبع نتيجة لا تميّز شيئاً"}`);
