@@ -140,6 +140,9 @@ settings = {
     click: { map: { "1": { left:[...], right:[...], middle:[...] }, ... } }, // click-runtime projection
     key:   { map: { "1": { "Space":[...], "ArrowUp":[...] }, ... } }        // keyboard-runtime projection
   },
+  // #70 · #72 — shared idle delay. Clamped to IDLE_MIN_MS; 0 = default, NOT off
+  // (only a feature's own switch turns it off — witness 24).
+  idle: { ms },
   overlay: {
     autoHideMs, volumeAutoHideMs, enabled,
     hintEnabled,                       // default true  (#63) — `!== false`
@@ -256,6 +259,44 @@ deliberately — no second keys. Consequence: `volumeAutoHideMs = 0` disables
 rather than being pressable with no effect (#24's rule). The naming debt this
 creates (`soundDisplay` is now narrower than its scope) is registered as **#75**;
 renaming is a data migration, not a text edit.
+
+### Idle engine — emits state, never a command (#70 · #72)
+
+`IDLE_CONSUMERS` in `content.js` is the registry; the engine only ever says
+**idle / active**. The policy is each consumer's, and that is an architectural
+boundary, not tidiness: **#70 hides the host's progress bar** so it must respect
+the host's intent, while **#72 hides our own button** so the call is ours. One
+engine that imposes a single policy forces one of them into the other's
+behaviour. Consumer contract: `enabled()` · optional `suspended()` ·
+`onActive()` · `onIdle()`. **A suspended consumer is presented as active** —
+suspension means something wants to be visible now, so leaving it "hidden" would
+keep the very hiding we suspended.
+
+Shape: one timestamp (`idleLastActivityAt`) and **one self-correcting timer** —
+no `clearTimeout`+`setTimeout` per mousemove, and deliberately **no rAF** (the
+overlay's tracking loop stops when nothing is visible; a permanent loop would
+throw that away). With no consumer enabled the hot path reads a single boolean:
+zero timers, zero DOM reads, zero allocation.
+
+**Three traps, all measured into the design before they could happen:**
+1. **A `mousemove` with no actual movement is not activity.** Chrome fires
+   `mousemove` with a stationary cursor when the page scrolls underneath, so
+   counting it means the timer *never* completes while a page scrolls — the
+   difference between a feature that works and one that looks broken. Movement is
+   compared against `lastPointer` **before** it is overwritten.
+2. **Media events are never activity** — `timeupdate` alone fires ~4×/s and
+   would cancel every timer. The rule, verbatim: **"activity is measured at the
+   input, not at its effect."**
+3. **The initial state is idle, not active** — a page nobody hovered shows
+   nothing and starts no timer the user did not start.
+
+Activity sources: real pointer movement inside the player rect (throttled to
+10 containment checks/s), any trusted mouse button/wheel event over the player
+(they all already flow through `updatePointerFromEvent`), a key that actually hit
+one of our actions, and `fullscreenchange`. `settings.idle.ms` is shared by both
+consumers, clamped to `IDLE_MIN_MS` — **`0` never means "off"; only a feature's
+own switch turns it off** (witness 24: inheriting a key inherits every edge
+meaning of that key, including ones nobody intended).
 
 ### Video targeting
 

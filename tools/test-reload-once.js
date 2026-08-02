@@ -48,7 +48,10 @@ const CODE = [
 
 const LOADERS = ["loadRulesForThisHost", "loadSiteProfile", "loadZoneSettings", "loadOverlaySettings",
   "loadBlockedHosts", "loadSoundDisplaySettings", "loadMasterEnabled", "loadGridAppearance", "loadSubtitleSettings",
-  "loadYtAutoQualitySettings", "loadYtShortsRedirectSetting", "loadCleanPlayerSettings"];
+  "loadYtAutoQualitySettings", "loadYtShortsRedirectSetting", "loadCleanPlayerSettings",
+  // مُحمِّل محرّك السكون (#70 · #72). **مرساةٌ لا تأكيد** (قرار 33): هذه القائمة
+  // تُطابق ما في `flushReload` نصّاً، وغيابُ اسمٍ منها يرفع ReferenceError.
+  "loadIdleSettings"];
 
 function makeFrame({ awake = true, value = "A" } = {}) {
   const st = { reads: 0, applied: 0, loaders: 0, value };

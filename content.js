@@ -1668,9 +1668,141 @@ function getZoneNumber(rect, x, y) {
 
 function updatePointerFromEvent(e) {
   if (typeof e.clientX === "number" && typeof e.clientY === "number") {
+    // ⚠️ **المصيدة الأولى — تُقاس الحركة قبل الكتابة لا بعدها.** كروم يُطلق
+    // `mousemove` **والمؤشّر ساكن** حين ينزلق ما تحته (تمرير الصفحة)، فلو عُدّ
+    // ذلك نشاطاً لما بلغ المؤقّت نهايته أبداً ما دامت الصفحة تتمرّر —
+    // **والفرق ليس تفصيلاً: هو الفرق بين ميزةٍ تعمل وميزةٍ تبدو معطّلة.**
+    // والمقارنة على `lastPointer` **القائم سلفاً**، فلا حالة جديدة.
+    const moved = e.clientX !== lastPointer.x || e.clientY !== lastPointer.y;
     lastPointer = { x: e.clientX, y: e.clientY };
+    noteIdleFromPointerEvent(e, moved);
   }
 }
+
+// ── محرّك السكون — يُصدر حالةً ولا يُصدر أمراً (#70 · #72) ───────────────────
+// **الحدّ المعماريّ (قرار المالك 2026-08-02): المحرّك يقول «سكون/نشاط»،
+// والسياسة لكل مستهلك.** وهو حدٌّ لا أناقة، **لأن الملكية مختلفة**: #70 يُخفي
+// **شريط المضيف** فيلزمه احترام نيّة المضيف، و#72 يُخفي **زرّنا** فالقرار
+// قرارنا. **ومحرّكٌ يفرض سياسةً واحدة يُجبر أحدهما على سلوك الآخر.**
+//
+// **وهذا الكومِت المحرّك وحده — بصفر مستهلك مسجَّل**، على نمط كومِت إطار
+// المحوّلات (#60): **يُبرهَن صفر تغيّر قبل أن يوجد مستهلكٌ واحد.**
+//
+// ⚠️ **ثلاث مصائد أُمسكت في التصميم قبل أن تقع، وتُقرأ مع الكود لا بعده:**
+//  **(١)** `mousemove` بلا حركة فعلية — أعلاه.
+//  **(٢) أحداث الوسائط ليست نشاطاً.** `timeupdate` وحده يقع **أربع مرّات في
+//      الثانية** فيُبطل كل مؤقّت. **والقاعدة بنصّها: «النشاط يُقاس عند الإدخال
+//      لا عند أثره»** — فلا `play` ولا `pause` ولا `seeking` ولا `timeupdate`
+//      في مصادر النشاط، مهما بدت دالّةً على مستخدمٍ حيّ.
+//  **(٣) الحالة الابتدائية «سكون» لا «نشاط».** صفحةٌ لم يحوّم عليها أحد **لا
+//      يظهر فيها شيء**، ولا يبدأ فيها مؤقّتٌ لم يبدأه المستخدم.
+const IDLE_MIN_MS = 500;            // «صفر» لا تعني «مطفأ» — المفتاح هو من يُطفئ
+const IDLE_DEFAULT_MS = 2000;       // ⚠️ افتراضٌ قابل للضبط، **ولم يُقس بعد**
+const IDLE_MOVE_THROTTLE_MS = 100;  // سقف فحوص الاحتواء في الثانية: عشرة
+
+let idleMs = IDLE_DEFAULT_MS;
+let idleState = "idle";             // المصيدة (٣): يبدأ ساكناً
+let idleLastActivityAt = 0;
+let idleTimer = null;
+let idleMoveCheckedAt = 0;
+// **المسار الحارّ يقرأ منطقيّاً واحداً لا حلقة.** يُحسب عند تغيّر الإعدادات
+// وحدها، فبلا مستهلكٍ مُفعَّل: **صفر مؤقّت · صفر قراءة DOM · صفر تخصيص**.
+let idleWanted = false;
+
+// **سجلٌّ واحد على نمط `OVERLAY_PARTS`** — مستهلكٌ ثالث يُضاف هنا وحده.
+// عقد المستهلك: `enabled()` · `suspended()` اختياريّ · `onActive()` · `onIdle()`.
+// ⚠️ **و«ممتنع» تعني «يُعرض كالنشط»**، لا «يُترك على حاله»: الامتناع سببه أن
+// شيئاً يريد الظهور الآن، فتركُه على «مخفيّ» يُبقي الإخفاء الذي امتنعنا عنه.
+const IDLE_CONSUMERS = {};
+
+async function loadIdleSettings(pre) {
+  const data = await settingsRead(pre);
+  const ms = Number(data.settings?.idle?.ms);
+  idleMs = Number.isFinite(ms) && ms > 0 ? Math.max(IDLE_MIN_MS, ms) : IDLE_DEFAULT_MS;
+  refreshIdleConsumers();
+}
+
+// #64: الرئيسي ثمّ الحظر، ثمّ «هل لأحد المستهلكين مفتاحٌ مُشغَّل أصلاً؟»
+function idleEngineActive() {
+  if (!extensionActive()) return false;
+  for (const c of Object.values(IDLE_CONSUMERS)) if (c.enabled()) return true;
+  return false;
+}
+
+// تُنادى عند كل تغيّر في الإعدادات، **وعلى كل مستهلك يتغيّر شرط امتناعه**
+// (مثال #72: عند `play`/`pause`) — وإلا بقيت الحالة معروضة على شرطٍ مضى.
+function refreshIdleConsumers() {
+  idleWanted = idleEngineActive();
+  if (!idleWanted) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+    idleState = "idle";
+    return;
+  }
+  applyIdleState();
+}
+
+function applyIdleState() {
+  for (const c of Object.values(IDLE_CONSUMERS)) {
+    if (!c.enabled()) continue;
+    if (c.suspended?.()) { c.onActive(); continue; }
+    if (idleState === "idle") c.onIdle(); else c.onActive();
+  }
+}
+
+// **طابعٌ زمنيّ واحد** — لا `clearTimeout`+`setTimeout` في مسارٍ يقع مئات
+// المرّات في الثانية، **ولا `requestAnimationFrame`**: حلقة الرسم القائمة
+// تتوقّف حين لا يظهر شيء، وحلقةٌ دائمة لكشف السكون تُلغي هذا المكسب.
+function markIdleActivity() {
+  if (!idleWanted) return;
+  idleLastActivityAt = nowMs();
+  if (idleState !== "active") {
+    idleState = "active";
+    applyIdleState();
+  }
+  if (idleTimer == null) idleTimer = setTimeout(idleTick, idleMs);
+}
+
+// **المؤقّت يُصحّح نفسه**: يستيقظ مرّة، فإن بقي وقتٌ أعاد تسليح نفسه للباقي.
+function idleTick() {
+  idleTimer = null;
+  if (!idleWanted) return;
+  const left = idleMs - (nowMs() - idleLastActivityAt);
+  if (left > 0) { idleTimer = setTimeout(idleTick, left); return; }
+  if (idleState !== "idle") {
+    idleState = "idle";
+    applyIdleState();
+  }
+}
+
+// المؤشّر داخل إطار المشغّل — بالمقيس القائم (`zoneRectForVideo` عبر
+// `getVideoUnderPointer`)، **بلا محدِّد مضيف ولا صنف جديد**.
+// ⚠️ **وملء الشاشة يُسقط سؤال «خارج المشغّل» بنيوياً**: المشغّل يملأ الشاشة،
+// والقاعدة مكتوبة على **المستطيل** لا على «الصفحة»، فتصمد بلا استثناء.
+function pointerInsidePlayer(e) {
+  return !!getVideoUnderPointer(e);
+}
+
+// **نقطة الدخول الواحدة لنشاط المؤشّر.** ويكفي أن تُنادى من
+// `updatePointerFromEvent` لأن **كل مسارات الفأرة تمرّ بها**: الحركة والعجلة
+// و`handleMouse` (كليك · أوكس · مِداوْن · قائمة السياق) تناديها في أول سطورها.
+function noteIdleFromPointerEvent(e, moved) {
+  if (!idleWanted) return;
+  if (e.isTrusted === false) return;      // حدثٌ من صنعنا ليس نشاط مستخدم
+  if (e.type === "mousemove") {
+    if (!moved) return;                   // المصيدة (١)
+    // خنقٌ للفحص وحده: مداه 100ms ومهلة السكون 500ms فأكثر، فلا أثر دلاليّ
+    const t = nowMs();
+    if (t - idleMoveCheckedAt < IDLE_MOVE_THROTTLE_MS) return;
+    idleMoveCheckedAt = t;
+  }
+  if (!pointerInsidePlayer(e)) return;    // الخروج إلى الصفحة ليس نشاطاً
+  markIdleActivity();
+}
+
+// الدخول إلى ملء الشاشة والخروج منه **فعلٌ من المستخدم على المشغّل بتعريفه**،
+// والتخطيط يتبدّل كلّه — فيُعدّ نشاطاً بلا شرط موضع.
+document.addEventListener("fullscreenchange", markIdleActivity);
 
 function getVideoFromPointerPosition() {
   if (typeof lastPointer.x !== "number" || typeof lastPointer.y !== "number") return null;
@@ -2502,7 +2634,7 @@ async function flushReload() {
     loadRulesForThisHost(data), loadSiteProfile(data), loadZoneSettings(data),
     loadOverlaySettings(data), loadBlockedHosts(data), loadSoundDisplaySettings(data),
     loadMasterEnabled(data), loadGridAppearance(data), loadSubtitleSettings(data), loadYtAutoQualitySettings(data),
-    loadYtShortsRedirectSetting(data), loadCleanPlayerSettings(data)
+    loadYtShortsRedirectSetting(data), loadCleanPlayerSettings(data), loadIdleSettings(data)
   ]);
   triggerYtQuality();
   maybeRedirectShorts();
@@ -2532,6 +2664,7 @@ function runStartupSteps() {
     read.then(loadYtShortsRedirectSetting), globalRulesReady, siteProfileReady
   ]).then(() => startYtShortsRedirect()));
   startup("cleanPlayer", () => read.then(loadCleanPlayerSettings));
+  startup("idle", () => read.then(loadIdleSettings));
   startup("boostReapply", startBoostReapply);
 }
 
@@ -3548,6 +3681,10 @@ window.addEventListener("keydown", (e) => {
     for (const action of bind.actions) ok = runAction(action, e) || ok;
     delete e.__videoUnderPointer;
     if (ok) {
+      // **مفتاحٌ أصاب أمراً لنا = نشاط.** ومستخدم لوحة المفاتيح **لا يحرّك
+      // فأرة**، فبلا هذا يختفي عنه ما يستعمله وهو يستعمله. وموضعه بعد `ok`
+      // عمداً: **الأمر الذي وقع**، لا كل ضغطة مفتاح.
+      markIdleActivity();
       e.preventDefault();
       e.stopPropagation();
     }
@@ -3559,6 +3696,7 @@ window.addEventListener("keydown", (e) => {
   if (to) {
     const ok = to.startsWith("ACTION:") ? runAction(to, e) : false;
     if (ok) {
+      markIdleActivity();
       e.preventDefault();
       e.stopPropagation();
     }
