@@ -125,10 +125,19 @@ const NASTY = '<img src=x onerror="boom()"> & "قوس" \'مفرد\' <b>غامق<
 
   // شاهد موجب للحارس نفسه: سطر مُفتعَل يجب أن يُرفض، وإلا فالقارئ لا يرى.
   {
-    const tmp = `${require("os").tmpdir()}/vz-inner-html-witness.js`;
-    fs.writeFileSync(tmp, 'const v = "x";\nel.innerHTML = `<b>${v}</b>`;\nother.innerHTML = "ثابت" + v;\n');
-    const seen = innerHtmlAssignments(tmp);
-    fs.unlinkSync(tmp);
+    // ⚠️ **البند #74 — الاسم فريدٌ لكل عملية، والحذف في `finally`.** كان المسار
+    // ثابتاً (`vz-inner-html-witness.js`)، فتشغيلتان متزامنتان تتصادمان على ملفٍّ
+    // واحد: إحداهما تحذفه والأخرى تقرأه ⇒ **انهيارٌ أو تأكيدان كاذبان**، ولا
+    // علاقة لأيٍّ منهما بالكود المُختبَر. **وأحمرُ الحظّ يُعلّم القارئ إعادة
+    // التشغيل بدل الفحص** (قرار 20، ومن عائلة #73).
+    const tmp = `${require("os").tmpdir()}/vz-inner-html-witness-${process.pid}.js`;
+    let seen;
+    try {
+      fs.writeFileSync(tmp, 'const v = "x";\nel.innerHTML = `<b>${v}</b>`;\nother.innerHTML = "ثابت" + v;\n');
+      seen = innerHtmlAssignments(tmp);
+    } finally {
+      try { fs.unlinkSync(tmp); } catch {}
+    }
     check("شاهد موجب: يرى الإقحام", seen.some((a) => !a.ok && a.why === "فيه ${…}"), seen);
     check("شاهد موجب: يرى الضمّ", seen.some((a) => !a.ok && a.why === "مضموم بمتغيّر"), seen);
   }

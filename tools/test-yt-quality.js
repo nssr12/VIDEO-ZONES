@@ -18,8 +18,25 @@ if (!MAIN.includes("isAdShowing")) {
   process.exit(1);
 }
 
+// ── البند #73 — **ساعة مُدارة، لا ساعة حائط** ───────────────────────────────
+// **كان هذا الملف يقيس بـ`await wait(500/700)` حقيقية مقابل استطلاعٍ كل 400ms**،
+// فسقط منه تأكيدٌ واحد حين شُغِّلت مجموعتان معاً (2026-08-02): تحت الحمل تنزاح
+// مهلة 400ms خلف نافذة 500ms، **فيقرأ القياس قبل أن يقع الشيء المقيس** — وهو
+// درس `450ms ⇒ 1100ms` نفسه (قرار 22) عائداً من باب الاختبار لا المنصّة.
+//
+// ⚠️ **ومجموعةٌ تحمرّ تحت الحمل تُبطل معنى الأحمر كلَّه** (قرار 20): قيمة
+// المجموعة في أن الأحمر يعني «كسرتَ شيئاً الآن» — فأحمرُ الحظّ يُعلّم القارئ
+// **إعادة التشغيل بدل الفحص**، وهو أخطر ما يصيب مجموعة اختبارات.
+//
+// **والعلاج ساعة مُدارة كساعة `tools/test-host-adapter.js`**: `setTimeout`
+// و`Date.now` داخل العالم يقرآن عقرباً **نحرّكه نحن**، فتُشغَّل المهل بالترتيب
+// ويُستنزف طابور المهامّ الدقيقة بينها. **صفر تغيّر في أي تأكيد** — النوافذ
+// الزمنية نفسها بأرقامها، والفرق أن `advance(500)` **تعني 500 بالضبط** لا
+// «500 إن أسعف الحِمل».
 function makeWorld({ adShowing = false, ready = true, hasPlayer = true } = {}) {
   const st = { pulses: 0, setOnAd: 0, setOnContent: 0, done: [], listeners: {}, timers: [] };
+  // العقرب: زمنٌ منطقيّ وطابور مهل مرتَّب
+  const clock = { t: 0, seq: 0, q: [] };
   const player = {
     classList: {
       _c: new Set(adShowing ? ["ad-showing"] : []),
@@ -48,8 +65,24 @@ function makeWorld({ adShowing = false, ready = true, hasPlayer = true } = {}) {
       addEventListener: (t, fn) => { (st.listeners[t] ||= []).push(fn); }
     },
     CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init && init.detail; } },
-    setTimeout: (fn, ms) => { const id = setTimeout(fn, ms); st.timers.push(id); return id; },
-    Date, console
+    setTimeout: (fn, ms) => {
+      const id = ++clock.seq;
+      clock.q.push({ id, at: clock.t + (Number(ms) || 0), fn });
+      st.timers.push(id);
+      return id;
+    },
+    clearTimeout: (id) => {
+      const i = clock.q.findIndex((x) => x.id === id);
+      if (i > -1) clock.q.splice(i, 1);
+    },
+    // ⚠️ `now` وحدها هي ما يقرأه المنتج (`deadline = Date.now() + …`). وأي
+    // استعمال آخر **يجب أن ينفجر باسمه** لا أن يقرأ ساعة الحائط خلسةً فيعيد
+    // اللاحتمية من باب ثانٍ.
+    Date: Object.assign(
+      function () { throw new Error("#73: `new Date()` داخل العالم — استعمل ساعة المِجَسّ"); },
+      { now: () => clock.t }
+    ),
+    console
   };
   ctx.window.__vzQB = undefined;
   vm.createContext(ctx);
@@ -59,9 +92,30 @@ function makeWorld({ adShowing = false, ready = true, hasPlayer = true } = {}) {
   st.nav = () => { for (const fn of st.listeners["yt-navigate-start"] || []) fn(); };
   // النتائج تُبلَّغ عبر __vz_setq_done__
   (st.listeners["__vz_setq_done__"] ||= []).push((e) => st.done.push(e.detail.result));
+
+  // استنزاف طابور المهامّ الدقيقة: `await delay(…)` يستأنف في microtask، فبلا
+  // هذا يتقدّم العقرب و**لا يستأنف أحد**.
+  const drain = () => new Promise((r) => setImmediate(r));
+
+  // تقديم العقرب: تُشغَّل المهل المستحقّة **بترتيبها الزمني**، ويُستنزف الطابور
+  // بعد كلٍّ — فمهلةٌ جدولتها مهلةٌ أخرى داخل النافذة نفسها تُلتقط كذلك.
+  st.advance = async (ms) => {
+    const end = clock.t + (Number(ms) || 0);
+    for (;;) {
+      let next = null;
+      for (const item of clock.q) if (item.at <= end && (!next || item.at < next.at)) next = item;
+      if (!next) break;
+      clock.q.splice(clock.q.indexOf(next), 1);
+      clock.t = next.at;
+      next.fn();
+      await drain();
+    }
+    clock.t = end;
+    await drain();
+  };
+  st.now = () => clock.t;
   return st;
 }
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let pass = 0, fail = 0;
 const check = (name, cond, extra) => cond
@@ -73,7 +127,7 @@ const check = (name, cond, extra) => cond
   {
     const w = makeWorld({ adShowing: true, ready: true });
     w.fire("hd1080");
-    await wait(120);
+    await w.advance(120);
     check("لم تُضبط جودة على الإعلان", w.setOnAd === 0, w.setOnAd);
     check("والنتيجة المُبلَّغة «ad»", w.done.includes("ad"), w.done);
     check("ولا استطلاع أصلاً — خروج فوري", w.pulses === 0, w.pulses);
@@ -82,9 +136,9 @@ const check = (name, cond, extra) => cond
     // إعلان يبدأ في منتصف الاستطلاع
     const w = makeWorld({ adShowing: false, ready: false });
     w.fire("hd1080");
-    await wait(500);
+    await w.advance(500);
     w.player.classList.add("ad-showing");
-    await wait(700);
+    await w.advance(700);
     check("إعلان يبدأ أثناء الاستطلاع ⇒ يتوقف بلا ضبط", w.setOnAd === 0 && w.done.includes("ad"), w.done);
   }
 
@@ -92,9 +146,9 @@ const check = (name, cond, extra) => cond
   {
     const w = makeWorld({ ready: false });
     for (let i = 0; i < 5; i++) w.fire("hd1080");   // خمسة طلبات متتالية
-    await wait(500);
+    await w.advance(500);
     w.ready = true;
-    await wait(700);
+    await w.advance(700);
     check("خمسة طلبات ⇒ ضبط واحد لا خمسة", w.setOnContent === 1, w.setOnContent);
     const cancelled = w.done.filter((r) => r === "cancelled").length;
     check("وأربعة منها أُبلغ عنها «cancelled»", cancelled === 4, w.done);
@@ -113,18 +167,18 @@ const check = (name, cond, extra) => cond
   {
     const w = makeWorld({ ready: false });
     w.fire("hd1080");
-    await wait(500);
+    await w.advance(500);
     w.nav();                       // yt-navigate-start أثناء الاستطلاع
     w.ready = true;                // الفيديو الجديد جاهز
-    await wait(700);
+    await w.advance(700);
     check("الاستطلاع القديم لا يضبط جودة على الفيديو الجديد", w.setOnContent === 0, w.setOnContent);
     check("وأُبلغ عنه «cancelled»", w.done.includes("cancelled"), w.done);
   }
   {
     // وبعد الإلغاء، طلب جديد يعمل طبيعياً
     const w = makeWorld({ ready: false });
-    w.fire("hd1080"); await wait(300); w.nav();
-    w.fire("hd1080"); w.ready = true; await wait(700);
+    w.fire("hd1080"); await w.advance(300); w.nav();
+    w.fire("hd1080"); w.ready = true; await w.advance(700);
     check("وطلب جديد بعد التنقّل يعمل", w.setOnContent === 1, w.setOnContent);
   }
 
@@ -132,7 +186,7 @@ const check = (name, cond, extra) => cond
   {
     const w = makeWorld({ ready: true });
     w.fire("highres");             // جودة غير متاحة في هذا الفيديو
-    await wait(200);
+    await w.advance(200);
     check("ضُبطت أعلى متاحة", w.setOnContent === 1, w.setOnContent);
     check("والنتيجة تقول fallback مع البديل",
       w.done.some((r) => String(r).startsWith("fallback:")), w.done);
