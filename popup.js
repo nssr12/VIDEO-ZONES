@@ -321,6 +321,15 @@ async function getMasterEnabled() {
 }
 
 // الحفظ يمرّ بـ`safeSyncSet` كبقيّة الكتابات، ولا يطمس بقيّة `settings`.
+// #69: الرسم من التخزين — تستهلك المُحمِّلات القائمة نفسها، فلا منطق ثانٍ
+async function renderPopupFromStorage() {
+  await Promise.allSettled([
+    loadGlobalData(), loadSiteProfile(), loadBlockedSiteUI(),
+    loadSubtitlesToggle(), loadFullscreenOnlyToggle(), loadOverlayUI(),
+    (async () => { syncMasterUi(await getMasterEnabled()); })()
+  ]);
+}
+
 async function saveMasterEnabled(on) {
   const data = await chrome.storage.sync.get({ settings: {} });
   const settings = data.settings && typeof data.settings === "object" ? data.settings : {};
@@ -871,6 +880,14 @@ document.addEventListener("mousedown", (e) => {
     }
   });
   $("checkStatus").addEventListener("click", checkPageStatus);
+
+  // ── #69: مسار فشل واحد للـ popup كذلك ────────────────────────────────────
+  // كانت سبعةُ مواضع تُعلن الفشل و**واحدٌ يُرجِع الضابط** (المفتاح الرئيسي).
+  // فبدل نسخة سابعة من المنطق: **تسجيلٌ واحد** على قناة `safeSyncSet` يُعيد رسم
+  // الضوابط من التخزين — **والتخزين يعرف الحقيقة بلا خريطة ضابط⇄مفتاح**.
+  // ⚠️ **وبلا تأجيل هنا**: لا حارس في الـ popup يمنع الرسم (لا مودال ولا عدّاد
+  // حفظ)، والنافذة قصيرة العمر. **وهذا فرق مقيس عن `options.js` لا سهو.**
+  onSyncWriteFailed(() => { renderPopupFromStorage().catch(() => {}); });
 
   $("boostSlider").addEventListener("input", () => {
     const pct = Number($("boostSlider").value);

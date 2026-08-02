@@ -278,16 +278,28 @@ function syncErrorText(err) {
 // wait for { ok: true } before telling the user anything was saved (audit #10) —
 // previously every write was unguarded and a full quota failed silently behind
 // a "تم الحفظ ✅" message.
+// ── #69: قناة إبلاغٍ واحدة عن فشل الكتابة ──────────────────────────────────
+// كل صفحة تسجّل **معالجاً واحداً** يُعيد رسم واجهتها من التخزين، فلا يتكرّر
+// المنطق عند كل موضع حفظ. **وبلا هذه القناة كان `popup.js` سبعة مواضع تُعلن
+// الفشل وواحداً يُرجِع الضابط** — سبعة أشكال لفشلٍ واحد.
+let syncFailureHandler = null;
+function onSyncWriteFailed(fn) { syncFailureHandler = fn; }
+
 async function safeSyncSet(items) {
+  const failed = (message) => {
+    // المعالج تجميلٌ للواجهة لا شرطٌ للصحّة: خطؤه لا يُغيّر نتيجة الكتابة
+    try { syncFailureHandler?.({ message, keys: Object.keys(items) }); } catch {}
+    return { ok: false, message };
+  };
   for (const [key, value] of Object.entries(items)) {
     const limit = await syncWriteGuard(key, value);
-    if (limit) return { ok: false, message: SYNC_LIMIT_TEXT[limit] };
+    if (limit) return failed(SYNC_LIMIT_TEXT[limit]);
   }
   try {
     await chrome.storage.sync.set(items);
     return { ok: true };
   } catch (err) {
-    return { ok: false, message: syncErrorText(err) };
+    return failed(syncErrorText(err));
   }
 }
 

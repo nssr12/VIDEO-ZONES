@@ -286,13 +286,47 @@ async function getSettings() {
   return settings;
 }
 
+// ── #69: مسار الفشل واحد، والإرجاع أثرٌ منه ─────────────────────────────────
+// **الإعلان كان مركزياً هنا والإرجاع غائباً تماماً** (مقيس: 22 موضع كتابة بضابط،
+// **صفرٌ منها في `options.js` يقرأ ناتج الحفظ**). فكان المستخدم يقرأ «تعذّر الحفظ»
+// **والمربّع أمامه مؤشَّر** وليس في التخزين — رسالةٌ صادقة تحت ضابطٍ يكذب.
+//
+// **والإرجاع رسمٌ من التخزين لا إرجاعٌ لكل ضابط**: خريطة «ضابط ⇄ مفتاح» هي
+// الخريطة الثانية التي تتباعد، **والتخزين يعرف الحقيقة بلا خريطة**.
+//
+// ⚠️ **والحارسان يمنعان الإرجاع لحظة الفشل — مقيسان لا مفترضَين**
+// (`tools/bench-s69-guards.mjs`): عند فشل حفظ Clean Player كان
+// `cleanPlayerSaving = 1`، وعند فشل حفظ المربّع كان المودال **مفتوحاً**
+// (`hidden = false`). **فلا يُتجاوز الحارس ولا يُحذف — بل يُؤجَّل الإرجاع حتى
+// يسقط** (قرار المالك): حارسٌ يُسقط الإرجاع صامتاً يترك الضابط يكذب، وهو النجاح
+// الكاذب نفسه الذي أُمسك في #57.
+let saveSeq = 0;            // رقم تسلسليّ لكل حفظ
+let pendingRevertSeq = 0;   // آخر حفظٍ فاشل ينتظر الإرجاع (0 = لا شيء)
+
+// الحارسان — تعريفٌ واحد يستهلكه الرسم والتأجيل معاً، فلا شرطان يتباعدان
+function cleanPlayerBusy() { return cleanPlayerSaving > 0; }
+function zoneModalOpen() { return $("modalOverlay")?.hidden === false; }
+
+// يُنفَّذ الإرجاع إن أمكن، وإلا بقي معلّقاً حتى يسقط الحارس.
+// **ولا يُرجَع إلا آخر حفظٍ فاشل:** حفظٌ أحدث بدأ بعده يُبطله، لأن المستخدم
+// غيّر رأيه بعد الفشل — وإرجاعُ حالةٍ تجاوزها يُلغي نقرة صحيحة لاحقة.
+function flushPendingRevert() {
+  if (!pendingRevertSeq) return;
+  if (pendingRevertSeq !== saveSeq) { pendingRevertSeq = 0; return; }
+  if (cleanPlayerBusy() || zoneModalOpen()) return;   // مؤجَّل، لا مُلغى
+  pendingRevertSeq = 0;
+  renderAllFromStorage();
+}
+
 // Failure is surfaced here rather than at each of the ~15 call sites, so no save
 // path can ever swallow a quota error. Returns true only when the write landed.
 async function saveSettings(settings) {
+  const seq = ++saveSeq;
   rebuildWheelMap(settings);
   const res = await safeSyncSet({ settings });
   if (!res.ok) {
     showToast("bad", `تعذّر الحفظ: ${res.message}`);
+    if (seq === saveSeq) { pendingRevertSeq = seq; flushPendingRevert(); }
     return false;
   }
   const tabs = await chrome.tabs.query({});
@@ -442,7 +476,8 @@ function renderBlockedSites(blockedHosts) {
     btn.addEventListener("click", async () => {
       const s = await getSettings();
       s.blockedHosts = (s.blockedHosts || []).filter((x) => x !== host);
-      await saveSettings(s);
+      // #69: صفٌّ يختفي بعد حذفٍ لم يُحفظ يعِد بما لم يقع
+      if (!(await saveSettings(s))) return;
       renderBlockedSites(s.blockedHosts);
     });
 
@@ -498,6 +533,7 @@ async function persistCleanPlayer() {
     }
   } finally {
     cleanPlayerSaving--;
+    flushPendingRevert();   // #69: الحارس سقط — يُنفَّذ الإرجاع المؤجَّل إن بقي
   }
 }
 
@@ -662,6 +698,7 @@ function openZoneModal(zone, items) {
 
 function closeZoneModal() {
   $("modalOverlay").hidden = true;
+  flushPendingRevert();     // #69: الحارس سقط — يُنفَّذ الإرجاع المؤجَّل إن بقي
 }
 
 function openActionModal(index = null) {
@@ -816,25 +853,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   const zones = settings.zones;
   const actions = zones.wheel.actions;
 
-  $("enabled").checked = !!zones.enabled;
-  $("fullscreenOnly").checked = !!zones.fullscreenOnly;
-  $("gridFullFrame").checked = zones.gridCoverage !== "video";
-
   if (zonesWereMissing) {
     zones.wheel.actions = defaultZoneActions();
     await saveSettings(settings);
   }
 
-  renderGrid(zones.wheel.actions);
-  renderBlockedSites(settings.blockedHosts);
-  renderSoundSettings(settings.soundDisplay);
-  renderGridAppearance(settings.gridAppearance);
-  renderOverlayTiming(settings.overlay);
-  renderYtAutoQuality(settings.ytAutoQuality);
-  renderYtShortsRedirect(settings.ytShortsRedirect);
+  // القائمة تُبنى **مرّة واحدة هنا**، ثم الرسم كلّه من الدالّة الواحدة (#69).
+  // وثمنه المقيس قراءة تخزين إضافية عند فتح الصفحة، والقيم نفسها لأن كتابة
+  // `zonesWereMissing` تسبقها.
   buildCleanPlayerList();
-  renderCleanPlayer(settings.cleanPlayer);
-  renderSubtitles(settings.subtitles);
+  await renderAllFromStorage();
 
   $("cleanPlayerEnabled").addEventListener("change", persistCleanPlayer);
 
@@ -862,7 +890,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const s = await getSettings();
     s.zones = { enabled: true, fullscreenOnly: false, gridCoverage: "player", wheel: { map: {}, actions: defaultZoneActions() } };
     s.gridAppearance = { ...GRID_APPEARANCE_DEFAULTS };
-    await saveSettings(s);
+    // #69: لا تُعرض نتيجةُ إعادة ضبطٍ لم تقع — الرسالة تظهر من `saveSettings`
+    if (!(await saveSettings(s))) return;
     $("enabled").checked = true;
     $("fullscreenOnly").checked = false;
     $("gridFullFrame").checked = true;
@@ -1120,7 +1149,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const s = await getSettings();
     ensureZoneActions(s);
     s.zones.wheel.actions[String(modalZone)] = editingActions.map((item) => ({ ...item }));
-    await saveSettings(s);
+    // #69: مودالٌ يُغلق بعد حفظٍ فاشل يقول «حُفظ» بلغة الواجهة — فلا يُغلق
+    if (!(await saveSettings(s))) return;
     renderGrid(s.zones.wheel.actions);
     closeZoneModal();
   });
@@ -1135,26 +1165,37 @@ document.addEventListener("DOMContentLoaded", async () => {
 // Re-render UI whenever settings change from any source (popup, another tab, etc.)
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "sync" || !changes.settings) return;
-  (async () => {
-    const s = await getSettings();
-    $("enabled").checked         = !!s.zones?.enabled;
-    $("fullscreenOnly").checked  = !!s.zones?.fullscreenOnly;
-    $("gridFullFrame").checked   = s.zones?.gridCoverage !== "video";
-    renderBlockedSites(s.blockedHosts);
-    renderSoundSettings(s.soundDisplay);
-    renderGridAppearance(s.gridAppearance);
-    renderOverlayTiming(s.overlay);
-    renderSubtitles(s.subtitles);
-    renderYtAutoQuality(s.ytAutoQuality);
-    renderYtShortsRedirect(s.ytShortsRedirect);
-    // Don't clobber checkboxes the user is toggling while a save is in flight
-    if (!cleanPlayerSaving) renderCleanPlayer(s.cleanPlayer);
-    // Don't interrupt active zone editing
-    if ($("modalOverlay")?.hidden !== false) {
-      renderGrid(s.zones?.wheel?.actions || {});
-    }
-  })();
+  renderAllFromStorage();
 });
+
+// ── #69: الرسم من التخزين — **دالّة واحدة يستهلكها ثلاثة** ─────────────────
+// `init` و`chrome.storage.onChanged` **ومسار الفشل**. وكانت نسختين متقاربتين،
+// فصارت واحدة تحلّ محلّهما — لا ثالثة تُضاف إليهما.
+//
+// ⚠️ **وما لا يدخلها: `buildCleanPlayerList()`** — قِيس أنها **بناءٌ هادم لا
+// حارس**: تبدأ بـ`innerHTML = ""` ثم تُنشئ 39 مربّعاً **بمستمعاتها من جديد**.
+// فلو دخلت، صار كل رسمٍ من التخزين **يهدم الضابط الذي ينقر عليه المستخدم**.
+// تبقى في `init` وحده، مرّةً عند التحميل.
+//
+// **والحارسان يبقيان داخلها** — وهما خاويان عند `init` بالقياس: العدّاد `0`،
+// والمودال يحمل `hidden` في `options.html` ولا تُرفع إلا في `openZoneModal`.
+async function renderAllFromStorage() {
+  const s = await getSettings();
+  $("enabled").checked         = !!s.zones?.enabled;
+  $("fullscreenOnly").checked  = !!s.zones?.fullscreenOnly;
+  $("gridFullFrame").checked   = s.zones?.gridCoverage !== "video";
+  renderBlockedSites(s.blockedHosts);
+  renderSoundSettings(s.soundDisplay);
+  renderGridAppearance(s.gridAppearance);
+  renderOverlayTiming(s.overlay);
+  renderSubtitles(s.subtitles);
+  renderYtAutoQuality(s.ytAutoQuality);
+  renderYtShortsRedirect(s.ytShortsRedirect);
+  // Don't clobber checkboxes the user is toggling while a save is in flight
+  if (!cleanPlayerBusy()) renderCleanPlayer(s.cleanPlayer);
+  // Don't interrupt active zone editing
+  if (!zoneModalOpen()) renderGrid(s.zones?.wheel?.actions || {});
+}
 
 function setBackupStatus(kind, text) {
   const el = $("backupStatus");
