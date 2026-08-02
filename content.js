@@ -1131,9 +1131,11 @@ async function loadSoundDisplaySettings(pre) {
     vzOverlay.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
     vzOverlay.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
   }
-  if (vzVolumeBadge) {
-    vzVolumeBadge.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
-    vzVolumeBadge.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
+  // #71: الشارتان ترثان `soundDisplay` نفسها — والدَّين في اسمها مسجَّل بندَ #75
+  for (const el of [vzVolumeBadge, vzSpeedBadge]) {
+    if (!el) continue;
+    el.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
+    el.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
   }
 }
 
@@ -1804,7 +1806,12 @@ async function loadOverlaySettings(pre) {
     volumeAutoHideMs: vol,
     // البند #63 — افتراضه **الحالي (ظاهر)**: `!== false` لا `=== true`، فمن لم
     // يفتح الإعدادات قط لا يتغيّر سلوكه بحرف.
-    hintEnabled: o.hintEnabled !== false
+    hintEnabled: o.hintEnabled !== false,
+    // ⚠️ **#71 — الشكل مقلوبٌ عن الذي فوقه عمداً، ولا يُوحَّد بهما:** ميزةٌ
+    // **جديدة** افتراضها **مطفأ**، فـ`!!x` لا `!== false` (قرار المالك). و`!== false`
+    // شكلُ المفتاح الرئيسي وحده — **والقسم [٤] من `tools/test-master-gate.js`
+    // يشترطه هناك**، فخلطُ الشكلين يُطفئ إضافةَ من لم يفتح الإعدادات قط.
+    speedBadge: !!o.speedBadge
   };
 
   if (!overlaySettings.enabled) hideOverlayNow();
@@ -1850,14 +1857,24 @@ const OVERLAY_CSS = `
       font:12px/1.2 Arial, sans-serif; max-width:70%;
       opacity:.95;
     }
-    .vzVolume{
-      position:absolute; left:10px; top:10px;
+    /* ── #71: قناتان لا قناةٌ بمفتاح ──────────────────────────────────────
+       المستوى والسرعة **حقيقتان مستقلّتان**، ورفعُ الصوت ثمّ تغييرُ السرعة
+       **تتابعٌ عاديّ لا نادر**. فعقدةٌ واحدة تعني «آخر كاتبٍ يفوز»، ومؤقّتٌ
+       واحد يعني أن مؤقّت إحداهما يُلغي الأخرى — **فالتزاحم يقع لا يُحتمل**
+       (قرار المالك 2026-08-02).
+       **والزاويتان متقابلتان** فتظهران معاً بلا تراكب: المستوى حيث كان،
+       والسرعة في الزاوية المقابلة. والمظهر مشترك: soundDisplay تُورَّث كما
+       هي بلا مفاتيح ثانية (والدَّين مسجَّل بندَ #75). */
+    .vzVolume,.vzSpeed{
+      position:absolute; top:10px;
       color:var(--vz-volume-color, #fff);
       font:700 var(--vz-volume-size, 48px)/1 Arial, sans-serif;
       text-shadow:0 2px 10px rgba(0,0,0,.75);
       pointer-events:none;
       opacity:.98;
     }
+    .vzVolume{ left:10px; }
+    .vzSpeed{ right:10px; }
     .vzHidden{ display:none !important; }
     /* البند #47 — لا تنطبق إلا حين تُضاف السمة، أي في حالة واحدة: عنصر ملء
        الشاشة هو <video> نفسه. أنماط المتصفح الافتراضية لـ [popover] تفرض
@@ -1883,6 +1900,7 @@ let vzOverlayVideo = null;
 let vzGridEl = null;
 let vzHintEl = null;
 let vzVolumeBadge = null;
+let vzSpeedBadge = null;         // #71 — قناة ثانية، عنصرٌ مستقلّ لا حقلٌ مشترك
 let vzOverlayHost = null;        // parent it's currently attached to (body or fullscreen el)
 let vzTrackRafId = null;
 
@@ -1895,6 +1913,7 @@ function buildOverlayElement() {
     <div class="vzGrid vzHidden">${'<div class="vzCell"></div>'.repeat(9)}</div>
     <div class="vzHint vzHidden">Zones</div>
     <div class="vzVolume vzHidden">100</div>
+    <div class="vzSpeed vzHidden">1x</div>
   `;
   applyGridVars(el); // يزرع الأرقام بـ textContent بعد بناء الخلايا
   return el;
@@ -1984,12 +2003,18 @@ function positionOverlayToVideo() {
   vzOverlay.style.height = `${rect.height}px`;
 }
 
+// ⚠️ **#71 — تُعدُّ من السجلّ ولا تُعدَّد بيدها.** كانت ثلاثة أسطر مكتوبة، فقناةٌ
+// رابعة تعني سطراً رابعاً **يُنسى**، فتظهر بلا أن تتبعها حلقة الرسم. والسجلّ
+// `OVERLAY_PARTS` مُعرَّف أسفل (مع المُظهِر العامّ، فهما وحدة واحدة) — ولا مشكلة
+// في الترتيب: هذه الدالّة **لا تُنادى إلا بعد تقييم الملف كاملاً**.
+// وهذا درس البوّابات الإحدى عشرة (#64) في موضع أصغر: **لا قائمة تُحصي، بل موضعٌ
+// واحد يُقرأ منه** — فالقناة الخامسة لا تحتاج تعديلاً هنا ولا في `hideOverlayNow`.
 function anySubElementVisible() {
-  return (
-    (vzGridEl && !vzGridEl.classList.contains("vzHidden")) ||
-    (vzHintEl && !vzHintEl.classList.contains("vzHidden")) ||
-    (vzVolumeBadge && !vzVolumeBadge.classList.contains("vzHidden"))
-  );
+  for (const part of Object.values(OVERLAY_PARTS)) {
+    const el = part();
+    if (el && !el.classList.contains("vzHidden")) return true;
+  }
+  return false;
 }
 
 function startOverlayTracking() {
@@ -2056,6 +2081,7 @@ function teardownOverlay() {
   vzGridEl = null;
   vzHintEl = null;
   vzVolumeBadge = null;
+  vzSpeedBadge = null;
   vzOverlayVideo = null;
   vzOverlayHost = null;
   if (vzTrackRafId != null) {
@@ -2083,6 +2109,7 @@ function ensureVideoOverlay(video) {
   vzGridEl = vzOverlay.querySelector(".vzGrid");
   vzHintEl = vzOverlay.querySelector(".vzHint");
   vzVolumeBadge = vzOverlay.querySelector(".vzVolume");
+  vzSpeedBadge = vzOverlay.querySelector(".vzSpeed");
   vzOverlayVideo = video;
   attachOverlayToHost(preferredOverlayHost(video));
   positionOverlayToVideo();
@@ -2115,18 +2142,15 @@ function showOverlay(text) {
   }, ms);
 }
 function hideOverlayNow() {
-  vzGridEl?.classList.add("vzHidden");
-  vzHintEl?.classList.add("vzHidden");
-  vzVolumeBadge?.classList.add("vzHidden");
+  for (const part of Object.values(OVERLAY_PARTS)) part()?.classList.add("vzHidden");
 }
 
+// ⚠️ **#71 — صارت تحسب النصّ وحده وتسلّمه للمُظهِر العامّ.** كل ما حُذف من هنا
+// (المهلة · بناء الـoverlay · الكتابة · المؤقّت) **انتقل إلى `showBadge` كما هو
+// لا كنسخةٍ منه**، فالمسار واحد لا اثنان يتباعدان. **وسلوك الصوت لم يتغيّر بحرف**
+// — والحارس على ذلك `tools/test-volume-mute.js` القسم [8] بأرقامه نفسها.
 function showVolumeIndicator(video) {
   if (!video) return;
-  const ms = Math.max(0, Number(overlaySettings.volumeAutoHideMs ?? 0));
-  if (ms <= 0) return; // Volume indicator disabled
-
-  ensureVideoOverlay(video);
-  if (!vzVolumeBadge || vzOverlayVideo !== video) return;
 
   // Level and mute are independent facts (#35), so they get two channels in the
   // badge instead of one field that conflates them: the level always reads the
@@ -2140,18 +2164,54 @@ function showVolumeIndicator(video) {
   // ويخفي الكامن — تويتش — تُعرض **العلامة وحدها بلا رقم**.
   // **«مكتوم 0» ممنوعة: رقم نعلم أنه كاذب أسوأ من غياب الرقم.**
   const percent = Math.round((video.volume ?? 1) * 100);
-  vzVolumeBadge.textContent = video.muted
+  const text = video.muted
     ? (hostAdapterFor()?.hidesLevelWhenMuted ? "مكتوم" : `مكتوم ${percent}`)
     : String(percent);
+  showBadge(video, "volume", text);
+}
+
+// ── #71 — سجلّ أجزاء الـoverlay، والمُظهِر العامّ ────────────────────────────
+// **الموضع الواحد الذي تُقرأ منه القنوات**: تُعدّه `anySubElementVisible`
+// و`hideOverlayNow` ويُخاطبه `showBadge`. **قناةٌ خامسة تُضاف هنا وحدها.**
+// الشبكة والتلميح ليستا شارتين (لهما `showOverlay` بمهلتها)، لكنهما جزءان من
+// الـoverlay فتدخلان السجلّ — **وإلا عادت الحلقة تُعدّد بيدها**.
+// دوالّ لا مراجع مباشرة: العناصر تُعاد بناؤها في `ensureVideoOverlay`، فمرجعٌ
+// مُجمَّد في السجلّ يشير إلى عقدةٍ خرجت من الـDOM.
+const OVERLAY_PARTS = {
+  grid:   () => vzGridEl,
+  hint:   () => vzHintEl,
+  volume: () => vzVolumeBadge,
+  speed:  () => vzSpeedBadge
+};
+
+// مؤقّتٌ **لكل قناة**: حقلٌ ساكن واحد كان يعني أن مؤقّت السرعة يُلغي مؤقّت الصوت
+// فتبقى شارةٌ معلّقة على الشاشة. هذا نصف سبب قرار «عنصران لا عنصر».
+const badgeTimers = {};
+
+// المُظهِر العامّ — **نصٌّ وهويّة قناة، ولا فرع لكل سطر**. و`showVolumeIndicator`
+// أوّل نادٍ له **لا نسخةٌ منه**: تحسب النصّ وحدها، وكلّ ما عداه هنا مرّة واحدة.
+// ⚠️ **والمهلة `volumeAutoHideMs` تُورَّث كما هي بلا مفتاح ثانٍ** (قرار المالك)،
+// **ومن ثَمّ `0` تعني «لا شارة» للقناتين معاً**. وهذا لا يُترك ليكذب: مربّع
+// السرعة في الإعدادات **يُعطَّل بسببٍ مكتوب** عند 0 بدل أن يُضغط ولا يفعل (#24).
+function showBadge(video, channel, text) {
+  if (!video) return;
+  const ms = Math.max(0, Number(overlaySettings.volumeAutoHideMs ?? 0));
+  if (ms <= 0) return; // المؤشّر معطَّل
+
+  ensureVideoOverlay(video);
+  const el = OVERLAY_PARTS[channel]?.();
+  if (!el || vzOverlayVideo !== video) return;
+
+  el.textContent = text;
   vzOverlay?.style.setProperty("--vz-volume-color", soundDisplaySettings.color);
   vzOverlay?.style.setProperty("--vz-volume-size", `${soundDisplaySettings.fontSize}px`);
-  vzVolumeBadge.classList.remove("vzHidden");
+  el.classList.remove("vzHidden");
   positionOverlayToVideo();
   startOverlayTracking();
 
-  clearTimeout(showVolumeIndicator._t);
-  showVolumeIndicator._t = setTimeout(() => {
-    vzVolumeBadge?.classList.add("vzHidden");
+  clearTimeout(badgeTimers[channel]);
+  badgeTimers[channel] = setTimeout(() => {
+    el.classList.add("vzHidden");
   }, ms);
 }
 // -------------------------------------------
@@ -3060,10 +3120,22 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
 const VZ_SPEED_MIN = 0.25;
 const VZ_SPEED_MAX = 4;
 
+// ── #71 — بوّابة شارة السرعة ────────────────────────────────────────────────
+// الترتيب المقرَّر (#64): **المفتاح الرئيسي ← الحظر ← مفتاح الميزة**. ولا ريماب
+// بينهما: الشارة **عَرْضٌ لأمرٍ وقع**، والأمر نفسه مرّ ببوّابته قبل أن يصل هنا.
+function speedBadgeActive() {
+  if (!extensionActive()) return false;   // #64: الرئيسي ثم الحظر
+  return overlaySettings.speedBadge === true;
+}
+
 // **الموضع الوحيد الذي يكتب `playbackRate` في الإضافة كلّها.**
+// ⚠️ **ونداء الشارة هنا وحده** — فيرثه زرّ #72 بلا سطر، ما دام يُصدر أمراً من
+// نحو `ACTION:` ولا يكتب بيده. والنصّ **يُقرأ من العنصر بعد الكتابة لا من
+// المطلوب**، فيعرض ما صار إليه فعلاً بعد القصّ (قاعدة الشارة في عقد الصوت ع4).
 function setPlaybackRate(video, rate) {
   if (!video) return false;
   video.playbackRate = Math.max(VZ_SPEED_MIN, Math.min(VZ_SPEED_MAX, Math.round(rate * 100) / 100));
+  if (speedBadgeActive()) showBadge(video, "speed", `${video.playbackRate}x`);
   return true;
 }
 

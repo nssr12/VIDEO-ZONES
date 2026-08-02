@@ -97,7 +97,9 @@ function makeCtx() {
     applySubtitleStyles: () => {}, applySubtitleTrack: () => {}, applyCleanPlayerCSS: () => {},
     syncSubtitleTrackObserver: () => {}, // #21 — خارج نطاق هذا الاختبار
     applyGridVars: () => {}, resolveGridAppearance: (g) => ({ ...g }),
-    structuredClone, vzOverlay: null, vzVolumeBadge: null,
+    // #71: قناة ثانية في الـoverlay ⇒ العالم يعلنها كذلك. **مرساةٌ لا تأكيد**
+    // (قرار 33): غيابها يرفع ReferenceError في `loadSoundDisplaySettings`.
+    structuredClone, vzOverlay: null, vzVolumeBadge: null, vzSpeedBadge: null,
     FIRST_RUN_ZONES: { enabled: true, wheel: { map: {} } },
     // module state the loaders write
     blockedHosts: [], overlaySettings: null, soundDisplaySettings: { color: "#ffffff", fontSize: 48 },

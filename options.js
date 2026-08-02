@@ -265,6 +265,9 @@ async function getSettings() {
   if (typeof settings.overlay.enabled !== "boolean") settings.overlay.enabled = settings.overlay.autoHideMs > 0;
   // البند #63 — الافتراض **ظاهر**، فلا يتغيّر سلوك مستخدم قائم بلا طلبه
   if (typeof settings.overlay.hintEnabled !== "boolean") settings.overlay.hintEnabled = true;
+  // ⚠️ **#71 — والافتراض هنا مطفأ، والشكل مقلوب عمداً:** ميزةٌ جديدة **لا تُشغَّل
+  // بلا طلب**، فلا يرى من لم يطلبها حرفاً. الشكلان لا يُوحَّدان.
+  if (typeof settings.overlay.speedBadge !== "boolean") settings.overlay.speedBadge = false;
   if (typeof settings.ytAutoQuality !== "string") settings.ytAutoQuality = "";
   if (typeof settings.ytShortsRedirect !== "boolean") settings.ytShortsRedirect = true;
   settings.cleanPlayer ||= {};
@@ -605,6 +608,21 @@ function renderOverlayTiming(overlay) {
   $("zoneHintEnabled").checked = overlay?.hintEnabled !== false;
   $("volumeDuration").value = String(vol);
   $("volumeDurationValue").textContent = formatDurationMs(vol);
+  $("speedBadgeEnabled").checked = overlay?.speedBadge === true;
+  syncSpeedBadgeRow(vol);
+}
+
+// ── #71 — المربّع يُعطَّل **بسببٍ مكتوب**، ولا يُترك يكذب ────────────────────
+// شارة السرعة **ترث `volumeAutoHideMs`** بقرار المالك (لا مفتاح مدّة ثانٍ)،
+// **ومن ثَمّ `0` تعني «لا شارة» للقناتين معاً**. فمربّعٌ يُضغط ولا يفعل شيئاً
+// **انحدارٌ** (البند #24: المُنزلق يُعطَّل برسالة بدل أن يوهم) — يُعطَّل ويقول
+// لماذا، **ويبقى مؤشَّراً كما اختاره المستخدم** فلا نغيّر تخزينه من تحته.
+function syncSpeedBadgeRow(vol) {
+  const off = Number(vol) <= 0;
+  $("speedBadgeEnabled").disabled = off;
+  $("speedBadgeHint").textContent = off
+    ? "معطّلة الآن: مدّة «رقم الصوت» صفر، والشارتان تتشاركان المدّة نفسها. ارفعها فوق الصفر لتعمل."
+    : "تظهر في الزاوية المقابلة لرقم الصوت، وتأخذ مدّته ولونه وحجمه نفسها.";
 }
 
 function renderGridAppearance(appearance) {
@@ -1007,6 +1025,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     s.overlay.autoHideMs = grid;
     s.overlay.volumeAutoHideMs = vol;
     s.overlay.hintEnabled = $("zoneHintEnabled").checked;
+    s.overlay.speedBadge = $("speedBadgeEnabled").checked;
     s.overlay.enabled = grid > 0 || vol > 0;
     await saveSettings(s);
     const tabs = await chrome.tabs.query({});
@@ -1020,8 +1039,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   $("gridDuration").addEventListener("change", persistOverlayTiming);
   $("zoneHintEnabled").addEventListener("change", persistOverlayTiming);
+  $("speedBadgeEnabled").addEventListener("change", persistOverlayTiming);
   $("volumeDuration").addEventListener("input", () => {
     $("volumeDurationValue").textContent = formatDurationMs(Number($("volumeDuration").value));
+    // السببُ يتبع المُنزلق أثناء السحب لا بعد الحفظ: `input` يعرض و`change` يكتب
+    syncSpeedBadgeRow(Number($("volumeDuration").value));
   });
   $("volumeDuration").addEventListener("change", persistOverlayTiming);
 
