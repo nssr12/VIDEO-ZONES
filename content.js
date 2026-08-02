@@ -3017,13 +3017,14 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
   }
 
   // Speed: SET absolute value (e.g. ACTION:SPEED:SET:2)
+  // ⚠️ **الترتيب حامل**: `"ACTION:SPEED:SET:2".startsWith("ACTION:SPEED:")` صادقة
+  // كذلك، فلو سبقت كتلة الدلتا لالتقطت المطلق وقرأت `"SET"` عدداً ⇒ `NaN`.
   if (action.startsWith("ACTION:SPEED:SET:")) {
     const n = Number(action.split(":")[3]);
     if (isNaN(n)) return false;
     const video = findVideoLoose(e);
     if (!video) return false;
-    video.playbackRate = Math.max(0.25, Math.min(4, Math.round(n * 100) / 100));
-    return true;
+    return setPlaybackRate(video, n);
   }
 
   // Speed: delta
@@ -3032,12 +3033,45 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
     if (isNaN(n)) return false;
     const video = findVideoLoose(e);
     if (!video) return false;
-    const r = (video.playbackRate || 1) + n;
-    video.playbackRate = Math.max(0.25, Math.min(4, Math.round(r * 100) / 100));
-    return true;
+    return stepPlaybackRate(video, n);
   }
 
   return false;
+}
+
+// ── تعريف السرعة الواحد — الموضع الذي يملك الحدّين والقصّ والكتابة ───────────
+// **الحدّان كانا مكتوبين مرّتين حرفياً** في كتلتَي `ACTION:SPEED` أعلاه: التعبير
+// `Math.max(0.25, Math.min(4, Math.round(x * 100) / 100))` نسختين. وميزتان
+// مقرَّرتان تقرآن السرعة — شارة **#71** وزرّ **#72** — **فكانت النسختان تصيران
+// أربعاً لرقمين**، وهو شكل «موضعان للحقيقة الواحدة» الذي كذب في عدّ التأكيدات
+// ثلاث مرّات (قرارا 34 و36). فسبق التعريفُ الميزتين بقرار المالك 2026-08-02.
+//
+// ⚠️ **وهذا الكومِت صفر تغيّر سلوكي، مبرهَناً لا موعوداً**: التعبير منقول حرفاً
+// بحرف **بترتيبه نفسه** (تقريبٌ ثمّ قصّ — والعكس يعطي غيره عند الحدود)، و`|| 1`
+// باقية كما هي فـ`playbackRate === 0` يُقرأ `1` كما كان بالضبط. والبرهان في
+// `tools/test-speed-source.js`: **أوراكل يحمل التعبير القديم نصّاً** ويُقارَن به
+// على مصفوفة مدخلات، فالمساواة **مقيسة لا مقروءة**.
+//
+// **ونداء الشارة يدخل هنا في #71 — موضعاً واحداً لا موضعين.** ولذلك **لا يكتب أي
+// مسار جديد `playbackRate` بيده**، ومنه زرّ #72: يُصدر أمراً من نحو `ACTION:`
+// نفسه (قرار المالك). **والحارس بنيويّ لا قائمة** (قرار 16ج): `test-speed-source`
+// يعدّ مواضع الكتابة في `content.js` ويشترط **واحداً**، فمسارٌ يكتب بيده يُحمّر
+// المجموعة **وإن لم يخطر لأحد أن يُدرجه في قائمة**.
+const VZ_SPEED_MIN = 0.25;
+const VZ_SPEED_MAX = 4;
+
+// **الموضع الوحيد الذي يكتب `playbackRate` في الإضافة كلّها.**
+function setPlaybackRate(video, rate) {
+  if (!video) return false;
+  video.playbackRate = Math.max(VZ_SPEED_MIN, Math.min(VZ_SPEED_MAX, Math.round(rate * 100) / 100));
+  return true;
+}
+
+// خطوة نسبية. `|| 1` منقولة عن المصدر حرفياً — لا تُبدَّل بـ`?? 1`: الفرق ليس
+// أسلوبياً، فـ`playbackRate === 0` يُقرأ **1** بالأولى و**0** بالثانية.
+function stepPlaybackRate(video, delta) {
+  if (!video) return false;
+  return setPlaybackRate(video, (video.playbackRate || 1) + delta);
 }
 
 // ── البند #58: تعريف واحد لـ«الفيديو يملأ هذا العنصر» ────────────────────────
