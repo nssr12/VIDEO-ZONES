@@ -140,7 +140,11 @@ settings = {
     click: { map: { "1": { left:[...], right:[...], middle:[...] }, ... } }, // click-runtime projection
     key:   { map: { "1": { "Space":[...], "ArrowUp":[...] }, ... } }        // keyboard-runtime projection
   },
-  overlay: { autoHideMs, volumeAutoHideMs, enabled, hintEnabled },  // hintEnabled default true (#63)
+  overlay: {
+    autoHideMs, volumeAutoHideMs, enabled,
+    hintEnabled,                       // default true  (#63) — `!== false`
+    speedBadge                         // default FALSE (#71) — `!!x`, opt-in feature
+  },
   blockedHosts: ["youtube.com", ...],
   soundDisplay: { color, fontSize },
   gridAppearance: { cellBg, cellBorder, numberColor, radius },
@@ -227,6 +231,31 @@ Current strategy (`content.js`):
 - `fullscreenchange` listener moves the overlay between `document.body` and the fullscreen element so it survives fullscreen toggles.
 
 When editing overlay rendering, do **not** revert to attaching inside the player wrapper unless you re-test on YouTube.
+
+### Overlay channels — one registry, counted not enumerated (#71)
+
+The overlay has four sub-elements: `.vzGrid`, `.vzHint`, `.vzVolume`, `.vzSpeed`.
+`OVERLAY_PARTS` in `content.js` is the **single place they are listed** — it maps
+a channel key to a *getter* (not a reference: elements are rebuilt in
+`ensureVideoOverlay`, so a frozen reference points at a dead node).
+`anySubElementVisible()` and `hideOverlayNow()` both iterate it, and `showBadge()`
+addresses it. **A fifth channel is added there and nowhere else** — the previous
+hand-written three-line enumeration meant a new channel could show up without the
+rAF tracking loop following it.
+
+`showBadge(video, channel, text)` is the one shower: it owns the duration, the
+overlay build, the write, and **a timer per channel**. `showVolumeIndicator` is
+its first caller, not a copy — it computes text and nothing else. **The speed
+badge is called from `setPlaybackRate` alone**, so any new path that emits an
+`ACTION:SPEED*` string inherits it for free (that is how the planned #72 button
+gets it with no extra line).
+
+Both badges share `soundDisplay` (colour/size) and `volumeAutoHideMs` (duration)
+deliberately — no second keys. Consequence: `volumeAutoHideMs = 0` disables
+**both**, so the options checkbox is **disabled with a written reason** at 0
+rather than being pressable with no effect (#24's rule). The naming debt this
+creates (`soundDisplay` is now narrower than its scope) is registered as **#75**;
+renaming is a data migration, not a text edit.
 
 ### Video targeting
 

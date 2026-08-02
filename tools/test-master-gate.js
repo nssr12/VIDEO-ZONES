@@ -45,6 +45,7 @@ const ENTRIES = [
   ["المعزّز — تطبيق", "async function applyBoostToAllVideos", false],
   ["المعزّز — نقل", "async function reapplyBoostTo", false],
   ["Clean Player", "function applyCleanPlayerCSS()", false],
+  ["شارة السرعة (#71)", "function speedBadgeActive()", false],
   ["جودة يوتيوب — الإرسال", "function triggerYtQuality()", false],
   ["جودة يوتيوب — التسجيل", "function startYtAutoQuality()", false]
 ];

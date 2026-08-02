@@ -68,7 +68,18 @@ if (!SPEED_DEF || !SPEED_RUN) {
   console.log(`\n❌ نجح ${pass} / فشل ${fail + 1}\n`);
   process.exit(1);
 }
-const ctx = {};
+// ⚠️ **العالم يعلن بوّابة #71 وشارتها — مرساةٌ لا تأكيد (قرار 33).**
+// `setPlaybackRate` صارت تنادي `speedBadgeActive()` ثمّ `showBadge()`، وهما
+// **خارج القطعة المقتطعة** عمداً: البوّابة والمُظهِر ليسا من تعريف السرعة.
+// والعدّاد هنا **يُستعمل في القسم [6]** ليُبرهن أن الشارة تُنادى من الموضع
+// الواحد — فلا يصير الإعلان بديلاً صامتاً يُخفي أنها لا تُنادى أصلاً.
+const badgeCalls = [];
+let gateOpen = true;
+const ctx = {
+  extensionActive: () => gateOpen,
+  overlaySettings: { speedBadge: true },
+  showBadge: (video, channel, text) => badgeCalls.push({ channel, text, rate: video.playbackRate })
+};
 vm.createContext(ctx);
 vm.runInContext(`${SPEED_DEF}
   function runSpeed(action, v) {
@@ -184,6 +195,52 @@ console.log("\n[4] المراسي — حذفُها يكسر اختباراً آ�
   const vol = slice("// Volume delta in percent", "// Speed: SET absolute value");
   check("[4] والقطع بينهما ما زال يحوي كتلة الصوت كاملة",
     !!vol && vol.includes("runHostAdapter") && vol.includes("showVolumeIndicator"));
+}
+
+// ── [6] #71 — الشارة تُنادى من الموضع الواحد وحده ───────────────────────────
+// **وهذا ما يجعل زرّ #72 يرثها بلا سطر**: ما دام يُصدر أمراً من نحو `ACTION:`
+// ولا يكتب `playbackRate` بيده، فالشارة تقع له كما تقع للعجلة.
+console.log("\n[6] #71 — الشارة من الموضع الواحد، بعد القصّ، وخلف بوّابتين");
+{
+  const fire = (action, rate = 1) => {
+    badgeCalls.length = 0;
+    const v = { playbackRate: rate };
+    runSpeed(action, v);
+    return v;
+  };
+
+  fire("ACTION:SPEED:+0.25");
+  check("[6] نداءٌ واحد لكل تغيير", badgeCalls.length === 1, badgeCalls);
+  check("[6] وعلى قناة «speed» لا «volume»", badgeCalls[0]?.channel === "speed", badgeCalls[0]);
+  check("[6] ونصّها «1.25x»", badgeCalls[0]?.text === "1.25x", badgeCalls[0]);
+
+  // ⚠️ **تُقرأ من العنصر بعد الكتابة لا من المطلوب**: القصّ يقع قبل العرض،
+  // فلا تَعِد الشارةُ بسرعةٍ لم تُطبَّق — وهي قاعدة الشارة نفسها في عقد الصوت.
+  fire("ACTION:SPEED:+9");
+  check("[6] وبعد القصّ «4x» لا «10x»", badgeCalls[0]?.text === "4x", badgeCalls[0]);
+  fire("ACTION:SPEED:SET:0.1");
+  check("[6] والمطلق كذلك: «0.25x» لا «0.1x»", badgeCalls[0]?.text === "0.25x", badgeCalls[0]);
+
+  fire("ACTION:SPEED:SET:1.75");
+  check("[6] والمطلق ينادي الشارة كالدلتا", badgeCalls.length === 1 && badgeCalls[0].text === "1.75x",
+    badgeCalls);
+
+  // البوّابتان: مفتاح الميزة، ثمّ بوّابة #64
+  ctx.overlaySettings.speedBadge = false;
+  const off = fire("ACTION:SPEED:+0.25");
+  check("[6] ومفتاحها مطفأ ⇒ صفر نداء", badgeCalls.length === 0, badgeCalls);
+  check("[6] **والسرعة تتغيّر رغم ذلك** — الشارة عرضٌ لا شرط", off.playbackRate === 1.25,
+    off.playbackRate);
+  ctx.overlaySettings.speedBadge = true;
+
+  gateOpen = false;
+  const blocked = fire("ACTION:SPEED:+0.25");
+  check("[6] وبوّابة #64 مغلقة ⇒ صفر نداء", badgeCalls.length === 0, badgeCalls);
+  check("[6] والسرعة تتغيّر كذلك", blocked.playbackRate === 1.25, blocked.playbackRate);
+  gateOpen = true;
+
+  const back = fire("ACTION:SPEED:+0.25");
+  check("[6] وتعود بفتح البوّابتين", badgeCalls.length === 1 && back.playbackRate === 1.25, badgeCalls);
 }
 
 // ── [5] الأرقام مطبوعة من التشغيل لا مكتوبة بيد (قرار 34) ───────────────────

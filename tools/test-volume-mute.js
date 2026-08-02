@@ -192,7 +192,12 @@ console.log("\n[9] الشارة: نصّ لا DOM، وتحترم soundDisplay ا�
 {
   const b = badge({ muted: true, volume: 0.45 });
   const keys = b.setProps.map(([k]) => k);
-  check("تُكتب بـ textContent", /vzVolumeBadge\.textContent =/.test(BADGE));
+  // ⚠️ **مرساةٌ صُحّحت لا تأكيدٌ أُضعف (قرار 33، #71):** كان النمط يسمّي
+  // `vzVolumeBadge` بعينه، وقد **انتقلت الكتابة إلى `showBadge` العامّ** فصارت
+  // على عنصر القناة. **والنيّة نفسها — نصٌّ لا HTML** — ويحرسها معه السطر
+  // التالي، **ومَن يكتب في العنصر الصحيح يُبرهَن سلوكياً في القسم [8]**:
+  // كل تأكيداته يقرأ نصَّه من `badgeEl` نفسه، فلو كتبت الشارة في غيره لاحمرّت.
+  check("تُكتب بـ textContent", /\.textContent = /.test(BADGE));
   check("ولا innerHTML في الشارة إطلاقاً", !/innerHTML/.test(BADGE));
   check("ولا إنشاء عنصر جديد", !/createElement/.test(BADGE));
   check("واللون من soundDisplay", keys.includes("--vz-volume-color"));
