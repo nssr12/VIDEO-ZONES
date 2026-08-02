@@ -1,148 +1,212 @@
 // مِجَسّ #70 (أ) — شجرة شريط التقدّم: أيّ محدِّد يُخفي التقدّم وحده، وماذا يجرّ معه.
 //
+// **النسخة 2** — والمخرَج يحمل `"v":2` فلا يُخلط بخطّ الأساس (`AUDIT.md` القسم
+// الثالث عشر، مقيس بالنسخة 1). **وثلاث فجوات في النسخة 1 أُغلقت هنا بقرار
+// المالك 2026-08-02:**
+//   **(١) جداءٌ كامل** — كان `.ytp-scrubber-container` **مرشّحاً لا جاراً**، فلم
+//       يُعرف أهو من نسل الحاوية. **وإن لم يكن، فإخفاء الحاوية يترك نقطةً سابحة
+//       بلا شريط تحتها.** صار **كلٌّ يُقاس في مواجهة كلٍّ** (22 × 22).
+//   **(٢) الفصول** — `.ytp-chapter-container` كان **0×0** لأن الفيديو بلا فصول،
+//       **وصفرٌ من حالٍ لم تُنتَج لا يُقرأ نفياً** (قاعدة `S7`). فصار المِجَسّ
+//       **يعلن `chaptersProduced` ويصرخ إن كانت الحال غائبة** — فلا تُقرأ نتيجته
+//       على أنها نفيٌ لما لم يُنتَج.
+//   **(٣) ملء الشاشة** — كان القياس كلّه `fs:false`، و`S7` أثبت أن **عناصر لا
+//       تُبنى إلا هناك**، **ومؤقّت #70 سيعمل هناك أيضاً**. فصار المِجَسّ يُشغَّل
+//       مرّاتٍ ويجمعها، ولكل تشغيلة ختمُ `fs`.
+//
 // **يُلصق في كونسول صفحة watch — لا يُشحن، ولا يحتاج الإضافة مُحمَّلة.**
 // تشخيصيّ كـ`tools/report-fullscreen-bug.js`، ومستثنىً من حزمة النشر مع `tools/`.
 //
 // ── كيف يُشغَّل ───────────────────────────────────────────────────────────────
-//   ١) افتح فيديو يوتيوb عادياً (صفحة watch، لا تضمين — #68: التضمين هجر `ytp-`).
-//   ٢) **حرّك الفأرة فوق المشغّل** حتى يظهر شريط التحكّم، وأبقِها فوقه.
-//   ٣) الصق هذا الملف كاملاً في الكونسول واضغط Enter.
-//   ٤) انسخ السطر الذي يبدأ بـ`VZ70-TREE ` وأرسله.
+//   ١) افتح **فيديو فيه فصول** على صفحة watch (لا تضمين — #68).
+//   ٢) **حرّك الفأرة فوق المشغّل** حتى يظهر الشريط، وأبقِها فوقه.
+//   ٣) الصق هذا الملف كاملاً، ثمّ:
+//        VZ70T.run("نافذة")               ← تشغيلة فورية
+//        VZ70T.after(8, "ملء-شاشة")       ← ثمّ اضغط `f` وحرّك الفأرة قليلاً
+//        VZ70T.report()                   ← سطرٌ واحد يجمع التشغيلتين — انسخه
 //
-// ⚠️ **ثلاثة أحكام مبنيّة في المِجَسّ، لا تُقرأ نتيجته بدونها:**
+// ⚠️ **لِمَ `after` لملء الشاشة:** الكونسول لا يُكتب فيه وأنت في ملء الشاشة،
+// فتُجدول التشغيلة **قبل** الدخول. وصفيرٌ خفيف يعلن الالتقاط بلا أن تنظر.
+//
+// ⚠️ **وثلاثة أحكام مبنيّة في المِجَسّ، لا تُقرأ نتيجته بدونها:**
 //
 // **(١) شاهدان قبل أي رقم (قرار 26).** موجب: `#movie_player` و`.ytp-play-button`
 // **يجب** أن يُوجدا · سالب: `.ytp-vz-fake-not-real` **يجب** أن يكون صفراً. سقط
 // أحدهما ⇒ **لا يُطبع رقم**، لأن مِجَسّاً لم يُثبت أنه يرى لا يُنفى به وجود شيء.
 //
-// **(٢) الشريط مخفيّ الآن ⇒ يمتنع عن الطباعة.** صفرٌ من شريطٍ مخفيّ **غياب حالٍ
-// لا غياب عنصر** — وهو الخلط الذي أبطل نصف قراءات `S7` أول مرّة.
+// **(٢) الشريط مخفيّ ⇒ يمتنع.** صفرٌ من شريطٍ مخفيّ **غياب حالٍ لا غياب عنصر**.
+// **ويُعاد فحصه بعد القياس**: تغيّرَ بين الطرفين ⇒ `unstable:true` والتشغيلة
+// **لا يُبنى عليها** (قرار 22 — لا يُقرأ رقمٌ قبل أن يستقرّ الشيء المقيس).
 //
-// **(٣) «مرئي» يُقرأ بـ`display`/`visibility`/`opacity` لا بمستطيل غير صفريّ.**
-// العمى الرابع في `S7`: طُبع `.ytp-heat-map-container` «مرئياً 1081×40» وشفافيته
-// **صفر** — رقمٌ صادق يقود إلى استنتاج كاذب. **والخريطة الحرارية جارةُ الشريط
-// بالضبط**، فالفخّ ينتظر هذا المِجَسّ تحديداً.
+// **(٣) «مرئي» يُقرأ بـ`display`/`visibility`/`opacity` متراكمةً على الأسلاف، لا
+// بمستطيل غير صفريّ.** العمى الرابع في `S7`: طُبع `.ytp-heat-map-container`
+// «مرئياً 1081×40» وشفافيته **صفر** — **وهي جارة الشريط بالضبط**.
 //
-// وهو يقيس **بالإخفاء الفعليّ لا بقراءة الشجرة وحدها**: يطبّق `display:none` على
-// كل مرشّح، يقرأ أيّ الجيران انكمش، **ثمّ يتراجع في `finally`**. لأن `contains`
-// تجيب «هل هو من نسله» و**لا تجيب «وهل يختفي معه»** — والثانية هي سؤال #67.
+// ⚠️ **وفرقُ صيغةٍ عن النسخة 1 يُعلَن كي لا تُقارَن نتيجتان بصيغتين:** `inside`
+// و`hides` هنا **تُسجَّل مختصرةً — المُدخَلات ذات المعنى فقط** («-» محذوفة)،
+// لأن جداء 22×22 بصيغة النسخة 1 يخرج سطراً لا يُنسخ.
 (() => {
   const MARK = "VZ70-TREE";
+  const runs = [];
 
-  // المرشّحون: «شريط التقدّم» بمعانيه المحتملة، من الأضيق إلى الأوسع
-  const CANDIDATES = [
-    ".ytp-play-progress",
-    ".ytp-load-progress",
-    ".ytp-progress-list",
-    ".ytp-scrubber-container",
-    ".ytp-progress-bar",
-    ".ytp-progress-bar-padding",
-    ".ytp-progress-bar-container",
-    ".ytp-chrome-bottom"
+  // ── الجداء الكامل: قائمة واحدة، وكلٌّ يُقاس في مواجهة كلٍّ (الفجوة ١) ──────
+  const SELECTORS = [
+    // عائلة الشريط
+    ".ytp-play-progress", ".ytp-load-progress", ".ytp-progress-list",
+    ".ytp-scrubber-container", ".ytp-scrubber-button", ".ytp-progress-bar",
+    ".ytp-progress-bar-padding", ".ytp-progress-bar-container",
+    ".ytp-hover-progress", ".ytp-timed-markers-container",
+    ".ytp-heat-map-container", ".ytp-heat-map-chapter",
+    ".ytp-chapter-hover-container", ".ytp-chapter-container",
+    // ما يجب ألّا يُخفى
+    ".ytp-time-display", ".ytp-play-button", ".ytp-volume-panel",
+    ".ytp-subtitles-button", ".ytp-settings-button", ".ytp-fullscreen-button",
+    // الحاويات وحارس الإفراط
+    ".ytp-left-controls", ".ytp-right-controls", ".ytp-chrome-controls",
+    ".ytp-chrome-bottom", "video"
   ];
 
-  // الجيران الذين يسأل عنهم البند صراحةً + من يكشف الإفراط في المطابقة
-  const NEIGHBOURS = [
-    ".ytp-time-display",
-    ".ytp-chapter-container",
-    ".ytp-heat-map-container",
-    ".ytp-heat-map-chapter",
-    ".ytp-timed-markers-container",
-    ".ytp-play-button",
-    ".ytp-volume-panel",
-    ".ytp-subtitles-button",
-    ".ytp-settings-button",
-    ".ytp-fullscreen-button",
-    ".ytp-left-controls",
-    ".ytp-right-controls",
-    ".ytp-chrome-controls",
-    "video"
-  ];
-
-  const P = document.querySelector("#movie_player");
-  const V = document.querySelector("video");
   const q = (s) => { try { return [...document.querySelectorAll(s)]; } catch { return []; } };
-  const r = (el) => { const b = el?.getBoundingClientRect?.(); return b ? [Math.round(b.width), Math.round(b.height)] : null; };
+  const rect = (el) => { const b = el?.getBoundingClientRect?.(); return b ? [Math.round(b.width), Math.round(b.height)] : null; };
 
-  // الحكم الثالث: مرئيّ = لا `display:none` ولا `visibility:hidden` ولا شفافية
-  // صفر **ولا شفافية صفر على أي سلف** ولا مستطيل صفريّ.
   const seen = (el) => {
     if (!el) return { vis: false, why: "غائب" };
     const b = el.getBoundingClientRect();
     let node = el, op = 1;
     while (node && node.nodeType === 1) {
       const cs = getComputedStyle(node);
-      if (cs.display === "none") return { vis: false, why: "display:none" + (node === el ? "" : " (سلف)"), w: Math.round(b.width), h: Math.round(b.height) };
-      if (cs.visibility === "hidden") return { vis: false, why: "visibility:hidden" + (node === el ? "" : " (سلف)"), w: Math.round(b.width), h: Math.round(b.height) };
+      const w = Math.round(b.width), h = Math.round(b.height);
+      if (cs.display === "none") return { vis: false, why: "display:none" + (node === el ? "" : " (سلف)"), w, h };
+      if (cs.visibility === "hidden") return { vis: false, why: "visibility:hidden" + (node === el ? "" : " (سلف)"), w, h };
       op *= parseFloat(cs.opacity);
       node = node.parentElement;
     }
-    if (!(op > 0)) return { vis: false, why: "opacity:0", w: Math.round(b.width), h: Math.round(b.height), op };
-    if (b.width <= 0 || b.height <= 0) return { vis: false, why: "مستطيل صفريّ", w: 0, h: 0, op };
-    return { vis: true, why: "", w: Math.round(b.width), h: Math.round(b.height), op: Number(op.toFixed(3)) };
+    const w = Math.round(b.width), h = Math.round(b.height);
+    if (!(op > 0)) return { vis: false, why: "opacity:0", w, h, op };
+    if (w <= 0 || h <= 0) return { vis: false, why: "مستطيل صفريّ", w, h, op };
+    return { vis: true, why: "", w, h, op: Number(op.toFixed(3)) };
   };
 
-  // ── (١) الشاهدان ───────────────────────────────────────────────────────────
-  const wit = {
-    pos_player: q("#movie_player").length,
-    pos_play: q(".ytp-play-button").length,
-    neg_fake: q(".ytp-vz-fake-not-real").length
-  };
-  if (!wit.pos_player || !wit.pos_play || wit.neg_fake !== 0) {
-    console.log(`${MARK} ⛔ الشاهدان لم يستقيما — **لا رقم يُقرأ من هذا التشغيل**`, wit,
-      "\nصفحة watch؟ ومشغّل مُحمَّل؟ (وعلى مشغّل التضمين 2026 لا وجود لعائلة ytp- أصلاً — #68)");
-    return;
-  }
+  const barState = () => seen(q(".ytp-progress-bar-container")[0] || q(".ytp-chrome-bottom")[0]);
 
-  // ── (٢) حال الشريط الآن ────────────────────────────────────────────────────
-  const barNow = seen(q(".ytp-progress-bar-container")[0] || q(".ytp-chrome-bottom")[0]);
-  if (!barNow.vis) {
-    console.log(`${MARK} ⛔ شريط التحكّم **مخفيّ الآن** (${barNow.why}) — حرّك الفأرة فوق المشغّل وأعد اللصق.`,
-      "\nصفرٌ من شريط مخفيّ **غياب حالٍ لا غياب عنصر**، ولا يُقرأ نفياً.");
-    return;
-  }
+  const measure = (label) => {
+    const P = document.querySelector("#movie_player");
+    const V = document.querySelector("video");
 
-  // ── (٣) القياس ─────────────────────────────────────────────────────────────
-  const nEls = NEIGHBOURS.map((s) => ({ sel: s, el: q(s)[0] || null }));
-  const out = { url: location.href.slice(0, 120), witnesses: wit,
-    build: (P?.dataset?.version || "").slice(0, 48),
-    fs: !!document.fullscreenElement, paused: V ? V.paused : null,
-    ytp: [...document.querySelectorAll("*")].filter((e) => /(^|\s)ytp-/.test(String(e.className?.baseVal ?? e.className ?? ""))).length,
-    candidates: [] };
-
-  for (const sel of CANDIDATES) {
-    const els = q(sel);
-    const el = els[0] || null;
-    const row = { sel, n: els.length, ...seen(el), inside: {}, hides: {}, dragsVideo: null };
-
-    // بنيويّاً: أيٌّ من الجيران **من نسله** — لا بالنظر
-    for (const nb of nEls) {
-      if (!nb.el || !el) continue;
-      row.inside[nb.sel] = el.contains(nb.el) ? "نسل" : (nb.el.contains(el) ? "سلف" : "-");
+    // (١) الشاهدان
+    const wit = { pos_player: q("#movie_player").length, pos_play: q(".ytp-play-button").length,
+                  neg_fake: q(".ytp-vz-fake-not-real").length };
+    if (!wit.pos_player || !wit.pos_play || wit.neg_fake !== 0) {
+      console.log(`${MARK} ⛔ «${label}» الشاهدان لم يستقيما — **لا رقم يُقرأ من هذا التشغيل**`, wit);
+      return null;
     }
 
-    // فعلياً: أخفِه واقرأ مَن انكمش — ثمّ تراجَع في كل الأحوال
-    if (el) {
-      const before = new Map(nEls.map((nb) => [nb.sel, r(nb.el)]));
-      const st = document.createElement("style");
-      st.textContent = `html ${sel}{display:none !important}`;
-      try {
-        document.documentElement.appendChild(st);
-        for (const nb of nEls) {
-          const a = before.get(nb.sel), b = r(nb.el);
-          if (!a || !b) continue;
-          if (a[0] !== b[0] || a[1] !== b[1]) row.hides[nb.sel] = `${a[0]}×${a[1]} ⇒ ${b[0]}×${b[1]}`;
+    // (٢) بوّابة ظهور الشريط — تُفحص قبل وبعد
+    const before = barState();
+    if (!before.vis) {
+      console.log(`${MARK} ⛔ «${label}» الشريط **مخفيّ الآن** (${before.why}) — حرّك الفأرة فوق المشغّل وأعد.`,
+        "\nصفرٌ من شريط مخفيّ **غياب حالٍ لا غياب عنصر**، ولا يُقرأ نفياً.");
+      return null;
+    }
+
+    // (٢ب) الفصول: حالٌ تُعلَن، ولا تُقرأ نتيجتها نفياً إن لم تُنتَج
+    const chap = q(".ytp-chapter-container")[0] || null;
+    const chapSeen = seen(chap);
+    const chaptersProduced = !!chapSeen.vis;
+
+    // عناصر القياس مرّة واحدة
+    const nodes = SELECTORS.map((sel) => ({ sel, el: q(sel)[0] || null, n: q(sel).length }));
+    const baseRects = new Map(nodes.map((x) => [x.sel, rect(x.el)]));
+
+    const rows = [];
+    for (const a of nodes) {
+      const row = { sel: a.sel, n: a.n, ...seen(a.el), inside: {}, hides: {}, dragsVideo: false };
+
+      // بنيةً: كلٌّ في مواجهة كلٍّ — والمُدخَلات ذات المعنى وحدها تُسجَّل
+      if (a.el) {
+        for (const b of nodes) {
+          if (!b.el || b.sel === a.sel) continue;
+          if (a.el.contains(b.el)) row.inside[b.sel] = "نسل";
+          else if (b.el.contains(a.el)) row.inside[b.sel] = "سلف";
         }
-        // حارس الإفراط في المطابقة (`S7` صنف ج): الفيديو نفسه يجب ألّا يتغيّر
-        const vb = before.get("video"), va = r(V);
-        row.dragsVideo = !!(vb && va && (vb[0] !== va[0] || vb[1] !== va[1]));
-      } finally {
-        st.remove();
       }
-    }
-    out.candidates.push(row);
-  }
 
-  console.log(`${MARK} ` + JSON.stringify(out));
-  console.log("↑ انسخ السطر أعلاه كاملاً. `inside` = بنية (contains) · `hides` = مَن انكمش فعلاً عند الإخفاء · `dragsVideo` = إفراط في المطابقة.");
+      // فعلياً: أخفِه واقرأ من انكمش — ثمّ تراجَع في كل الأحوال
+      if (a.el) {
+        const st = document.createElement("style");
+        st.textContent = `html ${a.sel}{display:none !important}`;
+        try {
+          document.documentElement.appendChild(st);
+          for (const b of nodes) {
+            if (b.sel === a.sel) continue;
+            const p = baseRects.get(b.sel), c = rect(b.el);
+            if (!p || !c) continue;
+            if (p[0] !== c[0] || p[1] !== c[1]) row.hides[b.sel] = `${p[0]}×${p[1]} ⇒ ${c[0]}×${c[1]}`;
+          }
+          const vb = baseRects.get("video"), va = rect(V);
+          row.dragsVideo = !!(vb && va && (vb[0] !== va[0] || vb[1] !== va[1]));
+        } finally {
+          st.remove();
+        }
+      }
+      rows.push(row);
+    }
+
+    // (٢ج) استقرار: الشريط كما كان قبل القياس؟ (قرار 22)
+    const after = barState();
+    const unstable = after.vis !== before.vis;
+
+    const run = {
+      label, fs: !!document.fullscreenElement, paused: V ? V.paused : null,
+      chaptersProduced, chapter: { w: chapSeen.w ?? 0, h: chapSeen.h ?? 0, why: chapSeen.why },
+      unstable, vw: rect(V)?.[0] ?? 0, vh: rect(V)?.[1] ?? 0,
+      ytp: [...document.querySelectorAll("*")].filter((e) => /(^|\s)ytp-/.test(String(e.className?.baseVal ?? e.className ?? ""))).length,
+      rows
+    };
+    runs.push(run);
+
+    console.log(`${MARK} ✅ «${label}» — fs:${run.fs} · فصول:${chaptersProduced ? "نعم" : "**لا**"} · ` +
+      `عناصر ytp:${run.ytp}${unstable ? " · ⚠️ **unstable**" : ""}`);
+    if (!chaptersProduced) {
+      console.log(`${MARK} ⚠️ **الفصول لم تُنتَج في هذه التشغيلة** (${chapSeen.why || "0×0"}) — ` +
+        "صفرُها **غياب حالٍ لا نتيجة**، ولا يُقرأ نفياً. افتح فيديو بفصول وأعد.");
+    }
+    if (unstable) {
+      console.log(`${MARK} ⚠️ **الشريط تغيّر بين طرفي القياس** — لا يُبنى على هذه التشغيلة، أعدها والفأرة فوق المشغّل.`);
+    }
+    return run;
+  };
+
+  const VZ70T = (label) => measure(label || `تشغيلة-${runs.length}`);
+  VZ70T.run = VZ70T;
+
+  VZ70T.after = (sec, label) => {
+    console.log(`${MARK} ⏳ ${sec}ث… ادخل ملء الشاشة الآن (مفتاح f) وحرّك الفأرة قليلاً كي يظهر الشريط.`);
+    setTimeout(() => {
+      measure(label || `تشغيلة-${runs.length}`);
+      try {
+        const c = new AudioContext(), o = c.createOscillator(), g = c.createGain();
+        o.frequency.value = 880; g.gain.value = 0.05;
+        o.connect(g); g.connect(c.destination); o.start();
+        setTimeout(() => { o.stop(); c.close(); }, 120);
+      } catch {}
+    }, sec * 1000);
+    return `سيقيس «${label}» بعد ${sec} ثوانٍ`;
+  };
+
+  VZ70T.report = () => {
+    if (!runs.length) { console.log(`${MARK} لا تشغيلات بعد`); return; }
+    const P = document.querySelector("#movie_player");
+    console.log(`${MARK} ` + JSON.stringify({
+      v: 2, url: location.href.slice(0, 120),
+      build: (P?.dataset?.version || "").slice(0, 64),
+      n: runs.length, runs
+    }));
+    console.log("↑ انسخ السطر أعلاه كاملاً. `v:2` · `inside`/`hides` **مختصرة** (ذات المعنى فقط) " +
+      "· `chaptersProduced:false` ⇒ صفر الفصول **لا يُقرأ نفياً** · `unstable:true` ⇒ التشغيلة تُعاد.");
+  };
+
+  VZ70T.reset = () => { runs.length = 0; console.log(`${MARK} صُفِّرت التشغيلات`); };
+  window.VZ70T = VZ70T;
+  console.log(`${MARK} v2 جاهز. افتح **فيديو بفصول**، ثمّ:  VZ70T.run("نافذة")  ·  VZ70T.after(8,"ملء-شاشة")  ·  VZ70T.report()`);
 })();
