@@ -277,6 +277,24 @@ async function runOn(label, url, { withExtension = true } = {}) {
       const barOffMoved = await evalIn(page, BAR);
       out.steps.barOffMoved = barOffMoved;
       out.steps.bar = { active: barActive, idle: barIdle, off: barOff, offMoved: out.steps.barOffMoved };
+
+      // ── م22 — **ثقبُ صفّ الأزرار**: و#70 مطفأ، أيغيب زرُّنا وجيرانه حاضرون؟
+      await configure(PORT, h.extensionId, {
+        settings: { ...SETTINGS.settings,
+          overlay: { ...SETTINGS.settings.overlay, hideProgressBar: false, speedButton: true } }
+      });
+      await sleep(1200);
+      await wiggle(page, Math.round(vr.x + vr.w / 2), Math.round(vr.y + vr.h * 0.75), 3);
+      await sleep(300);
+      await sleep(IDLE_MS * 2);              // بعد مهلتنا وقبل إخفاء المضيف
+      out.steps.hole = await evalIn(page, `(() => {
+        const b = document.querySelector(".vzSpeedBtn");
+        const nb = document.querySelector(".ytp-settings-button");
+        const wOf = (el) => el ? Math.round(el.getBoundingClientRect().width) : null;
+        return { inBar: !!(b && b.closest(".ytp-right-controls")),
+                 btnW: wOf(b), nbW: wOf(nb),
+                 btnHidden: !!(b && b.classList.contains("vzHidden")) };
+      })()`);
     }
 
     return out;
@@ -422,6 +440,12 @@ if (!bar) {
        `صنفنا=${bar.idle?.ourClass} · opacity=${bar.idle?.opacity}`);
   gate("⭐ ويُرفع صنفُنا بإطفاء مفتاحه (8)", bar.off?.ourClass === false,
        `صنفنا=${bar.off?.ourClass} · opacity=${bar.off?.opacity} (وإخفاءُ المضيف ليس إخفاءنا)`);
+  const hole = yt?.steps?.hole;
+  if (hole) {
+    gate("⭐ ولا ثقبَ في صفّ الأزرار: لا يغيب وجيرانه حاضرون (م22)",
+         hole.inBar === true && hole.btnHidden === false && hole.btnW > 0 && hole.nbW > 0,
+         `زرّنا ${hole.btnW}px مخفيّ=${hole.btnHidden} · الجار ${hole.nbW}px`);
+  }
   gate("⭐ ويعود ظاهراً فعلاً بعد حركة", bar.offMoved?.hidden === false,
        `opacity=${bar.offMoved?.opacity}`);
 }

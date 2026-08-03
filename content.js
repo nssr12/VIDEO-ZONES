@@ -2053,6 +2053,12 @@ function placeSpeedBtn() {
   return "layer";
 }
 
+// **قراءةُ الموضع لا إعادةُ وضعه** — `placeSpeedBtn` تُحرّك، وهذي تُخبر.
+function speedBtnPlacement() {
+  if (!vzSpeedBtn) return "none";
+  return vzSpeedBtn.classList.contains("vzInBar") ? "bar" : "layer";
+}
+
 function setSpeedBtnShown(on) {
   if (on) {
     const video = speedBtnVideo();
@@ -2096,7 +2102,14 @@ IDLE_CONSUMERS.speedButton = {
   // المؤشّر **حركةٌ بطبعه**، فتقع `markIdleActivity` ثمّ تمضي المهلة فيُخفى.
   suspended: pointerInsideSpeedBtn,
   onActive: () => setSpeedBtnShown(true),
-  onIdle: () => setSpeedBtnShown(false),
+  // ⭐ **معنى «سكون» عند هذا المستهلك يتبع موضعَه** (م22، قرار المالك 2026-08-03).
+  // ⛔ **والثقب مقيسٌ لا مُتوقَّع:** و#70 مطفأ، كان الزرّ يصير `display:none`
+  // و`w:0` عند 1.2s **وجارُه في الشريط `block` و`w:48`** — **زرٌّ يغيب وجيرانه
+  // حاضرون**، وذاك ثقبٌ في صفّ الأزرار.
+  // ⇒ **محقوناً: الإخفاء بلا أثر — الشريط يملك ظهورَ أبنائه، والمالك طلب أن
+  // يظهر معه ويختفي معه.** **وساقطاً إلى الطبقة: يعمل كما كان**، فلا شيء يُخفيه
+  // هناك غيرُنا. ⇒ **وهو الحدّ المعماريّ نفسه: المستهلك يُعلن والمحرّك لا يقرّر.**
+  onIdle: () => { if (speedBtnPlacement() === "bar") return; setSpeedBtnShown(false); },
   // **إطفاؤه يعني: أزِل زرَّنا** — لا «أظهِره كالنشط»: نحن رسمناه فنحن نمحوه.
   onDisabled: () => setSpeedBtnShown(false)
 };
