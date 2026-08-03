@@ -1990,7 +1990,9 @@ function speedBtnVideo() {
 function syncSpeedBtnLabel(video) {
   if (!vzSpeedBtn) return;
   const v = video || speedBtnVideo();
-  if (v) vzSpeedBtn.textContent = `${v.playbackRate || 1}x`;
+    // #88 — **الرقم في عنصره**: الكتابة على الزرّ كانت ستمحو الأيقونة معه.
+  const num = vzSpeedBtn.querySelector(".vzSpeedNum");
+  if (v && num) num.textContent = `${v.playbackRate || 1}x`;
 }
 
 // ── #76 — **كل مستهلكٍ يضمن ما يحتاجه بنفسه** ───────────────────────────────
@@ -2295,16 +2297,26 @@ const OVERLAY_CSS = `
        11 من 59 لم يعد يطابق. فالحقن يشتري «يبدو أصيلاً» بعملةٍ تموت.
        ⚠️ **pointer-events:auto على الابن وحده لا على .vzWrap** — والطبقة
        تبقى شفّافة للأحداث كما كانت، فهذا أوّل عنصرٍ لنا يأخذ حدثاً. */
+    /* #88 — **المقاس مشتقٌّ من قياس زرّ مشغّلٍ حيّ لا مكتوبٌ بيد** (2026-08-03):
+       زرّ التشغيل **40×40** وزرّ الإعدادات **48×40**، وSVG يملأ الزرّ،
+       وviewBox من 0 0 إلى 24 24، **والمسار تعبئةٌ بيضاء لا حدّ**.
+       ⇒ **فالارتفاع 40 والأيقونة 24 والتعبئة بيضاء — مطابقةً بالعدّ لا بالوصف.**
+       ⛔ **ولا نسخَ لمسار أصلٍ يملكه غيرُنا:** رُسم مسارُنا — قوسُ عدّاد ومؤشّرٌ
+       ومحور — والمرجع نُظر إليه ولم يُنقل. */
     .vzBtn{
       position:absolute; right:10px; bottom:10px;
       pointer-events:auto; cursor:pointer;
-      font:700 14px/1 Arial, sans-serif;
+      font:700 13px/1 Arial, sans-serif;
       color:#fff; background:rgba(0,0,0,.62);
       border:1px solid rgba(255,255,255,.28); border-radius:8px;
-      padding:6px 10px; min-width:44px; text-align:center;
+      height:40px; box-sizing:border-box;
+      display:flex; align-items:center; gap:5px;
+      padding:0 9px; min-width:44px;
       user-select:none;
       transition:opacity .12s linear;
     }
+    .vzSpeedIcon{ width:24px; height:24px; flex:none; display:block; fill:#fff; }
+    .vzSpeedNum{ font:700 13px/1 Arial, sans-serif; letter-spacing:.2px; }
     .vzBtn:hover{ background:rgba(0,0,0,.8); }
     .vzHidden{ display:none !important; }
     /* البند #47 — لا تنطبق إلا حين تُضاف السمة، أي في حالة واحدة: عنصر ملء
@@ -2346,7 +2358,12 @@ function buildOverlayElement() {
     <div class="vzHint vzHidden">Zones</div>
     <div class="vzVolume vzHidden">100</div>
     <div class="vzSpeed vzHidden">1x</div>
-    <div class="vzBtn vzSpeedBtn vzHidden" role="button" tabindex="-1" data-vz-owns="wheel click">1x</div>
+    <div class="vzBtn vzSpeedBtn vzHidden" role="button" tabindex="-1" data-vz-owns="wheel click">
+      <svg class="vzSpeedIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M3.5 12.6A9 9 0 0 1 20.5 12.6L18.6 13.2A7 7 0 0 0 5.4 13.2Z"/>
+        <path d="M11.1 15.4L15.5 8.6L16.8 9.5L13 16.4Z"/>
+        <path d="M12 12.6a1.6 1.6 0 1 0 0 3.2a1.6 1.6 0 1 0 0-3.2Z"/>
+      </svg><span class="vzSpeedNum">1x</span></div>
   `;
   applyGridVars(el); // يزرع الأرقام بـ textContent بعد بناء الخلايا
   return el;

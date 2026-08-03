@@ -145,7 +145,16 @@ console.log("\n[6] ⭐ السلوك: عجلةٌ تغيّر، ونقرةٌ تقل
   } else {
     const actions = [];
     const video = { playbackRate: 1, isConnected: true };
-    const btn = { textContent: "", classList: { toggle() {} } };
+    // #88 — **السند يُحاكي البنية الجديدة**: أيقونةٌ + `.vzSpeedNum`، والرقم
+    // يُكتب في عنصره لا في الزرّ (وإلا محا الكتابةُ الأيقونةَ).
+    // ⚠️ **أُصلح السند لا التأكيد** (قرار 33): البنية تغيّرت والتغطية باقية —
+    // و`textContent` يبقى مقروءاً من الابن كما يقرؤه الرِكاز من الشجرة الحقيقية.
+    const num = { textContent: "" };
+    const btn = {
+      classList: { toggle() {} },
+      querySelector: (sel) => (sel === ".vzSpeedNum" ? num : null),
+      get textContent() { return num.textContent; }
+    };
     const ctx = {
       console,
       extensionActive: () => true,
@@ -227,6 +236,30 @@ console.log("\n[8] ⭐ المؤشّر فوق الزرّ ⇒ امتناع، لا 
   check("[8] ⭐ والحارس يرى مستهلكاً بلا امتناع — فلا يُصدَّق خضاره", !!bd && !/suspended:/.test(bd[0]));
   const noGuard = "function pointerInsideSpeedBtn() { const r = el.getBoundingClientRect(); return true; }";
   check("[8] ⭐ ويرى دالّةً بلا حارس المستطيل الصفريّ", !/r\.width > 0 && r\.height > 0/.test(noGuard));
+}
+
+
+// ── [9] ⭐ #88 — الأيقونة: مطابقةٌ بالعدّ لا بالوصف ─────────────────────────
+// **المقاس مشتقٌّ من قياس زرّ مشغّلٍ حيّ 2026-08-03**: زرّ التشغيل 40×40 وزرّ
+// الإعدادات 48×40 · وSVG يملأ الزرّ · viewBox من 0 0 إلى 24 24 · **والمسار
+// تعبئةٌ بيضاء لا حدّ**. ⇒ **فالأرقام هنا منقولةٌ من قياسٍ لا مكتوبةٌ بيد.**
+// ⛔ **ولا يُنسخ مسار أصلٍ يملكه غيرُنا** — رُسم مسارُنا، والمرجع نُظر إليه.
+console.log("\n[9] ⭐ #88 — الأيقونة بمقاس أزرار المضيف");
+{
+  check("[9] الزرّ يحمل أيقونة SVG", /<svg class=\"vzSpeedIcon\"/.test(SRC));
+  check("[9] وviewBox يطابق المقيس (24)", /viewBox=\"0 0 24 24\"/.test(SRC));
+  check("[9] والرقم في عنصره لا في الزرّ", /<span class=\"vzSpeedNum\">/.test(SRC));
+  const sync = body("function syncSpeedBtnLabel(video)");
+  check("[9] ⭐ والكتابة على العنصر لا على الزرّ — وإلا مُحيت الأيقونة",
+    !!sync && /querySelector\(\"\.vzSpeedNum\"\)/.test(sync) && !/vzSpeedBtn\.textContent\s*=/.test(sync), sync);
+  const css = SRC.slice(SRC.indexOf(".vzBtn{"), SRC.indexOf(".vzHidden{"));
+  check("[9] الارتفاع 40 كزرّ المضيف", /height:40px/.test(css), css.slice(0,200));
+  check("[9] والأيقونة 24×24", /\.vzSpeedIcon\{[^}]*width:24px;\s*height:24px/.test(css), css);
+  check("[9] وتعبئتها بيضاء لا حدّ", /\.vzSpeedIcon\{[^}]*fill:#fff/.test(css) && !/\.vzSpeedIcon\{[^}]*stroke/.test(css), css);
+  // ⭐ **الشاهد الموجب (قرار 47): بناءٌ بلا أيقونة يجب أن يُحمَّر**
+  const bare = "<div class=\"vzBtn vzSpeedBtn vzHidden\">1x</div>";
+  check("[9] ⭐ والحارس يرى زرّاً بلا أيقونة — فلا يُصدَّق خضاره",
+    !/<svg class=\"vzSpeedIcon\"/.test(bare));
 }
 
 console.log(`\n✅ نجح ${pass} / فشل ${fail}\n`);
