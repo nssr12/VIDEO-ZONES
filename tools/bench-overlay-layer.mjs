@@ -252,6 +252,9 @@ async function runOn(label, url, { withExtension = true } = {}) {
         // خبرٌ تابع. (عائلة العمى الأولى: الوصف يُشتقّ من الشرط المقيس.)
         return { exists: true, opacity: Number(cs.opacity),
                  w: Math.round(r.width), h: Math.round(r.height),
+                 x: Math.round(r.left), y: Math.round(r.top),
+                 // #97 — **موضعُ المؤشّر من الشريط يُنشر مع الرقم**: #95 يمنع
+                 // الإخفاء تحت المؤشّر **بحقّ**، فبلا هذا يُقرأ سلوكٌ صحيح فشلاً.
                  ourClass: document.documentElement.classList.contains("vz-idle-hide-progress"),
                  hidden: Number(cs.opacity) === 0 };
       })()`;
@@ -260,11 +263,30 @@ async function runOn(label, url, { withExtension = true } = {}) {
           overlay: { ...SETTINGS.settings.overlay, hideProgressBar: true, speedButton: false } }
       });
       await sleep(1200);
-      await wiggle(page, Math.round(vr.x + vr.w / 2), Math.round(vr.y + vr.h * 0.8), 3);
+      // ── #97 — **المنصّة تُنتج حالها وتتحقّق منها** (قرار 22) ────────────────
+      // ⛔ **العلّة مقيسة:** كان التحويم على **80% من ارتفاع الفيديو**، فوقع
+      // **داخل `.ytp-chrome-bottom`** (مؤشّر `371,297` وشريط `12,297 717×59`)
+      // — **و#95 يمنع الإخفاء تحت المؤشّر بحقّ**، فكان القسم **يقرأ سلوكاً
+      // صحيحاً فشلاً**، ويتبدّل بتبدّل التخطيط. ⇒ **يُحوَّم فوق الصورة، ويُتحقَّق
+      // أن الموضع خارج الشريط قبل أن يُقاس عليه شيء.**
+      let px = Math.round(vr.x + vr.w / 2), py = Math.round(vr.y + vr.h * 0.45);
+      for (let k = 0; k < 4; k++) {
+        await wiggle(page, px, py, 2);
+        await sleep(250);
+        const b = await evalIn(page, BAR);
+        const inside = !!(b?.exists && px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h);
+        if (!inside) break;
+        py = Math.round(b.y - 30 - k * 20);      // ارفعه فوق الشريط ثمّ تحقّق ثانيةً
+      }
+      await wiggle(page, px, py, 3);
       await sleep(400);
+      const SNAP = `typeof vzIdleSnapshot === "function" ? vzIdleSnapshot() : null`;
       const barActive = await evalIn(page, BAR);
+      // ⚠️ **المُخبِر في عالم الإضافة لا في عالم الصفحة** — فيُقرأ بسياقه (#86)
+      barActive.snap = await evalIn(page, SNAP, out.world?.id);
       await sleep(IDLE_MS * 3);                       // سكون — بلا أي إدخال
       const barIdle = await evalIn(page, BAR);
+      barIdle.snap = await evalIn(page, SNAP, out.world?.id);
       await configure(PORT, h.extensionId, {          // إطفاء المفتاح والشريط مخفيّ
         settings: { ...SETTINGS.settings,
           overlay: { ...SETTINGS.settings.overlay, hideProgressBar: false, speedButton: false } }
@@ -272,9 +294,15 @@ async function runOn(label, url, { withExtension = true } = {}) {
       await sleep(1500);
       const barOff = await evalIn(page, BAR);
       // وبعد حركةٍ: المضيف يُظهر شريطه، فتُقاس العودة الفعلية بلا خلط
-      await wiggle(page, Math.round(vr.x + vr.w / 2), Math.round(vr.y + vr.h * 0.8), 3);
-      await sleep(500);
-      const barOffMoved = await evalIn(page, BAR);
+      await wiggle(page, px, py, 3);
+      // ⚠️ **استطلاعٌ بدل مهلة** (قرار 50): يوتيوب يُظهر شريطه بتلاشٍ، ومهلةٌ
+      // ثابتة تلتقط منتصفه. **وشفافيةُ المضيف خبرٌ تابع لا حكم** (قرار 72).
+      let barOffMoved = null;
+      for (let k = 0; k < 8; k++) {
+        barOffMoved = await evalIn(page, BAR);
+        if (barOffMoved?.opacity === 1) break;
+        await sleep(250);
+      }
       out.steps.barOffMoved = barOffMoved;
       out.steps.bar = { active: barActive, idle: barIdle, off: barOff, offMoved: out.steps.barOffMoved };
 
@@ -434,10 +462,19 @@ if (!bar) {
   console.log("   ⚪ #70 لم يُقَس — يحتاج `--youtube` (والنصفان شرطٌ واحد)");
 } else {
   console.log(`\n── #70 على يوتيوب — شريط \`.ytp-chrome-bottom\``);
-  gate("الشريط ظاهرٌ مع النشاط", bar.active?.exists === true && bar.active?.hidden === false,
-       `opacity=${bar.active?.opacity} · ${bar.active?.w}×${bar.active?.h}`);
-  gate("ويختفي بالسكون (1) — بصنفنا نحن", bar.idle?.ourClass === true && bar.idle?.hidden === true,
-       `صنفنا=${bar.idle?.ourClass} · opacity=${bar.idle?.opacity}`);
+  // ⭐ **السؤال سؤالُنا (قرار 72): «أأخفاه صنفُنا؟» لا «أاختفى؟»** — وشفافيةُ
+  // المضيف تُطبع خبراً تابعاً: **هو يُخفي شريطه بنفسه، وذاك ليس إخفاءنا**.
+  gate("مع النشاط: صنفُنا غائبٌ — فلا إخفاء منّا",
+       bar.active?.exists === true && bar.active?.ourClass === false,
+       `صنفنا=${bar.active?.ourClass} · opacity=${bar.active?.opacity} · ${bar.active?.w}×${bar.active?.h}`);
+  {
+    const b = bar.idle, p = b?.snap?.pointer;
+    const inside = !!(b?.exists && p && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
+    gate("ويختفي بالسكون (1) — بصنفنا نحن", bar.idle?.ourClass === true,
+         `صنفنا=${bar.idle?.ourClass} · opacity=${bar.idle?.opacity}` +
+         ` · شريط ${b?.x},${b?.y} ${b?.w}×${b?.h} · مؤشّر ${p ? p.x + "," + p.y : "—"}` +
+         ` · **داخل الشريط=${inside}** · حالة=${b?.snap?.state} ممسوك=${b?.snap?.held}`);
+  }
   gate("⭐ ويُرفع صنفُنا بإطفاء مفتاحه (8)", bar.off?.ourClass === false,
        `صنفنا=${bar.off?.ourClass} · opacity=${bar.off?.opacity} (وإخفاءُ المضيف ليس إخفاءنا)`);
   const hole = yt?.steps?.hole;
@@ -446,8 +483,12 @@ if (!bar) {
          hole.inBar === true && hole.btnHidden === false && hole.btnW > 0 && hole.nbW > 0,
          `زرّنا ${hole.btnW}px مخفيّ=${hole.btnHidden} · الجار ${hole.nbW}px`);
   }
-  gate("⭐ ويعود ظاهراً فعلاً بعد حركة", bar.offMoved?.hidden === false,
-       `opacity=${bar.offMoved?.opacity}`);
+  // ⭐ **وهذا الشرط كان يقرأ شفافية المضيف وحدها فينقلب** (#97): يوتيوب يُخفي
+  // شريطه بعد ~3 ثوانٍ، **فالتقاطُه في تلاشيه يُقرأ فشلاً منّا**. ⇒ **الحكم
+  // صنفُنا مرفوعٌ فعلاً، والعودة المرئية استُطلعت لا قُدِّرت** وتُطبع خبراً.
+  gate("⭐ وبعد الإطفاء وحركةٍ: صنفُنا مرفوع", bar.offMoved?.ourClass === false,
+       `صنفنا=${bar.offMoved?.ourClass} · وشفافية المضيف=${bar.offMoved?.opacity}` +
+       ` (خبرٌ تابع: إخفاؤه ليس إخفاءنا)`);
 }
 
 console.log(`\n⇒ ${bad === 0 ? "**الطبقة تعمل كما يستعملها المستخدم**"
