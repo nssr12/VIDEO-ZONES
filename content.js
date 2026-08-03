@@ -1708,7 +1708,7 @@ function updatePointerFromEvent(e) {
 //      يظهر فيها شيء**، ولا يبدأ فيها مؤقّتٌ لم يبدأه المستخدم.
 //      ⭐ **وتعود من بابٍ ثالث في 12ب (2026-08-03):** `lastPointer` يبدأ
 //      `{x:null,y:null}`، **ومستطيلٌ صفريّ عند `0,0` يحتوي مؤشّراً لم يتحرّك
-//      بعد** — فلولا حارس `width>0 && height>0` في `pointerInsideSpeedBtn`
+//      بعد** — فلولا حارس `width>0 && height>0` في `pointerInsideEl`
 //      **لامتنع الزرّ عن الاختفاء على صفحةٍ لم يلمسها أحد**. ⇒ **«لم يبدأ» و«عند
 //      الأصل» يطبعان الإحداثيّات نفسها** — وهي عائلة «الصفر لا يُصدَّق حتى يُفصل
 //      مصدره» (قرار 26) في الهندسة لا في القياس.
@@ -1778,6 +1778,24 @@ function refreshIdleConsumers() {
   applyIdleState();
 }
 
+// ⭐ **القاعدة العامّة: لا يُخفى ما يستقرّ المؤشّر عليه** (#95).
+// **وهي حالتان لقاعدةٍ واحدة لا شرطان**: كانت `pointerInsideSpeedBtn` خاصّةً
+// بزرّنا، **فعُمِّمت** — **والمستهلك يُعلن هدفه، والمحرّك يسأل «أفيه المؤشّر؟»
+// ولا يُفسّر** (قرار 57 يدفع ثمنه رابعةً).
+// ⚠️ **والهدف هو ما نُخفيه لا المشغّل كلّه:** لو كان المشغّل **لصارت الميزة لا
+// تعمل إلا والفأرة خارج الفيديو** — وهو عكس غرضها (شرط قبول المالك).
+// ⚠️ **وحارس المستطيل الصفريّ شرطٌ لا تفصيل** (قرار 22): `lastPointer` يبدأ
+// `{null,null}`، **ومستطيلٌ صفريّ عند `0,0` يحتوي مؤشّراً لم يتحرّك بعد**.
+function pointerInsideEl(el) {
+  if (!el || !el.isConnected) return false;
+  if (typeof lastPointer.x !== "number" || typeof lastPointer.y !== "number") return false;
+  let r;
+  try { r = el.getBoundingClientRect(); } catch { return false; }
+  if (!(r.width > 0 && r.height > 0)) return false;
+  return lastPointer.x >= r.left && lastPointer.x <= r.right &&
+         lastPointer.y >= r.top && lastPointer.y <= r.bottom;
+}
+
 // ⚠️ **مُطفأ لا يُتخطّى صامتاً** — **فيبقى إخفاؤه عالقاً بعد إطفاء مفتاحه**.
 // **حالةٌ تُترك على آخر ما كانت عليه هي حالةٌ لا يملك أحدٌ إخراجها**، فالتعافي
 // مبنيّ لا محروس. **وهذا النصف صحيحٌ ويبقى.**
@@ -1799,8 +1817,10 @@ function applyIdleState() {
   for (const c of Object.values(IDLE_CONSUMERS)) {
     // **«لا يعمل» يسأل صاحبَه عن معناه** — إطفاءُ مفتاحه أو إغلاقُ البوّابة
     if (engineOff || !c.enabled()) { c.onDisabled(); continue; }
-    // **و«ممتنع» غيرُ «مُطفأ»**: الميزة عاملة وشيءٌ يريد الظهور الآن ⇒ كالنشط
-    if (c.suspended?.()) { c.onActive(); continue; }
+    // **و«ممتنع» غيرُ «مُطفأ»**: الميزة عاملة وشيءٌ يريد الظهور الآن ⇒ كالنشط.
+    // ⭐ **ومنه القاعدة العامّة (#95): لا يُخفى ما يستقرّ المؤشّر عليه** —
+    // **المستهلك يُعلن `target` والمحرّك يسأل، ولا يعرف المحرّك ما هو الهدف.**
+    if (c.suspended?.() || pointerInsideEl(c.target?.())) { c.onActive(); continue; }
     if (idleState === "idle") c.onIdle(); else c.onActive();
   }
 }
@@ -1967,6 +1987,8 @@ function setYtProgressHidden(on) {
 
 IDLE_CONSUMERS.progressBar = {
   enabled: progressHideActive,
+  // **الهدف: ما نُخفيه** — فالمؤشّر عليه يمنع إخفاءه (#95)
+  target: () => document.querySelector(YT_PROGRESS_SELECTOR),
   suspended: () =>
     // ⚠️ **شرطٌ ثالثٌ خرج من كتابة الاختبار لا من التصميم:** المحرّك يبدأ
     // **ساكناً** (المصيدة ٣) — وهو الصواب لزرّنا في #72 فلا يظهر بلا طلب،
@@ -2102,20 +2124,15 @@ function setSpeedBtnShown(on) {
 // السؤال. **وحارسُ المستطيل الصفريّ شرطٌ لا تفصيل** (قرار 22): زرٌّ مخفيّ
 // مستطيلُه `0×0`، فلولاه **لأحيا نفسه** — يُخفى فيصير صفريّاً فيُقرأ «المؤشّر
 // خارجه»… بل الأخطر عكسُه: مستطيلٌ صفريّ عند `0,0` يحتوي مؤشّراً لم يتحرّك بعد.
-function pointerInsideSpeedBtn() {
-  if (!vzSpeedBtn || vzSpeedBtn.classList.contains("vzHidden")) return false;
-  if (typeof lastPointer.x !== "number" || typeof lastPointer.y !== "number") return false;
-  const r = vzSpeedBtn.getBoundingClientRect();
-  if (!(r.width > 0 && r.height > 0)) return false;
-  return lastPointer.x >= r.left && lastPointer.x <= r.right &&
-         lastPointer.y >= r.top && lastPointer.y <= r.bottom;
-}
 
 IDLE_CONSUMERS.speedButton = {
   enabled: speedButtonActive,
   // **المؤشّر داخل مستطيل الزرّ ⇒ امتناع** — ولا حاجة إلى مستمعٍ يُنبّه: خروجُ
   // المؤشّر **حركةٌ بطبعه**، فتقع `markIdleActivity` ثمّ تمضي المهلة فيُخفى.
-  suspended: pointerInsideSpeedBtn,
+  // ⛔ **حُذف `pointerInsideSpeedBtn` ولم يُترك** — صار حالةً من العامّة.
+  // **والزرّ ابنٌ في الشريط اليوم فتسقط حالتُه فيها بالبناء**، ويبقى الهدف
+  // معلَناً لأنه قد **يسقط إلى الطبقة** فيخرج من الشريط.
+  target: () => vzSpeedBtn,
   onActive: () => setSpeedBtnShown(true),
   // ⭐ **معنى «سكون» عند هذا المستهلك يتبع موضعَه** (م22، قرار المالك 2026-08-03).
   // ⛔ **والثقب مقيسٌ لا مُتوقَّع:** و#70 مطفأ، كان الزرّ يصير `display:none`

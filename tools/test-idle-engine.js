@@ -66,8 +66,11 @@ function makeWorld({ consumers = {}, gate = true } = {}) {
     document: {
       addEventListener: (t, fn) => { (listeners[t] ||= []).push(fn); },
       hidden: false,
-      activeElement: null
+      activeElement: null,
+      // #95 — المحرّك يسأل عن الهدف؛ والسند يُرجع `null` فلا امتناع افتراضاً
+      querySelector: () => null
     },
+      lastPointer: { x: null, y: null },   // #95 — تقرؤها القاعدة العامّة
     __gate: gate,
     __settings: {},
     __inside: true,
@@ -397,8 +400,11 @@ console.log("\n[11] ⭐ كل مستهلكٍ يُعلن معنى إطفائه، �
   const body = (SRC.match(/function applyIdleState\(\)[\s\S]*?\n}/) || [""])[0];
   check("[11] والمحرّك ينادي onDisabled في فرع «لا يعمل»",
     /!c\.enabled\(\)\)\s*\{\s*c\.onDisabled\(\)/.test(body), body.slice(0, 240));
-  check("[11] و«ممتنع» يبقى كالنشط — فهو غيرُ «مُطفأ»",
-    /c\.suspended\?\.\(\)\)\s*\{\s*c\.onActive\(\)/.test(body), body.slice(0, 300));
+  // ⛔ **اتّسع الفرع بـ#95:** صار «ممتنع» **أو** «المؤشّر على هدفه» ⇒ كالنشط.
+  // **والتغطية أقوى:** يُشترط الشرطان معاً في الفرع نفسه.
+  check("[11] و«ممتنع» **أو المؤشّر على الهدف** يبقى كالنشط — وهو غيرُ «مُطفأ»",
+    /c\.suspended\?\.\(\) \|\| pointerInsideEl\(c\.target\?\.\(\)\)\)\s*\{\s*c\.onActive\(\)/.test(body),
+    body.slice(0, 320));
   // ⭐ **الشاهد الموجب (قرار 47): مصدرٌ ينقصه الإعلان يجب أن يُحمَّر**
   const fake = "IDLE_CONSUMERS.x = {\n  enabled: () => true,\n  onActive: () => 1,\n  onIdle: () => 2\n};";
   const fd = fake.match(RE) || [];

@@ -131,6 +131,10 @@ console.log("\n[5] ⭐ السلوك: يُخفي بالسكون، ويمتنع ت
         addEventListener: (t, fn) => { (listeners[t] ||= []).push(fn); },
         hidden: false,
         activeElement: null,
+        // #95 — المحرّك يسأل عن هدف المستهلك، فالسند يُقدّمه بمستطيلٍ معلوم.
+        // **والمؤشّر خارجه افتراضاً** (lastPointer غير معرَّف) فلا يمتنع.
+        querySelector: () => ({ isConnected: true,
+          getBoundingClientRect: () => ({ left: 0, top: 0, right: 100, bottom: 20, width: 100, height: 20 }) }),
         createElement: () => ({ isConnected: false, set textContent(v) { injected.push(v); }, get textContent() { return injected[injected.length - 1]; } }),
         documentElement: {
           classList: {
@@ -140,6 +144,7 @@ console.log("\n[5] ⭐ السلوك: يُخفي بالسكون، ويمتنع ت
           appendChild: (el) => { el.isConnected = true; }
         }
       },
+      lastPointer: { x: null, y: null },   // #95 — تقرؤها القاعدة العامّة
       __gate: true
     };
     vm.createContext(ctx);

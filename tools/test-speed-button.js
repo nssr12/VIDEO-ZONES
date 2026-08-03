@@ -238,18 +238,30 @@ console.log("\n[6] ⭐ السلوك: عجلةٌ تغيّر، ونقرةٌ تقل
 // الحاوية — **فهذا امتناعٌ على نمطهما لا استثناءٌ جديد.**
 console.log("\n[8] ⭐ المؤشّر فوق الزرّ ⇒ امتناع، لا إخفاء تحت اليد");
 {
+  // ⛔ **عُمِّم الشرط بـ#95، فانقلب التأكيد لأن المطلوب انقلب لا ليمرّ** (قرار 33):
+  // كانت `suspended: pointerInsideSpeedBtn` **خاصّةً بالزرّ**، وصارت **قاعدةً
+  // عامّة في المحرّك** والمستهلك **يُعلن هدفه** وحده. **والتغطية أقوى لا أضعف:**
+  // يُشترط الآن أن يُعلن الهدف **وأن يسأل المحرّك عنه** — موضعان بدل واحد.
   const decl = SRC.match(/IDLE_CONSUMERS\.speedButton = \{[\s\S]*?\n\};/);
-  check("[8] المستهلك يُعلن suspended", !!decl && /suspended:\s*pointerInsideSpeedBtn/.test(decl[0]), decl && decl[0].slice(0,120));
-  const fn = SRC.match(/function pointerInsideSpeedBtn\(\)[\s\S]*?\n}/);
+  check("[8] المستهلك يُعلن هدفه (`target`)", !!decl && /target:\s*\(\)\s*=>\s*vzSpeedBtn/.test(decl[0]), decl && decl[0].slice(0,140));
+  check("[8] ⭐ ولا شرطَ خاصٌّ بالزرّ بقي", !/pointerInsideSpeedBtn\s*[,(]/.test(SRC));
+  const apply = SRC.match(/function applyIdleState\(\)[\s\S]*?\n}/);
+  check("[8] والمحرّك يسأل عن الهدف — لا يعرفه",
+    !!apply && /pointerInsideEl\(c\.target\?\.\(\)\)/.test(apply[0]), apply && apply[0].slice(0,240));
+  const fn = SRC.match(/function pointerInsideEl\(el\)[\s\S]*?\n}/);
   check("[8] وشرطُه من lastPointer القائمة", !!fn && /lastPointer\.x/.test(fn[0]));
   check("[8] ولا مستمع جديد لأجله", !!fn && !/addEventListener/.test(fn[0]));
   check("[8] ⭐ وحارس المستطيل الصفريّ (قرار 22)", !!fn && /r\.width > 0 && r\.height > 0/.test(fn[0]), fn && fn[0]);
-  check("[8] والمخفيّ لا يُحيي نفسه", !!fn && /vzHidden/.test(fn[0]));
+  // ⛔ **انقلبت الآليّة بـ#95 لا التغطية:** كان الفحص على صنف `vzHidden`،
+  // **وصار حارسُ المستطيل الصفريّ يكفيه** — عنصرٌ `display:none` مستطيلُه
+  // `0×0` فيُرفض. **والعامّة أقوى: تحمي أيّ هدفٍ مخفيّ لا زرَّنا وحده.**
+  check("[8] والمخفيّ لا يُحيي نفسه — بحارس المستطيل الصفريّ",
+    !!fn && /r\.width > 0 && r\.height > 0/.test(fn[0]), fn && fn[0]);
   // ── شاهدا القبول (قرار 47): يُحمّر على النقص ─────────────────────────────
   const bad = "IDLE_CONSUMERS.speedButton = {\n  enabled: x,\n  onActive: () => 1\n};";
   const bd = bad.match(/IDLE_CONSUMERS\.speedButton = \{[\s\S]*?\n\};/);
   check("[8] ⭐ والحارس يرى مستهلكاً بلا امتناع — فلا يُصدَّق خضاره", !!bd && !/suspended:/.test(bd[0]));
-  const noGuard = "function pointerInsideSpeedBtn() { const r = el.getBoundingClientRect(); return true; }";
+  const noGuard = "function pointerInsideEl(el) { const r = el.getBoundingClientRect(); return true; }";
   check("[8] ⭐ ويرى دالّةً بلا حارس المستطيل الصفريّ", !/r\.width > 0 && r\.height > 0/.test(noGuard));
 }
 
