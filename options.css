@@ -345,3 +345,64 @@ label{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:600;let
   .zoneActionCard{grid-template-columns:1fr}
   .triggerGrid{grid-template-columns:repeat(2,1fr)}
 }
+
+/* ── #77 — لغة الشكل المُولَّدة (settings-ui.js) ─────────────────────────────
+   نُقلت من معاينة tools/preview-77.html **إلى الصفحة الحقيقية** — فلا نحرس ما
+   لا يُشحن ونترك ما يُشحن. والمعاينة تستهلك هذا الملفّ نفسه. */
+.vzGenerated{display:flex;flex-direction:column;gap:2px;direction:ltr}
+.vzGroup{background:#0f1216;border:1px solid var(--line,#262c35);border-radius:12px;margin:0 0 12px;padding:4px 14px 8px}
+.vzGroup>summary{cursor:pointer;font-weight:700;padding:10px 2px;display:flex;align-items:center;gap:10px}
+.vzGroup>summary em{font-style:normal;color:var(--muted,#96a1b0);font-size:12px;background:#0b0e13;border:1px solid var(--line,#262c35);border-radius:20px;padding:1px 9px}
+.vzRule{color:var(--muted,#96a1b0);font-size:12px;margin:0 0 8px}
+.vzRow{display:flex;align-items:flex-start;gap:10px;padding:7px 2px;border-top:1px solid #1e242c}
+.vzRow:first-of-type{border-top:0}
+.vzLbl{flex:1}
+.vzVal{flex:none;font-size:12px;color:var(--muted,#96a1b0);font-weight:600;min-width:76px;text-align:end}
+.vzStar .vzLbl::after{content:"★";color:#ffcf5c;margin-inline-start:7px;font-size:12px}
+.vzHelp{flex:none;width:22px;height:22px;border-radius:50%;border:1px solid var(--line,#262c35);
+  background:#0b0e13;color:var(--muted,#96a1b0);font-weight:700;cursor:pointer;line-height:1}
+.vzHelp:hover,.vzHelp:focus-visible{color:#4ea3ff;border-color:#4ea3ff;outline:none}
+.vzHelp[aria-expanded=true]{color:#4ea3ff;border-color:#4ea3ff}
+.vzHelpBody{margin:0 0 8px;padding:9px 12px;background:#0b0e13;border:1px solid var(--line,#262c35);
+  border-inline-start:3px solid #4ea3ff;border-radius:8px;color:#cdd7e3;font-size:13px;line-height:1.7}
+/* ── المفتاح المنزلق (Toggle) — **مظهرٌ على input[type=checkbox] نفسه** ────
+   ١) العنصر كما هو: يصله Tab والمسافة وقارئ الشاشة **بالبناء**، ولا نعيد بناء
+      ما يعطيه المتصفّح مجّاناً. (وهو سبب اشتراط <button> للتلميح: العنصر
+      الصحيح أوّلاً، والمظهر بعده.)
+   ٢) **الحالة تُقرأ بلا لون**: الموضع يختلف (المِقبض يمين/يسار) **والشكل يختلف**
+      (حدٌّ متقطّع ⇒ متّصل · ومسارٌ أجوف ⇒ مملوء). فمن لا يميّز اللون يفرّق.
+   ٣) **وحالةٌ ثالثة للمعطَّل**: المِقبض **في الوسط** — موضعٌ لا هو مطفأ ولا
+      مُشغَّل — مع حدٍّ منقّط ومؤشّر منع. **فـ«معطّل» لا يبدو «مطفأً»**، وهما
+      مختلفان في المعنى (حالة مدّة الصفر في #71).
+   ٤) وصفر تغيّر في القيم والمفاتيح والوسوم: مظهرٌ لا تخزين. */
+.vzRow input[type=checkbox]{
+  -webkit-appearance:none;appearance:none;margin:3px 0 0;flex:none;cursor:pointer;
+  position:relative;width:40px;height:22px;border-radius:22px;
+  border:2px dashed #6b7684;background:transparent;
+  transition:background .12s linear,border-color .12s linear;
+}
+.vzRow input[type=checkbox]::after{
+  content:"";position:absolute;top:3px;inset-inline-start:3px;
+  width:12px;height:12px;border-radius:50%;background:#8d99a8;
+  transition:inset-inline-start .12s ease,background .12s linear,transform .12s ease;
+}
+.vzRow input[type=checkbox]:checked{
+  border-style:solid;border-color:var(--acc);background:var(--acc);
+}
+.vzRow input[type=checkbox]:checked::after{ inset-inline-start:21px;background:#0b1017;transform:scale(1.15) }
+.vzRow input[type=checkbox]:focus-visible{ outline:2px solid var(--acc);outline-offset:3px }
+.vzRow input[type=checkbox]:disabled{
+  border-style:dotted;border-color:#4a525d;background:transparent;cursor:not-allowed;opacity:.75;
+}
+.vzRow input[type=checkbox]:disabled::after{ inset-inline-start:12px;background:#4a525d;transform:scale(.8) }
+.vzRow.off .vzLbl{color:var(--mut)}
+.lbl{flex:1}
+.star .lbl::after{content:"★";color:var(--star);margin-inline-start:7px;font-size:12px}
+.help{flex:none;width:22px;height:22px;border-radius:50%;border:1px solid var(--line);
+  background:#0e1218;color:var(--mut);font-weight:700;cursor:pointer;line-height:1}
+.help:hover,.help:focus-visible{color:var(--acc);border-color:var(--acc);outline:none}
+.help[aria-expanded=true]{color:var(--acc);border-color:var(--acc)}
+.helpBody{margin:0 0 8px;padding:9px 12px;background:#0e1218;border:1px solid var(--line);
+  border-inline-start:3px solid var(--acc);border-radius:8px;color:#cdd7e3;font-size:13px}
+.helpBody code{background:#161c24;padding:1px 5px;border-radius:5px;font-size:12px;direction:ltr;display:inline-block}
+.rename{align-items:center}

@@ -35,6 +35,7 @@ There is no test suite. Verify UI changes manually in the browser.
 | `content.js` | Single content script injected at `document_start` in all frames. Contains: zone detection, action runner, overlay, subtitle styling, YouTube caption automation, site-profile resolver |
 | `popup.html` / `popup.js` | Toolbar popup: master switch, global enable, per-site rules, blocked-site toggle, page status, manual injection, overlay duration slider, Sound Booster slider, subtitles toggle |
 | `options.html` / `options.js` / `options.css` | Full settings page: zone editor, grid appearance, volume indicator, overlay timing, subtitles, blocked sites, backup/restore, settings guide |
+| `settings-ui.js` | **#77** — سجلّات صفحة الإعدادات ومُولِّدها: المجموعات الخمس · 38 وسم Clean Player · 8 ضوابط توقيت. **يُشحن**، و`options.html` تستهلكه و`tools/preview-77.html` غلافٌ فوقه. لا يلمس `chrome.*` ولا التخزين |
 | `storage.js` | Shared by popup/options/background: sync quota guards (`safeSyncSet`), schema migration (`migrateAll`), and the verbatim-paired blocks with `content.js`. Classic script, **not** an ES module |
 | `background.js` | Service worker. **Migration only** — one `chrome.runtime.onInstalled` listener, nothing else (owner decision) |
 | `yt_quality_main.js` | Runs in the page MAIN world to drive the YouTube player quality API, which the isolated world cannot reach |
@@ -52,7 +53,7 @@ they are development artefacts and must not reach the Chrome Web Store package:
 ```
 tools/        # e.g. tools/make-icons.js — regenerates icons/*.png, needs only node's zlib
 AUDIT.md      # audit report
-tools/preview-77.html   # مخرَج مُولَّد للمراجعة، ليس منتجاً
+tools/preview-77.html   # غلاف معاينة فوق settings-ui.js المشحون — ليس منتجاً
 AUDIT.html    # rendered audit view (already gitignored)
 HANDOFF.md    # work-state handoff
 .git/ .gitignore CLAUDE.md

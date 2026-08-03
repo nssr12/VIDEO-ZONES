@@ -126,43 +126,8 @@
         </div>
 
         <section class="panel">
-          <div class="soundSettings">
-            <label>مدة ظهور شبكة المربعات (Grid Overlay)
-              <input id="gridDuration" type="range" min="0" max="3000" step="100" />
-              <span class="rangeValue" id="gridDurationValue">0.9 ثانية</span>
-            </label>
-            <label>مدة ظهور رقم الصوت (Volume Indicator)
-              <input id="volumeDuration" type="range" min="0" max="3000" step="100" />
-              <span class="rangeValue" id="volumeDurationValue">0.9 ثانية</span>
-            </label>
-            <label class="checkRow">
-              <input id="zoneHintEnabled" type="checkbox" />
-              إظهار سطر تلميح المربّع (مثل «Zone B1 • DOWN → ACTION:VOLUME:-4»)
-            </label>
-            <label class="checkRow">
-              <input id="speedBadgeEnabled" type="checkbox" />
-              إظهار شارة سرعة التشغيل عند تغييرها (مثل «1.25x»)
-            </label>
-            <p class="hint" id="speedBadgeHint">تظهر في الزاوية المقابلة لرقم الصوت، وتأخذ مدّته ولونه وحجمه نفسها.</p>
-            <label>مهلة السكون قبل الإخفاء (Idle)
-              <input id="idleDuration" type="range" min="500" max="6000" step="250" />
-              <span class="rangeValue" id="idleDurationValue">2.0 ثانية</span>
-            </label>
-            <label class="checkRow">
-              <input id="hideProgressBar" type="checkbox" />
-              إخفاء شريط تقدّم يوتيوب بعد سكون الفأرة (YouTube فقط)
-            </label>
-            <label class="checkRow">
-              <input id="speedButtonEnabled" type="checkbox" />
-              إظهار زرّ السرعة داخل المشغّل (عجلة = تغيير · نقرة = السرعة المفضّلة)
-            </label>
-            <label>السرعة المفضّلة لزرّ السرعة
-              <input id="speedButtonPreset" type="range" min="0.25" max="4" step="0.25" />
-              <span class="rangeValue" id="speedButtonPresetValue">2x</span>
-            </label>
-            <p class="hint">يظهر مع حركة الفأرة ويختفي بسكونها كشريط المشغّل. ونقرة اليمين مؤجَّلة حتى يُقاس مسارها.</p>
-            <p class="hint">يُخفي الشريط والخريطة الحرارية والعلامات والمِقبض وحدها — الوقت والأزرار تبقى. ويعود بأي حركة أو نقرة أو أمر. ولا يُخفى أثناء سحب الشريط ولا حين يكون التركيز عليه.</p>
-          </div>
+          <!-- #77: يُرسم من settings-ui.js — لا ضابطَ مكتوبٌ بيد هنا -->
+          <div class="vzGenerated" id="timingList"></div>
         </section>
       </section>
 
@@ -442,6 +407,7 @@
   </div>
 
   <script src="storage.js"></script>
+  <script src="settings-ui.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

@@ -75,16 +75,24 @@ console.log("\n[2] الافتراض **الحالي (ظاهر)** — لا يتغ�
 
 console.log("\n[3] المسار كامل: واجهة ⇄ تخزين ⇄ سكربت المحتوى");
 {
-  check("صندوق الاختيار في options.html", /id="zoneHintEnabled"/.test(HTML));
-  check("ووسمه يذكر المثال الذي يراه المستخدم", /Zone B1/.test(HTML));
-  check("ويُقرأ عند العرض", /\$\("zoneHintEnabled"\)\.checked = overlay\?\.hintEnabled !== false/.test(OPTIONS));
+  // ⚠️ **ثلاث مراسٍ صُحّحت لا تأكيدات أُضعفت (قرار 33، #77):** الضابط ووسمه
+  // **صارا يُولَّدان** من `settings-ui.js` — فلم يعودا في `options.html` بيد.
+  // **والنيّة نفسها محروسةٌ أقوى**: السجلّ **يضمن وجودهما لكل مفتاح**، ولا
+  // يعتمد على أن أحداً كتب السطر.
+  const UI = fs.readFileSync("settings-ui.js", "utf8");
+  check("الضابط في سجلّ المُولِّد", /\{ id: "zoneHintEnabled", kind: "toggle"/.test(UI));
+  check("ووسمه يقول ما يقع عند التأشير", /label: "إظهار سطر تلميح المربّع"/.test(UI));
+  check("وتلميحه يذكر المثال الذي يراه المستخدم", /Zone B1/.test(UI));
+  check("ونقطة التركيب في options.html", /id="timingList"/.test(HTML));
+  check("ويُقرأ عند العرض من السجلّ",
+    /if \(id === "zoneHintEnabled"\) return o\.hintEnabled !== false;/.test(OPTIONS));
   // ⚠️ **مرساةٌ صُحّحت لا تأكيدٌ أُضعف (قرار 33، #78):** صار الحفظ **ضابطاً
   // واحداً ⇒ حقلاً واحداً** عبر سجلّ `TIMING_CONTROLS`، فالنيّة نفسها والموضع
   // تغيّر — والحقل ما زال `overlay.hintEnabled` ومصدره الضابط نفسه.
   check("ويُحفظ في overlay.hintEnabled",
     /zoneHintEnabled:\s*\(s, el\) => \{ s\.overlay\.hintEnabled = el\.checked; \}/.test(OPTIONS));
-  check("ومربوط بمستمع يحفظ حقلَه وحده",
-    /\$\("zoneHintEnabled"\)\.addEventListener\("change", \(\) => persistTiming\("zoneHintEnabled"\)\)/.test(OPTIONS));
+  check("ومربوطٌ بالبناء لا بسطرٍ مكتوب",
+    /if \(onChange\) input\.addEventListener\("change", \(\) => onChange\(c\.id\)\)/.test(UI));
   // بلا رسالة جديدة: يمرّ على RELOAD_OVERLAY_SETTINGS القائمة
   check("ولا رسالة جديدة — يمرّ على RELOAD_OVERLAY_SETTINGS",
     /RELOAD_OVERLAY_SETTINGS/.test(OPTIONS) && !/RELOAD_ZONE_HINT/.test(OPTIONS + CONTENT));

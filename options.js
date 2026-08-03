@@ -571,33 +571,34 @@ async function persistCleanPlayer() {
   }
 }
 
+// #77 — **يُبنى من المُولِّد الواحد** (`settings-ui.js`) لا بيد هنا.
+// والمعاينة `tools/preview-77.html` تستهلك المُولِّد نفسه — فلا نسخةٌ تتباعد،
+// **ولا نشحن معاينةً تكذب**.
+let cleanPlayerInputs = {};
+let timingInputs = {};
 function buildCleanPlayerList() {
-  const root = $("cleanPlayerList");
-  root.innerHTML = "";
-  for (const { key, label } of CLEAN_PLAYER_OPTIONS) {
-    const lab = document.createElement("label");
-    lab.className = "cleanPlayerItem";
-
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.id = `cp_${key}`;
-    input.addEventListener("change", () => persistCleanPlayerItem(key));
-
-    const span = document.createElement("span");
-    span.textContent = label;
-
-    lab.appendChild(input);
-    lab.appendChild(span);
-    root.appendChild(lab);
-  }
+  cleanPlayerInputs = vzUiBuildClean(document, $("cleanPlayerList"), persistCleanPlayerItem);
+  vzUiWireHelp(document, $("cleanPlayerList"));
 }
+
+function buildTimingList() {
+  timingInputs = vzUiBuildTiming(document, $("timingList"), (id, liveOnly) => {
+    if (liveOnly) { renderTimingValue(id); return; }
+    persistTiming(id);
+  });
+  vzUiWireHelp(document, $("timingList"));
+}
+
 
 function renderCleanPlayer(cp) {
   $("cleanPlayerEnabled").checked = !!cp?.enabled;
+  markRendered("cleanPlayerEnabled");
   syncCleanPlayerCaptionNote();
-  for (const { key } of CLEAN_PLAYER_OPTIONS) {
-    const el = $(`cp_${key}`);
-    if (el) el.checked = !!cp?.items?.[key];
+  for (const key of Object.keys(VZ_UI_CLEAN)) {
+    const el = cleanPlayerInputs[key];
+    if (!el) continue;
+    el.checked = !!cp?.items?.[key];
+    el.dataset[VZ_RENDERED] = "1";   // #78: الملء هو الختم — والمسافة صفر
   }
 }
 
@@ -664,45 +665,42 @@ function markRendered(id) {
   if (el) el.dataset[VZ_RENDERED] = "1";
 }
 
-function renderOverlayTiming(overlay) {
-  const grid = Number(overlay?.autoHideMs ?? 900);
-  const vol = Number(overlay?.volumeAutoHideMs ?? grid);
-  $("gridDuration").value = String(grid);
-  $("gridDurationValue").textContent = formatDurationMs(grid);
-  $("zoneHintEnabled").checked = overlay?.hintEnabled !== false;
-  $("volumeDuration").value = String(vol);
-  $("volumeDurationValue").textContent = formatDurationMs(vol);
-  $("speedBadgeEnabled").checked = overlay?.speedBadge === true;
-  syncSpeedBadgeRow(vol);
-  $("hideProgressBar").checked = overlay?.hideProgressBar === true;
-  $("speedButtonEnabled").checked = overlay?.speedButton === true;
-  const preset = Number(overlay?.speedButtonPreset) > 0 ? Number(overlay.speedButtonPreset) : 2;
-  $("speedButtonPreset").value = String(preset);
-  $("speedButtonPresetValue").textContent = `${preset}x`;
-  // كلُّ ضابطٍ رُسم يُختَم — والختم شرطُ الكتابة (#78)
-  for (const id of Object.keys(TIMING_CONTROLS)) if (id !== "idleDuration") markRendered(id);
+// #77 — **الرسم من السجلّ نفسه الذي بنى الضوابط** ⇒ المسافة صفر (16د).
+// و**الملء هو الختم** (#78): ضابطٌ لم يُملأ لا يُكتب منه، فالحارس يرثه المُولِّد
+// **ولا يُلتَفّ عليه من بابه**.
+function timingValueOf(s, id) {
+  const o = s.overlay || {};
+  if (id === "gridDuration") return Number(o.autoHideMs ?? 900);
+  if (id === "volumeDuration") return Number(o.volumeAutoHideMs ?? o.autoHideMs ?? 900);
+  if (id === "idleDuration") return Math.max(500, Number(s.idle?.ms) > 0 ? Number(s.idle.ms) : 2000);
+  if (id === "zoneHintEnabled") return o.hintEnabled !== false;
+  if (id === "speedBadgeEnabled") return o.speedBadge === true;
+  if (id === "hideProgressBar") return o.hideProgressBar === true;
+  if (id === "speedButtonEnabled") return o.speedButton === true;
+  if (id === "speedButtonPreset") return Number(o.speedButtonPreset) > 0 ? Number(o.speedButtonPreset) : 2;
+  return null;
 }
 
-// #70 · #72 — مهلة السكون مشتركة بين المستهلكين، **ولا «صفر تعني مطفأ»**:
-// الحدّ الأدنى صريح (500) والإطفاء بمفتاح الميزة وحده (الشاهد الرابع والعشرون).
-function renderIdleTiming(idle) {
-  const ms = Math.max(500, Number(idle?.ms) > 0 ? Number(idle.ms) : 2000);
-  $("idleDuration").value = String(ms);
-  $("idleDurationValue").textContent = `${(ms / 1000).toFixed(1)} ثانية`;
-  markRendered("idleDuration");
+function renderTimingValue(id) {
+  const c = VZ_UI_TIMING.find((x) => x.id === id);
+  const el = timingInputs[id];
+  if (!c || !el || c.kind !== "range") return;
+  const v = Number(el.value);
+  const out = $(`${id}Value`);
+  if (!out) return;
+  out.textContent = c.unit === "x" ? `${v}x` : (v <= 0 ? "معطّل" : `${(v / 1000).toFixed(1)} ثانية`);
 }
 
-// ── #71 — المربّع يُعطَّل **بسببٍ مكتوب**، ولا يُترك يكذب ────────────────────
-// شارة السرعة **ترث `volumeAutoHideMs`** بقرار المالك (لا مفتاح مدّة ثانٍ)،
-// **ومن ثَمّ `0` تعني «لا شارة» للقناتين معاً**. فمربّعٌ يُضغط ولا يفعل شيئاً
-// **انحدارٌ** (البند #24: المُنزلق يُعطَّل برسالة بدل أن يوهم) — يُعطَّل ويقول
-// لماذا، **ويبقى مؤشَّراً كما اختاره المستخدم** فلا نغيّر تخزينه من تحته.
-function syncSpeedBadgeRow(vol) {
-  const off = Number(vol) <= 0;
-  $("speedBadgeEnabled").disabled = off;
-  $("speedBadgeHint").textContent = off
-    ? "معطّلة الآن: مدّة «رقم الصوت» صفر، والشارتان تتشاركان المدّة نفسها. ارفعها فوق الصفر لتعمل."
-    : "تظهر في الزاوية المقابلة لرقم الصوت، وتأخذ مدّته ولونه وحجمه نفسها.";
+function renderOverlayTiming(settings) {
+  for (const c of VZ_UI_TIMING) {
+    const el = timingInputs[c.id];
+    if (!el) continue;
+    const v = timingValueOf(settings, c.id);
+    if (c.kind === "toggle") el.checked = !!v; else el.value = String(v);
+    el.dataset[VZ_RENDERED] = "1";
+    renderTimingValue(c.id);
+  }
+  syncSpeedBadgeRow(timingValueOf(settings, "volumeDuration"));
 }
 
 function renderGridAppearance(appearance) {
@@ -960,6 +958,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // وثمنه المقيس قراءة تخزين إضافية عند فتح الصفحة، والقيم نفسها لأن كتابة
   // `zonesWereMissing` تسبقها.
   buildCleanPlayerList();
+  buildTimingList();
   await renderAllFromStorage();
 
   $("cleanPlayerEnabled").addEventListener("change", persistCleanPlayer);
@@ -1122,28 +1121,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  $("gridDuration").addEventListener("input", () => {
-    $("gridDurationValue").textContent = formatDurationMs(Number($("gridDuration").value));
-  });
-  $("gridDuration").addEventListener("change", () => persistTiming("gridDuration"));
-  $("zoneHintEnabled").addEventListener("change", () => persistTiming("zoneHintEnabled"));
-  $("speedBadgeEnabled").addEventListener("change", () => persistTiming("speedBadgeEnabled"));
-  $("hideProgressBar").addEventListener("change", () => persistTiming("hideProgressBar"));
-  $("speedButtonEnabled").addEventListener("change", () => persistTiming("speedButtonEnabled"));
-  $("speedButtonPreset").addEventListener("input", () => {
-    $("speedButtonPresetValue").textContent = `${Number($("speedButtonPreset").value)}x`;
-  });
-  $("speedButtonPreset").addEventListener("change", () => persistTiming("speedButtonPreset"));
-  $("idleDuration").addEventListener("input", () => {
-    $("idleDurationValue").textContent = `${(Number($("idleDuration").value) / 1000).toFixed(1)} ثانية`;
-  });
-  $("idleDuration").addEventListener("change", () => persistTiming("idleDuration"));
-  $("volumeDuration").addEventListener("input", () => {
-    $("volumeDurationValue").textContent = formatDurationMs(Number($("volumeDuration").value));
-    // السببُ يتبع المُنزلق أثناء السحب لا بعد الحفظ: `input` يعرض و`change` يكتب
-    syncSpeedBadgeRow(Number($("volumeDuration").value));
-  });
-  $("volumeDuration").addEventListener("change", () => persistTiming("volumeDuration"));
+  // #77 — ربطُ ضوابط التوقيت صار في المُولِّد نفسه (settings-ui.js):
 
   async function persistSubtitles() {
     syncCleanPlayerCaptionNote(); // immediate, before the storage round-trip
@@ -1307,8 +1285,7 @@ async function renderAllFromStorage() {
   renderBlockedSites(s.blockedHosts);
   renderSoundSettings(s.soundDisplay);
   renderGridAppearance(s.gridAppearance);
-  renderOverlayTiming(s.overlay);
-  renderIdleTiming(s.idle);
+  renderOverlayTiming(s);
   renderSubtitles(s.subtitles);
   renderYtAutoQuality(s.ytAutoQuality);
   renderYtShortsRedirect(s.ytShortsRedirect);

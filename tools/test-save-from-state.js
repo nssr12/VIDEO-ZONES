@@ -62,10 +62,22 @@ console.log("[1] ضابطٌ واحد ⇒ حقلٌ واحد");
     : [];
   check("[1] سجلّ `TIMING_CONTROLS` موجود", !!regSrc, "المرساة سقطت أو السجلّ غير مكتوب");
   check("[1] وفيه الضوابط الثمانية", ids.length === 8, ids);
-  for (const id of ids) {
-    check(`[1] «${id}» مربوطٌ بحقله وحده`,
-      new RegExp(`\\$\\("${id}"\\)\\.addEventListener\\("change", \\(\\) => persistTiming\\("${id}"\\)\\)`).test(OPTIONS));
-  }
+  // ⚠️ **مرساةٌ صُحّحت لا تأكيدٌ أُضعف (قرار 33، #77):** الربط انتقل إلى
+  // **المُولِّد الواحد** — فلا سطرَ ربطٍ مكتوبٌ بيدٍ لكل ضابط. **والنيّة نفسها
+  // محروسةٌ أقوى**: المُولِّد يربط **كلَّ ما في السجلّ** بلا استثناء، فضابطٌ
+  // جديد يُربط **بالبناء لا بالتذكّر**.
+  const UI = fs.readFileSync("settings-ui.js", "utf8");
+  check("[1] المُولِّد يربط كلَّ ضابطٍ بمُعرّفه",
+    /if \(onChange\) input\.addEventListener\("change", \(\) => onChange\(c\.id\)\)/.test(UI));
+  check("[1] و`options.js` تمرّر `persistTiming` لا معالجاً مشتركاً",
+    /vzUiBuildTiming\(document, \$\("timingList"\), \(id, liveOnly\) =>/.test(OPTIONS) &&
+    /persistTiming\(id\);/.test(OPTIONS));
+  check("[1] ولا سطرَ ربطٍ مكتوبٌ بيدٍ لضابط توقيت",
+    !/\$\("(gridDuration|volumeDuration|idleDuration|zoneHintEnabled|speedBadgeEnabled|hideProgressBar|speedButtonEnabled|speedButtonPreset)"\)\.addEventListener/.test(OPTIONS));
+  // ⭐ وبالعدّ لا بالنظر: لكل حقلٍ ضابطٌ، ولكل ضابطٍ حقل
+  const uiIds = [...UI.matchAll(/\{ id: "([A-Za-z]+)", kind:/g)].map((r) => r[1]);
+  check("[1] ⭐ ولكل حقلٍ ضابطٌ ولكل ضابطٍ حقل",
+    ids.every((i) => uiIds.includes(i)) && uiIds.every((i) => ids.includes(i)), { ids, uiIds });
 }
 
 // ── [2] ⭐ الحارس: ضابطٌ لم يُرسَم لا يُكتب منه ────────────────────────────
@@ -79,8 +91,10 @@ console.log("\n[2] ⭐ الختم شرطُ الكتابة — ويرثه مُو�
   // ⚠️ ولا صمت: رفضٌ صامت يترك المستخدم يظنّ أنه حفظ (درسا #57 و#69)
   check("[2] ولا يُرفض صامتاً", !!persist && /showToast\("bad"/.test(persist), persist);
   // والختم يضعه الراسم وحده
-  const render = body(OPTIONS, "function renderOverlayTiming(overlay)");
-  check("[2] والراسم يختم ما رسمه", !!render && /markRendered\(/.test(render), render);
+  const render = body(OPTIONS, "function renderOverlayTiming(settings)");
+  // **الملء هو الختم** — والمسافة صفر: الراسم يقرأ السجلّ الذي بنى الضوابط
+  check("[2] والراسم يختم ما ملأه",
+    !!render && /el\.dataset\[VZ_RENDERED\] = "1"/.test(render), render);
   check("[2] و`markRendered` تكتب الختم", /el\.dataset\[VZ_RENDERED\] = "1"/.test(OPTIONS));
   // ⚠️ الحارس على الختم لا على الأسماء — فمُولِّد #77 يرثه بلا تعديل
   const mark = body(OPTIONS, "function markRendered(id)");
