@@ -52,9 +52,15 @@ function numberedSteps(sectionLines) {
 }
 
 console.log("\n[1] الشاهد السالب — §17 الحقيقيّ يجب أن يمرّ");
-const handoff = fs.readFileSync(path.join(ROOT, "HANDOFF.md"), "utf8");
+// ⚠️ **المرساة انتقلت بقسمة #81، فتُصلَح المرساة لا التأكيد (قرار 33):**
+// §17 صار في `docs/HISTORY.md` — **والحارس يقرأ من حيث هو، ويُفشل إن لم يجده
+// في أيٍّ منهما**، فلا يمرّ صامتاً على مرساةٍ ساقطة.
+const HOMES = ["HANDOFF.md", "docs/HISTORY.md"];
+const handoff = HOMES.map((f) => {
+  try { return fs.readFileSync(path.join(ROOT, f), "utf8"); } catch { return ""; }
+}).find((t) => /^## 17\./m.test(t)) || fs.readFileSync(path.join(ROOT, "HANDOFF.md"), "utf8");
 const sec = section17(handoff);
-ok(sec !== null, "تعذّر إيجاد `## 17.` في HANDOFF.md — **المرساة سقطت، أصلِح المرساة لا التأكيد** (قرار 33)");
+ok(sec !== null, "تعذّر إيجاد `## 17.` في HANDOFF.md ولا في docs/HISTORY.md — **المرساة سقطت، أصلِح المرساة لا التأكيد** (قرار 33)");
 if (sec === null) {
   console.log(`\n❌ فشل: ${fail} · نجح: ${pass}`);
   process.exit(1);
@@ -89,7 +95,7 @@ if (fs.existsSync(clPath)) {
   ok(/الخريطة: الجديد ⇄ القديم/.test(cl),
      "خريطة الترقيم غائبة — **فبلاغات المالك السابقة (13 · 22ه · 20) تصير غير مقروءة**");
   ok(/\| \*\*م1\*\* \| 1 \|/.test(cl), "الخريطة لا تربط م1 بـ1 — **مرساةٌ في الخريطة نفسها**");
-  ok(cl.includes("HANDOFF.md") && /§17/.test(cl),
+  ok((cl.includes("HANDOFF.md") || cl.includes("HISTORY.md")) && /§17/.test(cl),
      `${CHECKLIST} لا يشير إلى §17 — **الحجج والشروط لا طريق إليها**`);
 }
 

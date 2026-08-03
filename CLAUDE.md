@@ -42,9 +42,13 @@ There is no test suite. Verify UI changes manually in the browser.
 | `icons/` | Extension icons (16/32/48/128) referenced by `manifest.icons` + `action.default_icon` |
 | `tools/` | Dev-only scripts run with `node`, **never shipped** — see Packaging below |
 | `README.md` | User-facing Arabic readme |
-| `HANDOFF.md` | **Read first.** Current work state, owner decisions, permanent regression platforms |
+| `HANDOFF.md` | **Read first.** Current work state, the eleven every-session decisions, and the work protocol — **every line of it is read every session** (#81) |
+| `docs/DECISIONS.md` | Owner decisions consulted per item + decision 26's twenty witnesses |
+| `docs/PLATFORMS.md` | The ten manual regression platforms (was §8–§16) |
+| `docs/HISTORY.md` | Waves, closed items and their commits — **not** where you look to know where you stand |
+| `docs/REFERENCE.md` | Architecture invariants, structure/tests, measured numbers, git config |
 | `tools/icons.js` | **Icon registry — the one place.** Owner-designed SVGs (19), uniform style (24-box, stroke currentColor, weight 1.7). `tools/preview-icons.html` is generated from it; `tools/icons.html` is the owner original, kept as the source of record. **Only `VZ_ICONS_SHIPPED` reaches `content.js`** — shipped weight with no user is dead code, and `tools/test-icons.js` reddens on it |
-| `tools/CHECKLIST.md` | The **current field-verification session's steps**, walkable — setup + numbered anchors, nothing else. Steps live here and nowhere else; `HANDOFF.md` §17 keeps only the reasoning and open questions, and `tools/test-checklist-place.js` reddens if a numbered step reappears there (decision 41) |
+| `tools/CHECKLIST.md` | The **current field-verification session's steps**, walkable — setup + numbered anchors, nothing else. Steps live here and nowhere else; `docs/HISTORY.md` (§17 سابقاً) keeps only the reasoning and open questions, and `tools/test-checklist-place.js` reddens if a numbered step reappears there (decision 41) |
 | `AUDIT.md` | Audit report — every numbered item and its status |
 
 ## Packaging
@@ -58,6 +62,7 @@ AUDIT.md      # audit report
 tools/preview-77.html   # غلاف معاينة فوق settings-ui.js المشحون — ليس منتجاً
 AUDIT.html    # rendered audit view (already gitignored)
 HANDOFF.md    # work-state handoff
+docs/         # DECISIONS · PLATFORMS · HISTORY · REFERENCE — مراجع عمل لا منتج
 .git/ .gitignore CLAUDE.md
 ```
 
@@ -98,8 +103,8 @@ listed there is a regression you introduced.
 ## Manual regression platforms
 
 There is no browser automation for the UI paths, so a handful of pages and
-step-lists in `HANDOFF.md` are **mandatory, not optional** — each item runs the
-platform it touches, in full:
+step-lists in `docs/PLATFORMS.md` are **mandatory, not optional** — each item runs
+the platform it touches, in full (the §-numbers below are that file's sections):
 
 | Platform | Runs when you touch |
 |---|---|
