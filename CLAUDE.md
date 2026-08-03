@@ -43,6 +43,7 @@ There is no test suite. Verify UI changes manually in the browser.
 | `tools/` | Dev-only scripts run with `node`, **never shipped** — see Packaging below |
 | `README.md` | User-facing Arabic readme |
 | `HANDOFF.md` | **Read first.** Current work state, owner decisions, permanent regression platforms |
+| `tools/icons.js` | **Icon registry — the one place.** Owner-designed SVGs (19), uniform style (24-box, stroke currentColor, weight 1.7). `tools/preview-icons.html` is generated from it; `tools/icons.html` is the owner original, kept as the source of record. **Only `VZ_ICONS_SHIPPED` reaches `content.js`** — shipped weight with no user is dead code, and `tools/test-icons.js` reddens on it |
 | `tools/CHECKLIST.md` | The **current field-verification session's steps**, walkable — setup + numbered anchors, nothing else. Steps live here and nowhere else; `HANDOFF.md` §17 keeps only the reasoning and open questions, and `tools/test-checklist-place.js` reddens if a numbered step reappears there (decision 41) |
 | `AUDIT.md` | Audit report — every numbered item and its status |
 

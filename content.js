@@ -2366,7 +2366,9 @@ const OVERLAY_CSS = `
       user-select:none;
       transition:opacity .12s linear;
     }
-    .vzSpeedIcon{ width:24px; height:24px; flex:none; display:block; fill:#fff; }
+        /* #89 — **الوزن يُضبط هنا لا في المسار**: أيقونات السجلّ حدٌّ لا تعبئة،
+       فتُلوَّن بـcolor. والمقاس 24 كما قِيس من أزرار المضيف. */
+    .vzSpeedIcon{ width:24px; height:24px; flex:none; display:block; color:#fff; }
     /* #85 — داخل شريط المضيف: تُنزع زينةُ الطبقة ويُترك المقاس المقيس (40) */
     .vzBtn.vzInBar{
       position:static; right:auto; bottom:auto;
@@ -2417,11 +2419,9 @@ function buildOverlayElement() {
     <div class="vzVolume vzHidden">100</div>
     <div class="vzSpeed vzHidden">1x</div>
     <div class="vzBtn vzSpeedBtn vzHidden" role="button" tabindex="-1" data-vz-owns="wheel click">
-      <svg class="vzSpeedIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M3.5 12.6A9 9 0 0 1 20.5 12.6L18.6 13.2A7 7 0 0 0 5.4 13.2Z"/>
-        <path d="M11.1 15.4L15.5 8.6L16.8 9.5L13 16.4Z"/>
-        <path d="M12 12.6a1.6 1.6 0 1 0 0 3.2a1.6 1.6 0 1 0 0-3.2Z"/>
-      </svg><span class="vzSpeedNum">1x</span></div>
+      <!-- #89 — **أيقونة \`speed\` من سجلّ المالك \`tools/icons.js\`، منقولةٌ لا مرسومة.**
+           ومسارُنا المرسوم في #88 **حُذف** فلا موضعان لأيقونةٍ واحدة. -->
+      <svg class="vzSpeedIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path stroke-linecap="butt" d="M19.63 9.23 A9.0 9.0 0 0 1 21 14 L21.0 17.4 A1.6 1.6 0 0 1 19.4 19.0 L4.6 19.0 A1.6 1.6 0 0 1 3.0 17.4 L3.0 14.0 A9.0 9.0 0 0 1 16.23 6.05"/> <path fill="currentColor" stroke="none" d="M18.79 7.21 L13.68 15.09 A2.0 2.0 0 1 1 10.91 12.32 Z"/></svg><span class="vzSpeedNum">1x</span></div>
   `;
   applyGridVars(el); // يزرع الأرقام بـ textContent بعد بناء الخلايا
   return el;

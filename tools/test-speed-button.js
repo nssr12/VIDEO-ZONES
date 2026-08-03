@@ -270,7 +270,14 @@ console.log("\n[9] ⭐ #88 — الأيقونة بمقاس أزرار المضي
   const css = SRC.slice(SRC.indexOf(".vzBtn{"), SRC.indexOf(".vzHidden{"));
   check("[9] الارتفاع 40 كزرّ المضيف", /height:40px/.test(css), css.slice(0,200));
   check("[9] والأيقونة 24×24", /\.vzSpeedIcon\{[^}]*width:24px;\s*height:24px/.test(css), css);
-  check("[9] وتعبئتها بيضاء لا حدّ", /\.vzSpeedIcon\{[^}]*fill:#fff/.test(css) && !/\.vzSpeedIcon\{[^}]*stroke/.test(css), css);
+  // ⛔ **انقلب بـ#89 لأن مصدر الأيقونة تغيّر لا لأنه لم يمرّ** (قرار 33):
+  // أيقونة #88 كانت **مرسومةً عندنا بتعبئة**، وأيقونةُ سجلّ المالك **حدٌّ من
+  // اللون الجاري** (`stroke:currentColor`) — **فتُلوَّن بـ`color` لا بـ`fill`**.
+  // **والتغطية باقية: لونٌ أبيض مشروطٌ كما كان، والقناة هي التي تغيّرت.**
+  check("[9] ولونها أبيض عبر `color` (أيقونات السجلّ حدٌّ لا تعبئة)",
+    /\.vzSpeedIcon\{[^}]*color:#fff/.test(css), css);
+  check("[9] ⭐ والمسار من سجلّ المالك لا مرسومٌ عندنا",
+    /stroke="currentColor"/.test(SRC) && /stroke-width="1\.7"/.test(SRC), "");
   // ⭐ **الشاهد الموجب (قرار 47): بناءٌ بلا أيقونة يجب أن يُحمَّر**
   const bare = "<div class=\"vzBtn vzSpeedBtn vzHidden\">1x</div>";
   check("[9] ⭐ والحارس يرى زرّاً بلا أيقونة — فلا يُصدَّق خضاره",

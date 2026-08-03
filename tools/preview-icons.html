@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>سجلّ الأيقونات — مُولَّد من tools/icons.js</title>
+<!--
+  ⚠️ **غلافٌ رقيق فوق السجلّ — نفس شكل #77 حرفياً.**
+  الأيقونات **لا تُكتب هنا**: تُقرأ من `tools/icons.js` وتُرسم منه.
+  ⇒ **فأيقونةٌ ثانية تُضاف مرّةً لا مرّتين**، ولا تتباعد صفحةُ العرض عمّا يُشحن.
+  ⚠️ **و`tools/icons.html` هو الأصل الذي صمّمه صاحب المشروع** — يبقى مرجعاً
+  تاريخياً، **والسجلّ مُستخرَجٌ منه نقلاً لا رسماً**.
+-->
+<style>
+  :root{ --bg:#17191c; --panel:#2b2e33; --line:#3a3f46; --icon:#cfd4d8;
+         --text:#e6eaed; --muted:#767d85; --mark:#e0392c; }
+  body{ margin:0; padding:36px 22px 60px; background:var(--bg); color:var(--text);
+        font-family:"SF Arabic","Geeza Pro","Segoe UI",Tahoma,sans-serif; }
+  .wrap{ max-width:1060px; margin:0 auto; }
+  h1{ font-size:19px; font-weight:600; margin:0 0 4px; }
+  p.sub{ color:var(--muted); font-size:13px; margin:0 0 18px; }
+  .grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+  .cell{ border:1px solid var(--line); border-radius:10px; padding:16px 10px;
+         display:flex; flex-direction:column; align-items:center; gap:8px;
+         background:var(--panel); }
+  .cell svg{ width:28px; height:28px; color:var(--icon); }
+  .cell.shipped{ border-color:var(--mark); }
+  .ar{ font-size:13px; }
+  .slug{ font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--muted); }
+  .tag{ font-size:10px; color:var(--mark); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>سجلّ الأيقونات</h1>
+  <p class="sub">مُولَّد من <code>tools/icons.js</code> — لا يُكتب هنا شيء.
+     المحاط بالأحمر هو <strong>المشحون</strong>، والباقي في السجلّ جاهزاً.</p>
+  <div class="grid" id="grid"></div>
+</div>
+<script src="icons.js"></script>
+<script>
+  const g = document.getElementById("grid");
+  const shipped = new Set(VZ_ICONS_SHIPPED);
+  for (const key of Object.keys(VZ_ICONS)) {
+    const cell = document.createElement("div");
+    cell.className = shipped.has(key) ? "cell shipped" : "cell";
+    // ⚠️ **بناءٌ لا قالب نصّيّ في مسار الرسم** — إلا الأيقونة نفسها، ومصدرها
+    // السجلّ لا مدخلُ مستخدم (قاعدة `innerHTML` في `CLAUDE.md`).
+    const holder = document.createElement("div");
+    holder.innerHTML = vzIconSvg(key, "");
+    cell.appendChild(holder.firstChild);
+    const ar = document.createElement("span");
+    ar.className = "ar"; ar.textContent = VZ_ICONS[key].ar;
+    const slug = document.createElement("span");
+    slug.className = "slug"; slug.textContent = key;
+    cell.appendChild(ar); cell.appendChild(slug);
+    if (shipped.has(key)) {
+      const t = document.createElement("span");
+      t.className = "tag"; t.textContent = "مشحونة";
+      cell.appendChild(t);
+    }
+    g.appendChild(cell);
+  }
+</script>
+</body>
+</html>
