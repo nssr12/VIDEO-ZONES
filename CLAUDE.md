@@ -121,6 +121,16 @@ Before reporting any fullscreen bug, paste `tools/report-fullscreen-bug.js` into
 the page console — it prints one copyable line with the URL, the chosen
 container, both rects, the ratio and the gate verdict.
 
+`tools/report-preview-scope.js` is the second paste-in probe (#94): it arms
+itself, waits for a **live** hover preview (measured by `currentTime` advancing,
+not by `paused`), then prints one line answering **are the host's controls inside
+this video's player scope or around it** — decided by `contains`, never by eye.
+It carries decision 26's two witnesses **in the printed line**: it plants a
+visible button inside the scope (the inside count must rise) and another outside
+it over the video (the inside count must not) — a zero from it is only credible
+when both are ✅. Its copies of `KNOWN_PLAYER_WRAPPER_SELECTOR` and #58's
+constants are guarded by `tools/test-preview-probe-sync.js`.
+
 ## Storage schema (`chrome.storage.sync`)
 
 ```js

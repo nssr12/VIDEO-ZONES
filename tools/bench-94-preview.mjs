@@ -110,6 +110,46 @@ const PROBE = (wrappers) => `(() => {
     return null;
   };
 
+  // ── **النطاق الواسع** — المرشّح الثاني، يُقاس ولا يُقرَّر ─────────────────
+  // ⚠️ **وُلد من فيميو:** حكم #58 يجد **أقرب** عنصرٍ يملؤه الفيديو، **وشريطُ
+  // التحكّم يقع خارجه بطبعه** — فأعطى «div.vp-video» وفيه صفر أداة، **والأدوات
+  // في «div#player.player» بنسبة مساحة ×1**. ⇒ **الاسم يفوز أوّلاً، وإلّا يُصعَد
+  // إلى **أبعد** سلفٍ يشبه مشغّلاً ما لم تكبر مساحتُه** — والحدّ حارسٌ لا مُميِّز.
+  const WIDE_MAX = 1.2;
+  const wideScopeOf = (v) => {
+    const known = v.closest(WRAP);
+    if (known) return known;
+    const vr0 = v.getBoundingClientRect();
+    const vArea = Math.max(1, vr0.width * vr0.height);
+    let el = v.parentElement, best = null;
+    for (let i = 0; i < MAXD && el && el !== document.body && el !== document.documentElement; i++) {
+      if (looksLikePlayer(el)) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0 && (r.width * r.height) <= vArea * WIDE_MAX) best = el;
+      }
+      el = el.parentElement;
+    }
+    return best;
+  };
+  const barCensus = (scope) => {
+    let btns = 0, sliders = 0, timeText = 0;
+    if (scope) {
+      for (const el of scope.querySelectorAll('button,[role="button"],a[href]')) {
+        if (el.closest(".vzWrap,.vzSpeedBtn")) continue;
+        if (visible(el)) btns++;
+      }
+      for (const el of scope.querySelectorAll('[role="slider"],input[type="range"],[aria-valuenow],progress')) {
+        if (visible(el)) sliders++;
+      }
+      for (const el of scope.querySelectorAll("*")) {
+        if (timeText) break;
+        const t = (el.childElementCount === 0 && el.textContent || "").trim();
+        if (/^\d+:\d\d(:\d\d)?$/.test(t) && visible(el)) timeText = 1;
+      }
+    }
+    return { buttons: btns, sliders, timeText: !!timeText };
+  };
+
   const vids = [...document.querySelectorAll("video")];
   const vw = innerWidth, vh = innerHeight;
   const areas = vids.map((v) => { const r = v.getBoundingClientRect(); return r.width * r.height; });
@@ -138,8 +178,10 @@ const PROBE = (wrappers) => `(() => {
       }
     }
     const bar = scope ? scope.querySelector(".ytp-right-controls") : null;
+    const wide = wideScopeOf(v);
     return {
       i,
+      wideScope: desc(wide), wideScopeBox: box(wide), wideBar: barCensus(wide),
       rect: box(v),
       areaRatioViewport: Math.round((r.width * r.height) / Math.max(1, vw * vh) * 1000) / 1000,
       largestInDoc: areas[i] === maxArea && maxArea > 0,
@@ -175,6 +217,49 @@ const PROBE = (wrappers) => `(() => {
                       text: (btn.textContent || "").trim().slice(0, 8) }
                   : { exists: false }
   };
+})()`;
+
+// ── مسح سلسلة الأسلاف: **عند أيّ سلفٍ تظهر الأدوات، وبأي نسبة مساحة؟** ──────
+// ⚠️ **وُلد من قياسٍ مُحرج:** فيميو أعطى **صفر أداة بعد النشاط** — والنطاق الذي
+// حُسم له `div.vp-video`، وهو **غلاف الفيديو لا المشغّل**. ⇒ **حكم #58 يجد أقرب
+// عنصرٍ يملؤه الفيديو، وشريطُ التحكّم يقع خارجه بطبعه** — فالسؤال «أين يقع
+// الشريط في السلسلة» لا «أفيه شريط».
+const CHAIN = (wrappers) => `(() => {
+  const WRAP = ${JSON.stringify(wrappers)};
+  const effOpacity = (el) => { let o = 1, n = el;
+    while (n && n.nodeType === 1) { o *= Number(getComputedStyle(n).opacity) || 0; n = n.parentElement; }
+    return o; };
+  const visible = (el) => { if (!el || el.nodeType !== 1) return false;
+    const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+    return cs.display !== "none" && cs.visibility !== "hidden" &&
+           effOpacity(el) > 0 && r.width > 0 && r.height > 0; };
+  const desc = (el) => el ? (el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") +
+    (el.className && typeof el.className === "string"
+      ? "." + el.className.trim().split(/\\s+/).slice(0, 2).join(".") : "")).slice(0, 46) : "—";
+  const vids = [...document.querySelectorAll("video")]
+    .map((v) => ({ v, r: v.getBoundingClientRect() }))
+    .filter((x) => x.r.width > 40 && x.r.height > 40 && visible(x.v))
+    .sort((a, b) => b.r.width * b.r.h - a.r.width * a.r.height);
+  const top = vids[0];
+  if (!top) return null;
+  const v = top.v, vr = top.r, vArea = Math.max(1, vr.width * vr.height);
+  const out = [];
+  let el = v.parentElement;
+  for (let i = 0; i < 8 && el && el !== document.documentElement; i++) {
+    const r = el.getBoundingClientRect();
+    let btn = 0, sld = 0;
+    for (const c of el.querySelectorAll('button,[role="button"],a[href]')) {
+      if (c.closest(".vzWrap,.vzSpeedBtn")) continue;
+      if (visible(c)) btn++;
+    }
+    for (const c of el.querySelectorAll('[role="slider"],input[type="range"],[aria-valuenow],progress')) {
+      if (visible(c)) sld++;
+    }
+    out.push({ i, desc: desc(el), known: !!(el.matches && el.matches(WRAP)),
+      areaRatio: Math.round((r.width * r.height) / vArea * 100) / 100, btn, sld });
+    el = el.parentElement;
+  }
+  return { video: { w: Math.round(vr.width), h: Math.round(vr.height) }, chain: out };
 })()`;
 
 // عيّنتان بينهما مهلة: **«تعمل» تُقاس بتقدّم الزمن لا بعلم `paused`**.
@@ -265,6 +350,16 @@ async function runHome() {
     // المؤشّر يبقى على المصغَّرة أثناء القياس — رفعُه يُنهي المعاينة.
     await wiggle(page, thumb.x, thumb.y, 2);
     out.probe = await evalIn(page, PROBE(WRAPPERS));
+    out.chain = await evalIn(page, CHAIN(WRAPPERS));
+
+    // ── ومِجَسّ المالك يُشغَّل هنا نفسه — **سكربتٌ لم يُشغَّل قطّ تخمينٌ لا أداة** ──
+    // يُسلَّح أوّلاً ثمّ يُحرَّك المؤشّر، لأنه يقرأ موضعَ المؤشّر من `mousemove`.
+    await evalIn(page, `(() => { window.__vz94 = [];
+      const l = console.log; console.log = (...a) => { window.__vz94.push(a.join(" ")); l(...a); }; })()`);
+    await evalIn(page, fs.readFileSync(path.join(ROOT, "tools/report-preview-scope.js"), "utf8"));
+    await wiggle(page, thumb.x, thumb.y, 4);
+    await sleep(2500);
+    out.paste = await evalIn(page, `window.__vz94 || []`);
     return out;
   } catch (e) {
     out.why = String(e?.message || e).slice(0, 160);
@@ -297,6 +392,7 @@ async function runWatch() {
     out.live = await liveVideos(page);
     await wiggle(page, Math.round(v0.x + v0.w / 2), Math.round(v0.y + v0.h * 0.8), 2);
     out.probe = await evalIn(page, PROBE(WRAPPERS));
+    out.chain = await evalIn(page, CHAIN(WRAPPERS));
     return out;
   } catch (e) {
     out.why = String(e?.message || e).slice(0, 160);
@@ -308,16 +404,72 @@ async function runWatch() {
   }
 }
 
+// ── مضيفو مسار الطبقة: أيتلاشى شريطُهم بالسكون؟ (`--hosts`) ─────────────────
+// ⚠️ **السؤال ليس «أله شريط» بل «أهو مرئيّ في اللحظة التي نُظهر فيها الزرّ»**:
+// شريطٌ يتلاشى بالسكون قد يُقرأ «صفر أداة» **فيختفي زرٌّ يعمل اليوم** — وذاك
+// انحدارٌ يصنعه علاجُنا، وهو أخطر من العطب الذي نعالجه.
+const HOSTS = [
+  { name: "twitch.tv", url: "https://www.twitch.tv/" },
+  { name: "vimeo", url: "https://player.vimeo.com/video/76979871?autoplay=1&muted=1" },
+  { name: "d.tube", url: "https://d.tube/watch/5MxdC3ajEpBwgcDCsrHRd5" }
+];
+
+async function runHost({ name, url }) {
+  const out = { name, url };
+  let h = null, page = null;
+  try {
+    h = await launch(PORT, { extra: ["--window-size=1440,900"] });
+    const cfg = await configure(PORT, h.extensionId, SETTINGS);
+    if (!cfg.ok) { out.why = "تعذّر ضبط التخزين"; return out; }
+    page = await openPage(PORT, url);
+    await sleep(9000);
+    const v0 = await evalIn(page, `(() => { const vs = [...document.querySelectorAll("video")]
+      .map((v) => v.getBoundingClientRect()).filter((r) => r.width > 40 && r.height > 40)
+      .sort((a, b) => b.width * b.height - a.width * a.height);
+      if (!vs[0]) return null; const r = vs[0];
+      return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; })()`);
+    out.videoRect = v0;
+    if (!v0) { out.why = "لا فيديو بمستطيل معقول — لا يُقاس (قرار 22)"; return out; }
+    const cx = Math.round(v0.x + v0.w / 2), cy = Math.round(v0.y + v0.h * 0.75);
+    await wiggle(page, cx, cy, 5);
+    await sleep(500);
+    out.active = await evalIn(page, PROBE(WRAPPERS));      // بعد نشاطٍ مباشرةً
+    out.chain = await evalIn(page, CHAIN(WRAPPERS));       // وأين يقع الشريط في السلسلة
+    await sleep(6000);                                      // **بلا أي إدخال**
+    out.idle = await evalIn(page, PROBE(WRAPPERS));         // بعد سكونٍ طويل
+    return out;
+  } catch (e) {
+    out.why = String(e?.message || e).slice(0, 140);
+    return out;
+  } finally {
+    try { page?.ws?.close(); } catch {}
+    killChrome(h);
+    await waitPortFree(PORT);
+  }
+}
+
 // ── التشغيل ─────────────────────────────────────────────────────────────────
+const WANT_HOSTS = process.argv.includes("--hosts");
+const HOME_ONLY = process.argv.includes("--home-only");   // لإعادة قياس المِجَسّ وحده
 const home = await runHome();
-const watch = await runWatch();
+const watch = HOME_ONLY ? { label: "صفحة watch — لم تُقَس (--home-only)", steps: {} } : await runWatch();
+const hosts = [];
+if (WANT_HOSTS) for (const t of HOSTS) hosts.push(await runHost(t));
 
 if (AS_JSON) {
-  console.log(JSON.stringify({ home, watch }, null, 2));
+  console.log(JSON.stringify({ home, watch, hosts }, null, 2));
   process.exit(0);
 }
 
 const yesNo = (b) => (b ? "نعم" : "لا");
+function printChain(ch) {
+  if (!ch?.chain) { console.log("   — لا سلسلة (لا فيديو مرئيّ)"); return; }
+  console.log(`   ── سلسلة الأسلاف للفيديو ${ch.video.w}x${ch.video.h} (نسبة المساحة · أزرار · منزلقات)`);
+  for (const a of ch.chain) {
+    console.log(`      [${a.i}] ${a.known ? "★" : " "} ${a.desc.padEnd(46)} ×${a.areaRatio}` +
+      `  أزرار ${a.btn} · منزلقات ${a.sld}`);
+  }
+}
 function printProbe(p) {
   if (!p) { console.log("   — لا مِجَسّ"); return; }
   console.log(`   العنوان            : ${p.url.slice(0, 60)}`);
@@ -341,6 +493,9 @@ function printProbe(p) {
     console.log(`      **شريطه هو** : أزرار ${v.ownBar.buttons} · منزلقات ${v.ownBar.sliders}` +
       ` · نصّ وقت ${yesNo(v.ownBar.timeText)} · ytp-right-controls ${yesNo(v.ownBar.ytRightControls)}` +
       ` (مرئيّ ${yesNo(v.ownBar.ytRightControlsVisible)})`);
+    console.log(`      **النطاق الواسع** : ${v.wideScope || "—"} ${JSON.stringify(v.wideScopeBox)}`);
+    console.log(`      وشريطُه : أزرار ${v.wideBar.buttons} · منزلقات ${v.wideBar.sliders}` +
+      ` · نصّ وقت ${yesNo(v.wideBar.timeText)}`);
   }
 }
 
@@ -360,6 +515,38 @@ for (const run of [home, watch]) {
     console.log(`   فيديو حيّ           : ${run.live?.length || 0}`);
   }
   printProbe(run.probe);
+  printChain(run.chain);
+}
+
+if (home.paste?.length) {
+  console.log("\n── مِجَسّ المالك مُشغَّلاً هنا (tools/report-preview-scope.js)");
+  for (const l of home.paste) console.log("   " + l);
+}
+
+if (hosts.length) {
+  console.log("\n=== مضيفو مسار الطبقة — أيتلاشى الشريط بالسكون؟ ===");
+  for (const hst of hosts) {
+    console.log(`\n── ${hst.name}  ${hst.url.slice(0, 52)}`);
+    if (hst.why) { console.log(`   ⚠️ ${hst.why}`); continue; }
+    const pick = (p) => {
+      if (!p?.videos?.length) return null;
+      return p.videos.filter((v) => v.visible).sort((a, b) =>
+        (b.rect.w * b.rect.h) - (a.rect.w * a.rect.h))[0] || null;
+    };
+    const a = pick(hst.active), i = pick(hst.idle);
+    const fmt = (v) => v ? `ضيّق[أزرار ${v.ownBar.buttons} · منزلقات ${v.ownBar.sliders}]` +
+      ` · واسع[أزرار ${v.wideBar.buttons} · منزلقات ${v.wideBar.sliders}] · ${v.wideScope || "— (فيديو خام)"}`
+      : "— لا فيديو مرئيّ";
+    console.log(`   بعد النشاط : ${fmt(a)}`);
+    console.log(`   بعد السكون : ${fmt(i)}`);
+    printChain(hst.chain);
+    const faded = a && i && (a.wideBar.buttons + a.wideBar.sliders) > 0 &&
+                  (i.wideBar.buttons + i.wideBar.sliders) === 0;
+    console.log(`   ⇒ ${faded ? "**يتلاشى** — فالتثبيت شرطٌ لا تحسين"
+      : (a && (a.wideBar.buttons + a.wideBar.sliders) > 0
+          ? "**لا يتلاشى** — الأدوات باقية بعد السكون"
+          : "**لا أدوات أصلاً بعد النشاط** — يُفحص قبل أي حكم")}`);
+  }
 }
 
 const negOk = (home.steps?.beforeHover?.live?.length || 0) === 0;
