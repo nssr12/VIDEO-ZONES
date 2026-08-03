@@ -158,6 +158,33 @@ async function run(label) {
                    msg: errors.slice(errBefore)[0] });
     }
 
+    // ── (٧) **#84: الظهور يُشتقّ ولا يُخزَّن** — المدخلان والمخرجان وEsc ─────
+    // ⚠️ **مفتاحُ حالةٍ واحد يقلبه أربعة مداخل يُنتج مدخلاً يُلغي أثر آخر** —
+    // وهو ما وقع: `Tab` يفتح و`Enter` بعده يُغلق. **والاشتقاق يجعله مستحيلاً.**
+    const derived = await evalIn(`(() => {
+      const b = document.querySelector("#timingList .vzHelp");
+      const body = document.getElementById(b.getAttribute("aria-controls"));
+      const st = () => !body.hidden;
+      const fire = (t) => b.dispatchEvent(t === "focus" || t === "blur"
+        ? new FocusEvent(t) : new MouseEvent(t));
+      const esc = () => b.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      const out = {};
+      // المدخلان يرفعان
+      fire("blur"); fire("mouseleave");                 out.base = st();
+      fire("mouseenter");                               out.hoverIn = st();
+      fire("mouseleave");                               out.hoverOut = st();
+      fire("focus");                                    out.focusIn = st();
+      fire("blur");                                     out.focusOut = st();
+      // ⭐ **الحالة الكاشفة**: تركيزٌ ثمّ تحويمٌ ثمّ ابتعاد ⇒ يبقى ظاهراً
+      fire("focus"); fire("mouseenter"); fire("mouseleave"); out.stillFocused = st();
+      // وEsc يُزيل التركيز فيختفي بالاشتقاق
+      esc(); fire("blur");                              out.afterEsc = st();
+      // ولا نقرَ يقلب: من ظاهرٍ بالتركيز، نقرةٌ لا تُخفيه
+      fire("focus"); fire("click");                     out.clickNoToggle = st();
+      fire("blur"); fire("mouseleave");
+      return out;
+    })()`);
+
     // وعددُ ما رُسم — فسقوطُ ضابطٍ يُرى بالعدّ
     const drawn = await evalIn(`(() => ({
       clean: document.querySelectorAll("#cleanPlayerList input[type=checkbox]").length,
@@ -188,7 +215,7 @@ async function run(label) {
       try { x.ws.close(); } catch {}
     }
 
-    return { label, ok: true, errors, loadErrors, nav, sweep, drawn, panel, devMode };
+    return { label, ok: true, errors, loadErrors, nav, sweep, drawn, panel, devMode, derived };
   } finally {
     killChrome(chrome);
     await sleep(400);
@@ -221,6 +248,19 @@ check(`[٣] صفر استثناء عند التفاعل`, threw.length === 0,
 check(`[٣] وكلُّ تبديلٍ يصل التخزين`, notSaved.length === 0,
   notSaved.map((s) => s.id).slice(0, 12));
 if (skipped.length) console.log(`  · مُتخطّى (معطَّل أو غير مرسوم): ${skipped.map((s) => s.id).join(", ")}`);
+
+// ── [٧] #84 — الظهور مُشتقّ: مدخلان مستقلّان، ولا مفتاح حالة ────────────────
+const d = live.derived || {};
+console.log("\n[٧] #84 — الظهور يُشتقّ: (مؤشّر فوقه) أو (تركيز عليه)");
+check("[٧] البداية مخفيّ", d.base === false, d);
+check("[٧] التحويم يُظهر", d.hoverIn === true, d);
+check("[٧] ⭐ والابتعاد يُخفي (كان لا يُخفي)", d.hoverOut === false, d);
+check("[٧] التركيز يُظهر", d.focusIn === true, d);
+check("[٧] ⭐ وزواله يُخفي (كان لا يُخفي)", d.focusOut === false, d);
+check("[٧] ⭐⭐ تركيزٌ ثمّ تحويمٌ ثمّ ابتعاد ⇒ **يبقى ظاهراً** (الحالة الكاشفة)",
+  d.stillFocused === true, d);
+check("[٧] ⭐ وEsc يُزيل التركيز فيختفي — فيسقط الحدّ المعروف", d.afterEsc === false, d);
+check("[٧] ⭐ ولا نقرَ يقلب: النقر يمنح التركيز فيظهر", d.clickNoToggle === true, d);
 
 console.log("\n[٦] ولوحة «أخطاء» في chrome://extensions — مصدرٌ ثانٍ");
 console.log(`  · وضع المطوّر: ${live.devMode} — ${live.devMode === "ok"

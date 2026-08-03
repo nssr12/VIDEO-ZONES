@@ -250,15 +250,45 @@ function vzUiBuildTiming(doc, root, onChange) {
   return map;
 }
 
-// ── التلميح: نقرٌ ولمسٌ ولوحةُ مفاتيح، والتحويم **يضيف ولا يستبدل** ─────────
+// ── التلميح: **الظهور يُشتقّ ولا يُخزَّن** (البند #84، قرار المالك 2026-08-03) ──
+//
+//        ظاهر = (المؤشّر فوقه) **أو** (التركيز عليه)
+//
+// ⛔ **والشكل القديم مسحوب (قرار 21):** ~~`click` يقلب · و`focus`/`mouseenter`
+// يفتحان · ولا مخرج~~. **قِيس فتبيّن أن `blur` و`mouseleave` لا يُغلقان**،
+// **و`click` يقلب فيُغلق ما فتحه الوصول** ⇒ **`Tab` إليه يفتح الشرح ثمّ `Enter`
+// يُغلقه**، فكانت خطوةُ المالك تُنتج **بلاغ فشلٍ عن سلوكٍ صحيح**.
+//
+// ⇒ **والعلّة مبدئية: مفتاحُ حالةٍ واحد يقلبه أربعة مداخل يُنتج مدخلاً يُلغي أثر
+// آخر.** **والاشتقاق من مدخلين مستقلَّين يجعل ذلك مستحيلاً بالبناء لا محروساً** —
+// «موضعٌ واحد للحقيقة أو تُشتقّ»، **والثانية هنا أرخص**.
+//
+// **ولا `click` بذاته:** النقر **يمنح التركيز** فيظهر بالاشتقاق — **واللمس يعمل
+// بلا مسارٍ خاصّ**: النقر يمنح، والنقر بعيداً يُزيل.
+//
+// ⚠️ **و`Esc` يُزيل التركيز صراحةً لا اعتماداً على سلوكٍ افتراضيّ:** «`Esc` يُبعد
+// التركيز» **دعوى لم تُقَس عندنا** — والتركيز لا يعمل في المتصفّح المقطوع الرأس
+// فلا سبيل إلى قياسها. ⇒ **فتُنفَّذ ولا تُفترض**، وهي **مدخلٌ إلى المصدر نفسه
+// (التركيز) لا مفتاحُ حالةٍ ثانٍ** — فالاشتقاق يبقى واحداً.
+// **وبه يسقط «حدّ `Esc` المعروف» بدل أن يُوثَّق.**
+//
+// ⭐ **والحالة التي تكشف الفرق:** `Tab` إليه (يظهر) ثمّ حوّم عليه ثمّ ابعد
+// المؤشّر ⇒ **يبقى ظاهراً لأن التركيز باقٍ**. **ومفتاحٌ واحد كان سيُغلقه.**
 function vzUiWireHelp(doc, root) {
   for (const b of root.querySelectorAll(".vzHelp")) {
     const body = doc.getElementById(b.getAttribute("aria-controls"));
     if (!body) continue;
-    const set = (on) => { body.hidden = !on; b.setAttribute("aria-expanded", String(on)); };
-    b.addEventListener("click", () => set(body.hidden));
-    b.addEventListener("mouseenter", () => set(true));
-    b.addEventListener("focus", () => set(true));
+    let hovered = false, focused = false;
+    const apply = () => {
+      const on = hovered || focused;              // **الاشتقاق، ولا حالة تُخزَّن**
+      body.hidden = !on;
+      b.setAttribute("aria-expanded", String(on));
+    };
+    b.addEventListener("mouseenter", () => { hovered = true;  apply(); });
+    b.addEventListener("mouseleave", () => { hovered = false; apply(); });
+    b.addEventListener("focus",      () => { focused = true;  apply(); });
+    b.addEventListener("blur",       () => { focused = false; apply(); });
+    b.addEventListener("keydown", (e) => { if (e.key === "Escape") b.blur(); });
   }
 }
 
