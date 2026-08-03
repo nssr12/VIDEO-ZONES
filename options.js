@@ -274,7 +274,7 @@ async function getSettings() {
   // #70 · #72 — مهلة السكون: الحدّ الأدنى صريح، و«صفر» ليست إطفاءً
   settings.idle ||= {};
   if (typeof settings.idle.ms !== "number" || settings.idle.ms <= 0) settings.idle.ms = 2000;
-  settings.idle.ms = Math.max(500, settings.idle.ms);
+  settings.idle.ms = Math.max(VZ_IDLE_MIN_MS, settings.idle.ms);   // #89 — من الموضع الواحد
   if (typeof settings.ytAutoQuality !== "string") settings.ytAutoQuality = "";
   if (typeof settings.ytShortsRedirect !== "boolean") settings.ytShortsRedirect = true;
   settings.cleanPlayer ||= {};
@@ -672,7 +672,7 @@ function timingValueOf(s, id) {
   const o = s.overlay || {};
   if (id === "gridDuration") return Number(o.autoHideMs ?? 900);
   if (id === "volumeDuration") return Number(o.volumeAutoHideMs ?? o.autoHideMs ?? 900);
-  if (id === "idleDuration") return Math.max(100, Number(s.idle?.ms) > 0 ? Number(s.idle.ms) : 2000);
+  if (id === "idleDuration") return Math.max(VZ_IDLE_MIN_MS, Number(s.idle?.ms) > 0 ? Number(s.idle.ms) : 2000);
   if (id === "zoneHintEnabled") return o.hintEnabled !== false;
   if (id === "speedBadgeEnabled") return o.speedBadge === true;
   if (id === "hideProgressBar") return o.hideProgressBar === true;

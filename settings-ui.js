@@ -26,6 +26,15 @@
 // ولا يقع صامتاً. فمن وسّع معياراً ليستوعب مفتاحاً جديداً **يراه المراجع**.
 // (والمجموعة السادسة حُلَّت بهذا: «ما ليس زرّاً ولا طبقةً دائمة» **تعريفٌ
 // بالنفي وأوّل خطوةٍ نحو «متفرّقات»**، فوُسِّع معيارٌ موجب بدلها.)
+// **الحدّ الأدنى لمهلة السكون — الموضع الواحد لصفحة الإعدادات** (#89).
+// ⛔ **العلّة:** كان يعيش في **أربعة مواضع** (`content.js` · هذا الضابط ·
+// وقصّان في `options.js`)، **فنُقل ثلاثةٌ ونُسي رابع** — فبقي يقصّ إلى 500
+// **في مسار العرض**: التخزين `100` والمُنزلق يُظهر `500`.
+// ⇒ **والميزة كانت تعمل، والواجهة هي التي تكذب.**
+// ⚠️ **و`tools/test-idle-min.js` يعدّ المواضع ويشترط تطابقها** — فالتفرّق يصير
+// مستحيلاً لا مذكوراً (قرار 16ج).
+const VZ_IDLE_MIN_MS = 100;
+
 const VZ_UI_GROUPS = [
   { id: "top",      name: "الشريط العلوي",
     rule: "ما يظهر أعلى الصورة داخل المشغّل" },
@@ -127,7 +136,7 @@ const VZ_UI_TIMING = [
   { id: "speedBadgeEnabled", kind: "toggle",
     label: "إظهار شارة سرعة التشغيل عند تغييرها",
     help: "تظهر في الزاوية المقابلة لرقم الصوت، وتأخذ مدّته ولونه وحجمه نفسها. ⚠️ ولا يومض لها يوتيوب — قِيس أن الكتابة المباشرة لا تُنتج وميضاً." },
-  { id: "idleDuration", kind: "range", min: 100, max: 6000, step: 100, unit: "ms",
+  { id: "idleDuration", kind: "range", min: VZ_IDLE_MIN_MS, max: 6000, step: 100, unit: "ms",
     label: "كم ينتظر قبل الإخفاء بعد أن تتوقّف الفأرة",
     help: "تُشارَك بين «إخفاء شريط تقدّم يوتيوب» و«زرّ السرعة». ⚠️ وأقلّها عُشر ثانية، ولا تُطفئ شيئاً — الإطفاء بمفتاح الميزة وحده." },
   { id: "hideProgressBar", kind: "toggle",
@@ -293,6 +302,6 @@ function vzUiWireHelp(doc, root) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { VZ_UI_GROUPS, VZ_UI_CLEAN, VZ_UI_TIMING,
+  module.exports = { VZ_IDLE_MIN_MS, VZ_UI_GROUPS, VZ_UI_CLEAN, VZ_UI_TIMING,
     vzUiBuildClean, vzUiBuildTiming, vzUiWireHelp, vzUiRow, vzUiHelpButton };
 }

@@ -142,15 +142,31 @@ async function run(label) {
         if (el.disabled) return { skipped: true };
         const b = await chrome.storage.sync.get({ settings: {} });
         const before = JSON.stringify(b.settings || {});
-        if (el.type === "checkbox") el.checked = !el.checked;
-        else {
-          const st = Number(el.step) || 1, mx = Number(el.max), mn = Number(el.min), v = Number(el.value);
-          el.value = String(v + st <= mx ? v + st : Math.max(mn, v - st));
+        // ⭐ **المدى يُدفع إلى طرفيه معاً لا إلى طرفٍ واحد** (#89):
+        // خطوةٌ واحدة **لا تدخل المدى الذي فُتح للتوّ**، **وطرفٌ واحد قد يكون
+        // الطرفَ الذي لا يعضّ فيه القصّ** — وقد وقع: القصّ عند الأدنى والدفع ذهب
+        // إلى الأقصى. ⇒ **حارسٌ يُجرّب قيمةً واحدة يُثبت أن الضابط يستجيب، لا
+        // أن مداه صحيح.**
+        const tries = el.type === "checkbox"
+          ? [String(!el.checked)]
+          : [String(Number(el.min)), String(Number(el.max))];
+        let wanted = null, shown = null, changed = false;
+        for (const t of tries) {
+          if (el.type === "checkbox") el.checked = (t === "true"); else el.value = t;
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          await new Promise((r) => setTimeout(r, 700));
+          const cur = await chrome.storage.sync.get({ settings: {} });
+          if (JSON.stringify(cur.settings || {}) !== before) changed = true;
+          const e2 = document.getElementById(${JSON.stringify(cid)});
+          const got = e2 ? (e2.type === "checkbox" ? String(e2.checked) : e2.value) : null;
+          if (got !== t) { wanted = t; shown = got; break; }
         }
-        el.dispatchEvent(new Event("change", { bubbles: true }));
-        await new Promise((r) => setTimeout(r, 320));
-        const a = await chrome.storage.sync.get({ settings: {} });
-        return { ok: true, changed: JSON.stringify(a.settings || {}) !== before };
+        // ⚠️ **المهلة تكفي لدورةٍ كاملة لا لكتابةٍ وحدها** (#89): القفزة تقع بعد
+        // إعادة الرسم التي يُطلقها تغيّر التخزين.
+        // ⭐ **والقيمة المعروضة تُقارن بالمخزَّنة** — فالعرض قد يكذب على التخزين
+        // (#89: التخزين 100 والمُنزلق 500). **«وصل التخزين» لا يكفي.**
+        return { ok: true, changed: JSON.stringify(a.settings || {}) !== before,
+                 shown: el.value };
       })()`);
       await sleep(90);
       sweep.push({ id: cid, ...(r || { why: "لا جواب" }),
@@ -247,6 +263,10 @@ check(`[٣] صفر استثناء عند التفاعل`, threw.length === 0,
   threw.slice(0, 4).map((s) => `${s.id}: ${String(s.msg).split("\n")[0].slice(0, 60)}`));
 check(`[٣] وكلُّ تبديلٍ يصل التخزين`, notSaved.length === 0,
   notSaved.map((s) => s.id).slice(0, 12));
+// ⭐ **#89: المعروض يطابق المطلوب** — وإلا فالواجهة تكذب على التخزين
+const snapped = sw.filter((s) => s.ok && s.wanted != null && s.shown != null && s.wanted !== s.shown);
+check(`[٣] ⭐ والمعروض يطابق المطلوب (لا يقفز الضابط بعد ضبطه)`, snapped.length === 0,
+  snapped.map((s) => s.id + ": طُلب " + s.wanted + " فعُرض " + s.shown).slice(0, 6));
 if (skipped.length) console.log(`  · مُتخطّى (معطَّل أو غير مرسوم): ${skipped.map((s) => s.id).join(", ")}`);
 
 // ── [٧] #84 — الظهور مُشتقّ: مدخلان مستقلّان، ولا مفتاح حالة ────────────────
