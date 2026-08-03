@@ -179,6 +179,15 @@ async function runOn(label, url, { withExtension = true } = {}) {
       out.steps.wheelOnBtn = { skipped: "الزرّ غير مرئيّ" };
     }
 
+    // ── م9 (12ب): **سكونٌ تامّ والمؤشّر فوق الزرّ ⇒ لا يختفي من تحت اليد** ──
+    // **المبدأ نفسه المطبَّق مرّتين في #70**، وثالثتُه هنا. **ويُقاس آلياً**:
+    // نُوقف الإدخال والمؤشّر على مركز الزرّ، وننتظر أطول من المهلة.
+    if (b?.exists && b.visible) {
+      await wiggle(page, b.x, b.y, 2);          // نُدخله ونثبته
+      await sleep(IDLE_MS * 3);                 // **بلا أي إدخال بعدها**
+      out.steps.stillOverBtn = await evalIn(page, BTN_STATE);
+    }
+
     // ── م8: عجلةٌ على المربّع 4 (لا على الزرّ) ⇒ السرعة والوسم يتبعان (13) ──
     await wiggle(page, zone4.x, zone4.y, 2);
     const beforeZ = (await evalIn(page, BTN_STATE)).rate;
@@ -348,7 +357,9 @@ gate("عجلةٌ فوقه تغيّر السرعة (14)", pos.steps.wheelOnBtn?.c
      pos.steps.wheelOnBtn?.skipped || `${pos.steps.wheelOnBtn?.before} ⇒ ${pos.steps.wheelOnBtn?.after}`);
 gate("عجلة المربّع تغيّر السرعة (13)", pos.steps.zoneWheel?.changed === true);
 gate("ووسم الزرّ يتبعها (13)", pos.steps.zoneWheel?.labelFollows === true, `«${pos.steps.zoneWheel?.label}»`);
-gate("يختفي بالسكون (11)", pos.steps.idle?.btn?.visible === false);
+gate("⭐ لا يختفي تحت مؤشّرٍ ساكن فوقه (12ب)", pos.steps.stillOverBtn?.btn?.visible === true,
+     pos.steps.stillOverBtn ? `مرئيّ=${pos.steps.stillOverBtn.btn.visible}` : "لم يُقَس");
+gate("ويختفي بالسكون حين يبعد المؤشّر (11)", pos.steps.idle?.btn?.visible === false);
 gate("ويزول بإطفاء مفتاحه", pos.steps.switchedOff?.btn?.visible === false);
 
 // ── #70 — النصف الثاني، ولا يُقاس إلا على المضيف ───────────────────────────
