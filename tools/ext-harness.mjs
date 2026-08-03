@@ -145,6 +145,21 @@ export async function configure(port, extensionId, obj) {
   } finally { try { c.ws.close(); } catch {} }
 }
 
+// ينتظر تحرّر المنفذ بعد القتل — **والانتظار صريحٌ لا `sleep` تخمينيّ**.
+// ⚠️ **رِكازٌ يشغّل تشغيلاتٍ متتابعة على منفذٍ واحد يرفضه فحصُه القَبْليّ نفسه**
+// إن لم ينتظر موت السابقة: القتل لا يعني الموت فوراً. **فيُنتظر ويُتحقَّق.**
+export async function waitPortFree(port, timeoutMs = 8000) {
+  const t0 = Date.now();
+  for (;;) {
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/json/version`);
+      if (!r.ok) return true;
+    } catch { return true; }                    // لا أحد يجيب ⇒ حُرِّر
+    if (Date.now() - t0 > timeoutMs) return false;
+    await sleep(150);
+  }
+}
+
 export async function openPage(port, url) {
   const tab = await (await fetch(
     `http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT" })).json();

@@ -104,7 +104,9 @@ const mkConsumer = (log, key, opts = {}) => ({
   enabled: () => opts.enabled !== false,
   ...(opts.suspended ? { suspended: opts.suspended } : {}),
   onActive: () => log.push(`${key}:active`),
-  onIdle: () => log.push(`${key}:idle`)
+  onIdle: () => log.push(`${key}:idle`),
+  // **الجذر الثاني (#72): «لا يعمل» يسأل صاحبَه عن معناه** — لا يرث «كالنشط»
+  onDisabled: () => log.push(`${key}:disabled`)
 });
 
 console.log("\n=== محرّك السكون (#70 · #72) ===\n");
@@ -256,7 +258,12 @@ console.log("\n[6] ⭐ الامتناع: سياسةٌ لكل مستهلك، لا
     off: mkConsumer(log2, "off", { enabled: false })
   } });
   w2.run("refreshIdleConsumers()");
-  check("[6] ومستهلكٌ مفتاحه مطفأ يُستعاد لا يُتخطّى", log2.join() === "on:idle,off:active", log2);
+  // ⛔ **انقلب هذا التأكيد بقرار المالك 2026-08-03، والانقلاب مقصود:** كان
+  // يشترط `off:active` — **«يُعرض كالنشط»** — وهو صوابٌ لِما نُخفيه من المضيف
+  // **وعكسُه لِما نرسمه نحن** (زرّ #72 كان يظهر بإطفاء مفتاحه). **ولم يُعدَّل
+  // ليمرّ بل انقلب لأن المطلوب انقلب**، والتغطية باقية: «يُتخطّى صامتاً» ما زال يُحمّر.
+  check("[6] ومستهلكٌ مفتاحه مطفأ **يُعلَن لا يُتخطّى، ومعناه له لا للمحرّك**",
+    log2.join() === "on:idle,off:disabled", log2);
 
   // وإطفاء المحرّك كلّه يُخرج الجميع — ولو كانت مفاتيحهم مُشغَّلة
   const log3 = [];
@@ -267,7 +274,8 @@ console.log("\n[6] ⭐ الامتناع: سياسةٌ لكل مستهلك، لا
   log3.length = 0;
   w3.ctx.__gate = false;
   w3.run("refreshIdleConsumers()");
-  check("[6] وإغلاق البوّابة يُخرج مستهلكاً كان مخفيّاً", log3.join() === "a:active", log3);
+  check("[6] وإغلاق البوّابة يُخرج مستهلكاً كان مخفيّاً — بمعناه هو",
+    log3.join() === "a:disabled", log3);
 }
 
 // ── [9] ⭐ الامتناع العالق — أربعة مخارج، **مُختبَرة لا مُدّعاة** ────────────
@@ -364,6 +372,34 @@ console.log("\n[8] «صفر» لا تعني «مطفأ»، والحدّ الأد
   check("[8] والحدّ الأدنى ثابتٌ مسمّى", /const IDLE_MIN_MS = 500;/.test(SRC));
   check("[8] والإطفاء بمفتاح المستهلك وحده — لا قيمة في المهلة تُطفئ",
     !/idleMs\s*(<=|===)\s*0/.test(CODE));
+
+
+// ── [11] ⭐ العقد: المستهلك يُعلن ما يعنيه إطفاؤه — والمحرّك لا يقرّر ────────
+// **الجذر الثاني في #72 (قرار المالك 2026-08-03).** كان المحرّك يقرّر أن «مُطفأ
+// ⇒ كالنشط» — **صوابٌ لِما نُخفيه من المضيف، وعكسُه لِما نرسمه نحن**: زرّ #72
+// كان **يظهر بإطفاء مفتاحه** (مقيسٌ في `bench-overlay-layer`).
+// ⇒ **والإعلان شرطُ التسجيل لا عادةٌ حسنة** (قرار 16ج): مستهلكٌ بلا onDisabled
+// **يُحمّر المجموعة**، فمستهلكٌ ثالث يُضاف غداً لا يرث تأويلاً كُتب لجاره.
+console.log("\n[11] ⭐ كل مستهلكٍ يُعلن معنى إطفائه، والمحرّك ينقل لا يقرّر");
+{
+  const RE = /IDLE_CONSUMERS\.[A-Za-z0-9_$]+ = \{[\s\S]*?\n\};/g;
+  const decl = SRC.match(RE) || [];
+  check("[11] مستهلكان مسجَّلان", decl.length === 2, "العدد " + decl.length);
+  for (const d of decl) {
+    const name = (d.match(/IDLE_CONSUMERS\.([A-Za-z0-9_$]+)/) || [])[1];
+    check("[11] " + name + " يُعلن onDisabled", /onDisabled\s*:/.test(d), d.slice(0, 90));
+  }
+  const body = (SRC.match(/function applyIdleState\(\)[\s\S]*?\n}/) || [""])[0];
+  check("[11] والمحرّك ينادي onDisabled في فرع «لا يعمل»",
+    /!c\.enabled\(\)\)\s*\{\s*c\.onDisabled\(\)/.test(body), body.slice(0, 240));
+  check("[11] و«ممتنع» يبقى كالنشط — فهو غيرُ «مُطفأ»",
+    /c\.suspended\?\.\(\)\)\s*\{\s*c\.onActive\(\)/.test(body), body.slice(0, 300));
+  // ⭐ **الشاهد الموجب (قرار 47): مصدرٌ ينقصه الإعلان يجب أن يُحمَّر**
+  const fake = "IDLE_CONSUMERS.x = {\n  enabled: () => true,\n  onActive: () => 1,\n  onIdle: () => 2\n};";
+  const fd = fake.match(RE) || [];
+  check("[11] ⭐ والحارس يرى مستهلكاً بلا إعلان — فلا يُصدَّق خضاره",
+    fd.length === 1 && !/onDisabled\s*:/.test(fd[0]), fd);
+}
 
   console.log(`\n✅ نجح ${pass} / فشل ${fail}\n`);
   process.exit(fail ? 1 : 0);

@@ -37,7 +37,7 @@
 //   node tools/bench-overlay-layer.mjs --json       # الخام (قرار 38)
 import fs from "node:fs";
 import path from "node:path";
-import { launch, openPage, configure, serveTestPage, contentWorld, evalIn, ROOT } from "./ext-harness.mjs";
+import { launch, openPage, configure, serveTestPage, contentWorld, evalIn, waitPortFree, ROOT } from "./ext-harness.mjs";
 
 const PORT = 9761, HTTP = 8861;
 const WANT_YT = process.argv.includes("--youtube");
@@ -203,14 +203,58 @@ async function runOn(label, url, { withExtension = true } = {}) {
     await sleep(600);
     out.steps.switchedOff = await evalIn(page, BTN_STATE);
 
+    // ── #70 على المضيف الحقيقيّ — **النصف الثاني من شرط القبول** ────────────
+    // **«يُستعاد شريط المضيف ويزول زرّنا» شرطٌ واحد بنصفين** (قرار المالك):
+    // فالمستهلكان يختلفان في معنى الإطفاء، **وقياسُ أحدهما لا يقول شيئاً عن
+    // الآخر** — بل النجاح في أحدهما مع الفشل في الآخر هو **العطب بعينه**.
+    if (/youtube\.com/.test(url)) {
+      const BAR = `(() => {
+        const el = document.querySelector(".ytp-chrome-bottom");
+        if (!el) return { exists: false };
+        const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+        // ⚠️ **«مخفيّ» لا يفرّق بين إخفائنا وإخفاء المضيف** — ويوتيوب يُخفي
+        // شريطه بنفسه بعد ~3 ثوانٍ سكون. **فالمقيس صنفُنا نحن**، والشفافية
+        // خبرٌ تابع. (عائلة العمى الأولى: الوصف يُشتقّ من الشرط المقيس.)
+        return { exists: true, opacity: Number(cs.opacity),
+                 w: Math.round(r.width), h: Math.round(r.height),
+                 ourClass: document.documentElement.classList.contains("vz-idle-hide-progress"),
+                 hidden: Number(cs.opacity) === 0 };
+      })()`;
+      await configure(PORT, h.extensionId, {
+        settings: { ...SETTINGS.settings,
+          overlay: { ...SETTINGS.settings.overlay, hideProgressBar: true, speedButton: false } }
+      });
+      await sleep(1200);
+      await wiggle(page, Math.round(vr.x + vr.w / 2), Math.round(vr.y + vr.h * 0.8), 3);
+      await sleep(400);
+      const barActive = await evalIn(page, BAR);
+      await sleep(IDLE_MS * 3);                       // سكون — بلا أي إدخال
+      const barIdle = await evalIn(page, BAR);
+      await configure(PORT, h.extensionId, {          // إطفاء المفتاح والشريط مخفيّ
+        settings: { ...SETTINGS.settings,
+          overlay: { ...SETTINGS.settings.overlay, hideProgressBar: false, speedButton: false } }
+      });
+      await sleep(1500);
+      const barOff = await evalIn(page, BAR);
+      // وبعد حركةٍ: المضيف يُظهر شريطه، فتُقاس العودة الفعلية بلا خلط
+      await wiggle(page, Math.round(vr.x + vr.w / 2), Math.round(vr.y + vr.h * 0.8), 3);
+      await sleep(500);
+      const barOffMoved = await evalIn(page, BAR);
+      out.steps.barOffMoved = barOffMoved;
+      out.steps.bar = { active: barActive, idle: barIdle, off: barOff, offMoved: out.steps.barOffMoved };
+    }
+
     return out;
   } catch (e) {
     out.error = String(e?.message || e).slice(0, 160);
     return out;
   } finally {
     try { page?.ws?.close(); } catch {}
-    try { h?.browser?.ws?.close(); } catch {}
-    try { h?.proc?.kill(); } catch {}
+    h?.kill?.();
+    // **ثلاث تشغيلاتٍ على منفذٍ واحد** — والقتل لا يعني الموت فوراً، فالتشغيلة
+    // التالية يرفضها الفحص القَبْليّ. **يُنتظر التحرّر ويُتحقَّق منه.**
+    const free = await waitPortFree(PORT);
+    if (!free) console.log("   ⚠️ لم يتحرّر المنفذ " + PORT + " — التشغيلة التالية سترفض");
   }
 }
 
@@ -306,6 +350,22 @@ gate("عجلة المربّع تغيّر السرعة (13)", pos.steps.zoneWheel
 gate("ووسم الزرّ يتبعها (13)", pos.steps.zoneWheel?.labelFollows === true, `«${pos.steps.zoneWheel?.label}»`);
 gate("يختفي بالسكون (11)", pos.steps.idle?.btn?.visible === false);
 gate("ويزول بإطفاء مفتاحه", pos.steps.switchedOff?.btn?.visible === false);
+
+// ── #70 — النصف الثاني، ولا يُقاس إلا على المضيف ───────────────────────────
+const bar = yt?.steps?.bar;
+if (!bar) {
+  console.log("   ⚪ #70 لم يُقَس — يحتاج `--youtube` (والنصفان شرطٌ واحد)");
+} else {
+  console.log(`\n── #70 على يوتيوب — شريط \`.ytp-chrome-bottom\``);
+  gate("الشريط ظاهرٌ مع النشاط", bar.active?.exists === true && bar.active?.hidden === false,
+       `opacity=${bar.active?.opacity} · ${bar.active?.w}×${bar.active?.h}`);
+  gate("ويختفي بالسكون (1) — بصنفنا نحن", bar.idle?.ourClass === true && bar.idle?.hidden === true,
+       `صنفنا=${bar.idle?.ourClass} · opacity=${bar.idle?.opacity}`);
+  gate("⭐ ويُرفع صنفُنا بإطفاء مفتاحه (8)", bar.off?.ourClass === false,
+       `صنفنا=${bar.off?.ourClass} · opacity=${bar.off?.opacity} (وإخفاءُ المضيف ليس إخفاءنا)`);
+  gate("⭐ ويعود ظاهراً فعلاً بعد حركة", bar.offMoved?.hidden === false,
+       `opacity=${bar.offMoved?.opacity}`);
+}
 
 console.log(`\n⇒ ${bad === 0 ? "**الطبقة تعمل كما يستعملها المستخدم**"
   : `**${bad} شرطاً ساقطاً — الطبقة لا تعمل**`}\n`);
