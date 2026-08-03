@@ -188,6 +188,23 @@ async function runOn(label, url, { withExtension = true } = {}) {
       out.steps.stillOverBtn = await evalIn(page, BTN_STATE);
     }
 
+    // ── م10 (م17): **الطبقة تتبع مستطيل المشغّل حين يتغيّر** ────────────────
+    // ⚠️ **وشاهدٌ موجب شرطٌ لا تفصيل:** قياسٌ أوّل غيّر **إطار العرض** ولم يتغيّر
+    // **المستطيل المتبوع**، فقرأ «الزرّ لم يتبع» — **سكونٌ لا سكون فيه**.
+    // ⇒ **يُزاح الفيديو نفسه، ويُتحقَّق أنه أُزيح، قبل الحكم على التتبّع.**
+    if (b?.exists && b.visible) {
+      const beforeMove = await evalIn(page, BTN_STATE);
+      await evalIn(page, `document.querySelector("video").style.marginInlineStart = "120px"`);
+      await sleep(700);
+      await wiggle(page, b.x + 120, b.y, 3);
+      await sleep(400);
+      const afterMove = await evalIn(page, BTN_STATE);
+      out.steps.follows = { beforeVid: beforeMove?.videoRect, afterVid: afterMove?.videoRect,
+        beforeBtn: [beforeMove?.btn?.x, beforeMove?.btn?.y], afterBtn: [afterMove?.btn?.x, afterMove?.btn?.y] };
+      await evalIn(page, `document.querySelector("video").style.marginInlineStart = ""`);
+      await sleep(500);
+    }
+
     // ── م8: عجلةٌ على المربّع 4 (لا على الزرّ) ⇒ السرعة والوسم يتبعان (13) ──
     await wiggle(page, zone4.x, zone4.y, 2);
     const beforeZ = (await evalIn(page, BTN_STATE)).rate;
@@ -361,6 +378,13 @@ gate("⭐ لا يختفي تحت مؤشّرٍ ساكن فوقه (12ب)", pos.ste
      pos.steps.stillOverBtn ? `مرئيّ=${pos.steps.stillOverBtn.btn.visible}` : "لم يُقَس");
 gate("ويختفي بالسكون حين يبعد المؤشّر (11)", pos.steps.idle?.btn?.visible === false);
 gate("ويزول بإطفاء مفتاحه", pos.steps.switchedOff?.btn?.visible === false);
+{
+  const f = pos.steps.follows;
+  const vidMoved = f && JSON.stringify(f.beforeVid) !== JSON.stringify(f.afterVid);
+  gate("⭐ ويتبع مستطيل المشغّل حين يتغيّر (م17)",
+       !!vidMoved && JSON.stringify(f.beforeBtn) !== JSON.stringify(f.afterBtn),
+       f ? `الفيديو تحرّك=${vidMoved} · الزرّ ${JSON.stringify(f.beforeBtn)} ⇒ ${JSON.stringify(f.afterBtn)}` : "لم يُقَس");
+}
 
 // ── #70 — النصف الثاني، ولا يُقاس إلا على المضيف ───────────────────────────
 const bar = yt?.steps?.bar;
