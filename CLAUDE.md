@@ -281,6 +281,54 @@ rather than being pressable with no effect (#24's rule). The naming debt this
 creates (`soundDisplay` is now narrower than its scope) is registered as **#75**;
 renaming is a data migration, not a text edit.
 
+### The speed button draws only on a video that owns its controls (#94 · #96)
+
+The zones **react** — they appear only where the user acts, so covering every
+video costs nobody anything. The speed button **draws unbidden**, so its reach
+imposes itself: an initiating feature needs a *positive* reason for every place
+it appears (owner decision 63). That reason is **the host's own controls**:
+
+```js
+playerScopeForVideo(video)   // known wrapper first, else the OUTERMOST ancestor
+                             // that looksLikePlayer within 1.2× the video area
+scopeShowsOwnControls(scope) // ≥1 visible control inside THAT scope
+videoOwnsControls(video)     // scope with controls, or video.controls, or NO scope at all
+```
+
+Three cases, measured on live players: **a player that shows its controls** ⇒
+draw · **a raw `<video>` with no player scope** ⇒ draw (nobody hid anything) ·
+**a scope that exists and shows nothing** ⇒ **abstain** — that is YouTube's hover
+preview (`#inline-preview-player`, which literally carries `ytp-hide-controls`).
+The argument, verbatim: **the host itself hid its controls, so abstaining agrees
+with it rather than second-guessing it.**
+
+Four things that are load-bearing, each measured before it was written:
+
+- **Do NOT reuse `nearestPlayerAncestor` (#58) as the scope.** It was built to
+  find *what to fullscreen* — the nearest ancestor the video **fills** — and a
+  control bar sits outside what the video fills. Measured on Vimeo: it returns
+  `div.vp-video` with **zero** controls while **11 buttons + a slider** sit one
+  level up in `div#player` at the *same* area. "Where is the video?" is not
+  "where is its player?" (owner decision 65).
+- **1.2× is a guard, not a discriminator**: it flipped none of the five measured
+  structures, and the preview's ancestor chain is zero controls at all eight
+  levels. A number that *would* flip a verdict needs its own measurement.
+- **The verdict latches on first success**, because host bars fade on idle —
+  measured: Twitch 4 ⇒ 0, d.tube 6 ⇒ 0, Vimeo 11 ⇒ 1 after six idle seconds.
+  Only the *positive* latches (a bar that has not appeared yet gets another
+  chance), and it is invalidated when the video changes or the player is rebuilt.
+- **Abstaining hides, it does not `return`** — the pointer moves from a real
+  player to a preview without any idle in between.
+
+**#96 lives in the same treatment**: `speedBtnHostSlot(video)` asks for
+`.ytp-right-controls` **inside the video's own scope**, never
+`document.querySelector`. The document-wide query matched a `0×0` bar inside an
+unrelated `#movie_player` on a previews grid — only the zero-rect guard stopped
+us injecting into a foreign player. That guard stays (it has its own reason), but
+the bug is now impossible by construction, not guarded.
+`tools/test-speed-scope.js` is behavioural, not textual, and also guards the
+**call site** — deleting the gate reddens it.
+
 ### Idle engine — emits state, never a command (#70 · #72)
 
 `IDLE_CONSUMERS` in `content.js` is the registry; the engine only ever says

@@ -2066,10 +2066,22 @@ function syncSpeedBtnLabel(video) {
 // ⇒ **فالثمن الذي حُذِّر منه يوم اخترنا الطبقة لم يقع، ومقيسٌ أنه لم يقع.**
 const YT_CONTROLS_SELECTOR = ".ytp-right-controls";
 
-function speedBtnHostSlot() {
+// ── #96 — **الشريط يُطلب من نطاق هذا الفيديو، لا من المستند** ────────────────
+// ⛔ **العطب كان حيّاً ويستره حارسٌ وُضع لغيره.** `document.querySelector` تُرجع
+// **أوّل** شريطٍ في الصفحة أياً كان مشغّلُه: على شبكة معاينات أصابت شريطاً داخل
+// `#movie_player` **ساكنٍ بمستطيل `0×0` لا صلة له بالفيديو المُحوَّم عليه** —
+// **ولم يمنع الحقنَ في مشغّلٍ أجنبيّ إلا حارسُ المستطيل الصفريّ**، وصفحةٌ
+// بمشغّلَين أحدهما مرئيّ تكشفه: يُحقن زرُّنا في شريط مشغّلٍ لا يُعالَج.
+// ⇒ ⭐ **والعلاج يجعله مستحيلاً بالبناء لا محروساً** (قرار 16ج): الشريط من
+// **نطاق الفيديو** فيسقط الأجنبيّ بلا حارس.
+// ⚠️ **وحارسُ المستطيل الصفريّ يبقى — سببُه الأوّل قائم**: «مرئيّ» شرطٌ مقيس
+// (`S7`)، **وسقوطُ سببٍ ثانٍ عليه لا يُلغي الأوّل**.
+function speedBtnHostSlot(video) {
   if (!isYouTubeFamilyHost()) return null;
   try {
-    const box = document.querySelector(YT_CONTROLS_SELECTOR);
+    const scope = playerScopeForVideo(video);
+    if (!scope) return null;
+    const box = scope.querySelector(YT_CONTROLS_SELECTOR);
     if (!box || !box.isConnected) return null;
     const r = box.getBoundingClientRect();
     return r.width > 0 && r.height > 0 ? box : null;   // مستطيلٌ صفريّ لا يُبنى عليه
@@ -2077,9 +2089,9 @@ function speedBtnHostSlot() {
 }
 
 // **الموضع يُعاد حسمه عند كل إظهار** — فالشريط قد يُبنى بعد أوّل ظهور.
-function placeSpeedBtn() {
+function placeSpeedBtn(video) {
   if (!vzSpeedBtn) return "none";
-  const slot = speedBtnHostSlot();
+  const slot = speedBtnHostSlot(video || speedBtnVideo());
   if (slot) {
     if (vzSpeedBtn.parentElement !== slot) slot.insertBefore(vzSpeedBtn, slot.firstChild);
     vzSpeedBtn.classList.add("vzInBar");
@@ -2097,13 +2109,19 @@ function speedBtnPlacement() {
 }
 
 function setSpeedBtnShown(on) {
+  let video = null;
   if (on) {
-    const video = speedBtnVideo();
+    video = speedBtnVideo();
     if (!video) return;            // لا فيديو ⇒ لا زرّ، وهو الصواب
-    ensureVideoOverlay(video);     // ⭐ يضمن عنصره قبل أن يطلبه
+    // ── #94 — **الشرط الموجب: فيديوٌ يملك أدواته** ─────────────────────────
+    // ⚠️ **إخفاءٌ لا `return`:** المؤشّر ينتقل من مشغّلٍ حقيقيّ إلى معاينة **بلا
+    // أن يمرّ سكون**، فلو خرجنا صامتين لبقي الزرّ معروضاً فوقها — وهو العَرَض
+    // نفسه الذي نعالجه.
+    if (!videoOwnsControls(video)) on = false;
+    else ensureVideoOverlay(video);   // ⭐ يضمن عنصره قبل أن يطلبه
   }
   if (!vzSpeedBtn) return;
-  if (on) { placeSpeedBtn(); syncSpeedBtnLabel(); }
+  if (on) { placeSpeedBtn(video); syncSpeedBtnLabel(video); }
   vzSpeedBtn.classList.toggle("vzHidden", !on);
   if (on) startOverlayTracking();
 }
@@ -3781,6 +3799,114 @@ function nearestPlayerAncestor(video) {
     el = el.parentElement;
   }
   return null;
+}
+
+// ── #94 · #96 — «فيديوٌ يملك أدواته»: نطاقُ المشغّل، ثمّ أدواتُه ─────────────
+// 🎯 **حجّة البند بنصّ المالك (قرار 64):** **«المضيف نفسه هو من أخفى أدواته،
+// فامتناعُنا موافقةٌ له لا اجتهادٌ منّا.»** ⇒ **السؤال «أأراد المضيف مشغّلاً
+// هنا؟» لا «أهذي معاينة؟»** — والثاني يستدعي محدِّد موقعٍ يموت، والأوّل يُقرأ من
+// الصفحة نفسها. **والحكم على الفيديو لا على الصفحة**: صفحةٌ واحدة تحمل الاثنين.
+//
+// ⚠️ **ولا يُستهلك حكم #58 هنا (قرار 65):** `nearestPlayerAncestor` بُني ليجد **ما
+// يُكبَّر** — **أقرب** سلفٍ **يملؤه الفيديو** — **وشريطُ التحكّم يقع خارج ما يملؤه
+// الفيديو بطبعه**. **ومقيسٌ على فيميو**: أعطى `div.vp-video` بـ**صفر أداة**،
+// **وإحدى عشرة أداةً ومنزلقٌ على بُعد مستوىً واحد** في `div#player` بنسبة **×1**.
+// ⇒ **«أين الفيديو؟» ليست «أين مشغّلُه؟»**، فلهذا السؤال نطاقُه.
+//
+// **النطاق: الاسم المعروف أوّلاً، وإلّا أبعدُ سلفٍ يشبه مشغّلاً ما لم تكبر مساحتُه.**
+// ⭐ **والحدّ حارسٌ لا مُميِّز — وهذي الجملة تبقى بنصّها (قرار 65):**
+// **×1.2 لم يقلب حكم أيٍّ من الخمسة المقيسة، وسلسلةُ المعاينة صفرٌ في مستوياتها
+// الثمانية (حتى ×0.98) — فالتوسيع أُجيز بالقياس لا بالحاجة.**
+// **ورقمٌ يقلب حكماً يلزمه قياسُه هو، ولا يُمرَّر في ركاب غيره.**
+const VZ_PLAYER_SCOPE_MAX_AREA = 1.2;
+
+function playerScopeForVideo(video) {
+  if (!video) return null;
+  // الاسم المعروف يفوز أوّلاً: `#movie_player` و`#inline-preview-player` كلاهما
+  // في القائمة، **فالتفريق بأدواتهما لا بأسمائهما**.
+  const known = video.closest?.(KNOWN_PLAYER_WRAPPER_SELECTOR);
+  if (known) return known;
+  const vr = video.getBoundingClientRect();
+  const vArea = Math.max(1, vr.width * vr.height);
+  let el = video.parentElement, best = null;
+  for (let i = 0; i < FS_CONTAINER_MAX_DEPTH && el &&
+       el !== document.body && el !== document.documentElement; i++) {
+    if (looksLikePlayer(el)) {
+      const r = el.getBoundingClientRect();
+      // **أبعدُ مطابقٍ لا أقربه** — والحدّ يمنع صعوداً إلى الصفحة.
+      if (r.width > 0 && r.height > 0 && r.width * r.height <= vArea * VZ_PLAYER_SCOPE_MAX_AREA) best = el;
+    }
+    el = el.parentElement;
+  }
+  return best;
+}
+
+// «مرئيّ» **يُشتقّ من شرطه المقيس ولا يسبقه** (العمى الأوّل، `S7`): مستطيلٌ غير
+// صفريّ **مع** `display` و`visibility` **وشفافيةٍ فعّالة عبر السلسلة** (قرار 48):
+// ابنٌ يقرأ `opacity:1` وسلفُه `0` — فالرؤية على السلسلة لا على العنصر.
+function isVisibleEl(el) {
+  if (!el || el.nodeType !== 1) return false;
+  const r = el.getBoundingClientRect();
+  if (!(r.width > 0 && r.height > 0)) return false;
+  let style;
+  try { style = getComputedStyle(el); } catch { return false; }
+  if (!style || style.display === "none" || style.visibility === "hidden") return false;
+  let n = el;
+  while (n && n.nodeType === 1) {
+    let s;
+    try { s = getComputedStyle(n); } catch { return false; }
+    if (!s || Number(s.opacity) === 0) return false;
+    n = n.parentElement;
+  }
+  return true;
+}
+
+// **العتبة `≥1` مقيسة لا مُقدَّرة:** فيميو ينزل بالسكون إلى **زرٍّ واحد** (11 ⇒ 1)،
+// فعتبةٌ أعلى كانت ستقتل الزرَّ على مضيفٍ يعمل اليوم.
+// ⚠️ **والمحدِّد هو المقيس نفسه حرفاً**: ما لم يُقَس لا يُضاف، ولو بدا معقولاً.
+const PLAYER_CONTROL_SELECTOR =
+  'button,[role="button"],a[href],[role="slider"],input[type="range"],[aria-valuenow],progress';
+
+function scopeShowsOwnControls(scope) {
+  if (!scope) return false;
+  let list;
+  try { list = scope.querySelectorAll(PLAYER_CONTROL_SELECTOR); } catch { return false; }
+  for (const el of list) {
+    // ⚠️ **زرُّنا لا يُثبت المضيف** (قرار 66 — وهو عين ما أعمى مِجَسَّنا أوّل مرّة).
+    if (isOwnElement(el)) continue;
+    if (isVisibleEl(el)) return true;
+  }
+  return false;
+}
+
+// ── التثبيت (قرار المالك) — **الحكم يُتّخذ مرّةً عند أوّل ظهورٍ للأدوات** ──────
+// **مقيسٌ أن الشريط يتلاشى بالسكون**: تويتش **4 ⇒ 0** · `d.tube` **6 ⇒ 0** ·
+// فيميو **11 ⇒ 1**. ⇒ **فبلا تثبيتٍ يختفي زرٌّ يعمل اليوم بعد ستّ ثوانٍ من
+// السكون** — وذاك انحدارٌ يصنعه علاجُنا، أخطرُ من العطب الذي نعالجه.
+// **وجوابُ «أهذا مشغّلٌ حقيقيّ؟» لا يتغيّر بحركة الفأرة، والسكون يُخفي الأدوات
+// ولا يُلغي المشغّل.**
+// ⚠️ **والموجب وحده يُثبَّت**: السالب يُعاد سؤالُه في كل نشاط، فشريطٌ لم يظهر بعد
+// **يأخذ فرصته التالية** ولا يُحكم عليه مرّةً واحدة.
+// ⚠️ **ويُبطَل عند تبديل الفيديو أو إعادة بناء المشغّل** — المفتاح عنصرُ الفيديو
+// (فتبديلُه إبطالٌ بالبناء)، **والقيمة عنصرُ النطاق**: نطاقٌ جديد أو منزوعٌ من
+// الشجرة يُسقط التثبيت، **وإلّا حملنا حكماً عن عنصرٍ مضى**.
+const speedBtnControlsLatch = new WeakMap();   // video ⇒ scope الذي أثبت أدواته
+
+function videoOwnsControls(video) {
+  if (!video) return false;
+  const scope = playerScopeForVideo(video);
+  // **(ب) لا نطاق أصلاً ⇒ فيديو خام**: لا مشغّل هنا فلا أحد أخفى شيئاً — ولا
+  // شريط يخصّه. **وهو المسار الذي يُبقي الفيديو الصِرف عاملاً** (منصّة §9 وصفحة
+  // الرِكاز: `<video>` ابنٌ مباشر لـ`body` بلا حاوية ولا شريط).
+  if (!scope) return true;
+  const latched = speedBtnControlsLatch.get(video);
+  if (latched && latched === scope && scope.isConnected) return true;
+  // سمة `controls` أدواتُ المتصفّح نفسها — ظاهرةٌ للمستخدم وإن لم تكن في الشجرة.
+  if (video.controls === true || scopeShowsOwnControls(scope)) {
+    speedBtnControlsLatch.set(video, scope);
+    return true;
+  }
+  return false;
 }
 
 // ── البند #58 كومِت ب: تمديد الفيديو داخل الحاوية التي كبّرناها نحن ──────────
