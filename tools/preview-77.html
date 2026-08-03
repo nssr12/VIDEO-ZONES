@@ -15,7 +15,37 @@ summary em{font-style:normal;color:var(--mut);font-size:12px;background:#0e1218;
 .rule{color:var(--mut);font-size:12px;margin:0 0 10px;padding-inline-start:2px}
 .row{display:flex;align-items:flex-start;gap:10px;padding:7px 2px;border-top:1px solid #1e242c}
 .row:first-of-type{border-top:0}
-.row input{margin-top:5px;width:16px;height:16px;accent-color:var(--acc);flex:none}
+/* ── المفتاح المنزلق (Toggle) — **مظهرٌ على input[type=checkbox] نفسه** ────
+   ١) العنصر كما هو: يصله Tab والمسافة وقارئ الشاشة **بالبناء**، ولا نعيد بناء
+      ما يعطيه المتصفّح مجّاناً. (وهو سبب اشتراط <button> للتلميح: العنصر
+      الصحيح أوّلاً، والمظهر بعده.)
+   ٢) **الحالة تُقرأ بلا لون**: الموضع يختلف (المِقبض يمين/يسار) **والشكل يختلف**
+      (حدٌّ متقطّع ⇒ متّصل · ومسارٌ أجوف ⇒ مملوء). فمن لا يميّز اللون يفرّق.
+   ٣) **وحالةٌ ثالثة للمعطَّل**: المِقبض **في الوسط** — موضعٌ لا هو مطفأ ولا
+      مُشغَّل — مع حدٍّ منقّط ومؤشّر منع. **فـ«معطّل» لا يبدو «مطفأً»**، وهما
+      مختلفان في المعنى (حالة مدّة الصفر في #71).
+   ٤) وصفر تغيّر في القيم والمفاتيح والوسوم: مظهرٌ لا تخزين. */
+.row input[type=checkbox]{
+  -webkit-appearance:none;appearance:none;margin:3px 0 0;flex:none;cursor:pointer;
+  position:relative;width:40px;height:22px;border-radius:22px;
+  border:2px dashed #6b7684;background:transparent;
+  transition:background .12s linear,border-color .12s linear;
+}
+.row input[type=checkbox]::after{
+  content:"";position:absolute;top:3px;inset-inline-start:3px;
+  width:12px;height:12px;border-radius:50%;background:#8d99a8;
+  transition:inset-inline-start .12s ease,background .12s linear,transform .12s ease;
+}
+.row input[type=checkbox]:checked{
+  border-style:solid;border-color:var(--acc);background:var(--acc);
+}
+.row input[type=checkbox]:checked::after{ inset-inline-start:21px;background:#0b1017;transform:scale(1.15) }
+.row input[type=checkbox]:focus-visible{ outline:2px solid var(--acc);outline-offset:3px }
+.row input[type=checkbox]:disabled{
+  border-style:dotted;border-color:#4a525d;background:transparent;cursor:not-allowed;opacity:.75;
+}
+.row input[type=checkbox]:disabled::after{ inset-inline-start:12px;background:#4a525d;transform:scale(.8) }
+.row.off .lbl{color:var(--mut)}
 .lbl{flex:1}
 .star .lbl::after{content:"★";color:var(--star);margin-inline-start:7px;font-size:12px}
 .help{flex:none;width:22px;height:22px;border-radius:50%;border:1px solid var(--line);
@@ -27,6 +57,7 @@ summary em{font-style:normal;color:var(--mut);font-size:12px;background:#0e1218;
 .helpBody code{background:#161c24;padding:1px 5px;border-radius:5px;font-size:12px;direction:ltr;display:inline-block}
 .rename{align-items:center}
 .rename s{color:#7d8794}
+.why{color:var(--mut);font-size:12px}
 /* المُنزلقات والأرقام تبقى LTR عمداً — حدٌّ معروف مكتوب لا يُصلَح */
 .ltr{direction:ltr}
 </style></head>
@@ -37,14 +68,25 @@ summary em{font-style:normal;color:var(--mut);font-size:12px;background:#0e1218;
 الغرض <b>الحكم على الشكل والوسوم والشرح</b> قبل أن يُكتب سطر منطق.
 <br/>و<b>(!)</b> يُفتح <b>بالنقر وباللمس وبلوحة المفاتيح</b> (Tab ثمّ Enter/Space) ويُغلق بـEsc — لا بالتحويم وحده.</div>
 
+<details class="group" open><summary><span>حالات المفتاح المنزلق الثلاث</span><em>3</em></summary>
+      <p class="rule">تُرى لا تُوصف — والفرق بين الحالات في الموضع والشكل لا في اللون وحده</p>
+      <label class="row"><input type="checkbox" />
+        <span class="lbl">مطفأ — المِقبض في أوّل المسار، والحدّ <b>متقطّع</b> والمسار أجوف</span></label>
+      <label class="row"><input type="checkbox" checked />
+        <span class="lbl">مُشغَّل — المِقبض في آخر المسار، والحدّ <b>متّصل</b> والمسار مملوء</span></label>
+      <label class="row"><input type="checkbox" disabled />
+        <span class="lbl">معطَّل بسببٍ مكتوب — المِقبض <b>في الوسط</b>، والحدّ <b>منقّط</b>
+        <br/><span class="why">معطّلة الآن: مدّة «رقم الصوت» صفر، والشارتان تتشاركان المدّة نفسها.</span></span></label>
+</details>
+
 <details class="group" open><summary><span>ضوابط أُعيدت تسميتها</span><em>3</em></summary>
       <p class="rule">أسماءٌ أبهمت صاحب المشروع بنصّه — وما لم يفهمه لن يفهمه أحد</p>
       <div class="row rename">
-        <span class="lbl"><s>السرعة المفضّلة لزرّ السرعة</s> ⇐ اليوم<br/><b>سرعة نقرة الزرّ — والنقرة الثانية تُعيد 1x</b> ⇐ المقترح</span>
+        <span class="lbl"><s>السرعة المفضّلة لزرّ السرعة</s> ⇐ اليوم<br/><b>سرعة نقرة الزرّ</b> ⇐ المقترح</span>
         <button class="help" type="button" aria-expanded="false" aria-controls="h_speedButtonPreset"
-                aria-label="شرح: سرعة نقرة الزرّ — والنقرة الثانية تُعيد 1x">!</button>
+                aria-label="شرح: سرعة نقرة الزرّ">!</button>
       </div>
-      <p class="helpBody" id="h_speedButtonPreset" hidden>زرّ السرعة داخل المشغّل: نقرةٌ تنقلك إلى هذه السرعة، ونقرةٌ ثانية تُعيدك إلى العادية. والعجلة فوقه تتدرّج ±0.25 بلا نقر.</p>
+      <p class="helpBody" id="h_speedButtonPreset" hidden>زرّ السرعة داخل المشغّل: نقرةٌ تنقلك إلى هذه السرعة، <b>ونقرةٌ ثانية تُعيد 1x</b>. والعجلة فوقه تتدرّج ±0.25 بلا نقر.</p>
       <div class="row rename">
         <span class="lbl"><s>مهلة السكون قبل الإخفاء</s> ⇐ اليوم<br/><b>كم ينتظر قبل الإخفاء بعد أن تتوقّف الفأرة</b> ⇐ المقترح</span>
         <button class="help" type="button" aria-expanded="false" aria-controls="h_idleDuration"
@@ -64,11 +106,11 @@ summary em{font-style:normal;color:var(--mut);font-size:12px;background:#0e1218;
       <p class="rule">ما يظهر أعلى الصورة داخل المشغّل</p>
       <label class="row star">
         <input type="checkbox" />
-        <span class="lbl">إخفاء الشريط العلوي كلّه — العنوان والأزرار والتدرّج معاً</span>
+        <span class="lbl">إخفاء الشريط العلوي كلّه</span>
         <button class="help" type="button" aria-expanded="false"
-                aria-controls="h_top_section" aria-label="شرح: إخفاء الشريط العلوي كلّه — العنوان والأزرار والتدرّج معاً">!</button>
+                aria-controls="h_top_section" aria-label="شرح: إخفاء الشريط العلوي كلّه">!</button>
       </label>
-      <p class="helpBody" id="h_top_section" hidden>يُخفي الشريط العلوي كاملاً، <b>فيُغني عن بقيّة مفاتيح هذه المجموعة</b>: تأشيرها معه لا يزيد شيئاً. ⚠️ يُخفي أكثر ممّا يسمّيه اسمُه القديم «Top: Whole section».</p>
+      <p class="helpBody" id="h_top_section" hidden>يشمل العنوان والأزرار والتدرّج معاً. <b>فيُغني عن بقيّة مفاتيح هذه المجموعة</b>: تأشيرها معه لا يزيد شيئاً. ⚠️ يُخفي أكثر ممّا يسمّيه اسمُه القديم «Top: Whole section».</p>
       <label class="row">
         <input type="checkbox" />
         <span class="lbl">إخفاء عنوان الفيديو واسم القناة</span>
@@ -233,13 +275,20 @@ summary em{font-style:normal;color:var(--mut);font-size:12px;background:#0e1218;
       <p class="helpBody" id="h_fullscreen_button" hidden>⚠️ إخفاؤه لا يمنع ملء الشاشة بمفتاح <code>f</code> ولا بأوامر الإضافة.</p>
     </details>
     <details class="group" open>
-      <summary><span>طبقات فوق الصورة</span><em>10</em></summary>
-      <p class="rule">ما يُرسم فوق الصورة نفسها، دائماً أو في حالٍ بعينها</p>
+      <summary><span>طبقات فوق الصورة وحولها</span><em>12</em></summary>
+      <p class="rule">ما يُرسم فوق الصورة أو حولها ولا يكون زرّاً — دائماً أو في حالٍ بعينها</p>
+      <label class="row">
+        <input type="checkbox" />
+        <span class="lbl">إخفاء التوهّج المحيط بالمشغّل</span>
+        <button class="help" type="button" aria-expanded="false"
+                aria-controls="h_ambient_mode" aria-label="شرح: إخفاء التوهّج المحيط بالمشغّل">!</button>
+      </label>
+      <p class="helpBody" id="h_ambient_mode" hidden>الإضاءة الملوّنة التي تتسرّب من حواف الصورة إلى الصفحة (Ambient mode).</p>
       <label class="row star">
         <input type="checkbox" />
-        <span class="lbl">إخفاء الإجراءات السريعة في ملء الشاشة</span>
+        <span class="lbl">إخفاء الإجراءات السريعة</span>
         <button class="help" type="button" aria-expanded="false"
-                aria-controls="h_quick_actions" aria-label="شرح: إخفاء الإجراءات السريعة في ملء الشاشة">!</button>
+                aria-controls="h_quick_actions" aria-label="شرح: إخفاء الإجراءات السريعة">!</button>
       </label>
       <p class="helpBody" id="h_quick_actions" hidden>⚠️ <b>في ملء الشاشة وحدها</b>، ومقيسةٌ على مشغّل 2025 «دلهي»: عنقود الإعجاب والمشاركة أسفل يمين الصورة. <b>وصفرُها على صفحة watch صفرٌ من غياب لا من سلامة</b>.</p>
       <label class="row">
@@ -258,11 +307,11 @@ summary em{font-style:normal;color:var(--mut);font-size:12px;background:#0e1218;
       <p class="helpBody" id="h_suggested_action" hidden>الشارة التي تدعوك للاشتراك أو لفتح رابط أثناء التشغيل.</p>
       <label class="row star">
         <input type="checkbox" />
-        <span class="lbl">إخفاء التعليقات التوضيحية — <b>دون</b> علامة القناة</span>
+        <span class="lbl">إخفاء التعليقات التوضيحية</span>
         <button class="help" type="button" aria-expanded="false"
-                aria-controls="h_annotations" aria-label="شرح: إخفاء التعليقات التوضيحية — **دون** علامة القناة">!</button>
+                aria-controls="h_annotations" aria-label="شرح: إخفاء التعليقات التوضيحية">!</button>
       </label>
-      <p class="helpBody" id="h_annotations" hidden>⚠️ <b>الاستثناء مقيس لا احتياطيّ</b> (#67): علامة القناة عنصرٌ <b>يحمل الصنفين معاً</b>، فكان هذا المفتاح يُخفيها ومفتاحُ العلامة لا يُخفي شيئاً. <b>واستُثنيت هنا صراحةً</b>. ⚠️ <b>وحالُ التعليقات نفسها لم تُنتَج</b>: الحاوية قِيست فارغة، فلا يُوعَد بأثر.</p>
+      <p class="helpBody" id="h_annotations" hidden><b>دون علامة القناة</b> — والاستثناء مقيس لا احتياطيّ (#67): علامة القناة عنصرٌ <b>يحمل الصنفين معاً</b>، فكان هذا المفتاح يُخفيها ومفتاحُ العلامة لا يُخفي شيئاً. <b>واستُثنيت هنا صراحةً</b>. ⚠️ <b>وحالُ التعليقات نفسها لم تُنتَج</b>: الحاوية قِيست فارغة، فلا يُوعَد بأثر.</p>
       <label class="row">
         <input type="checkbox" />
         <span class="lbl">إخفاء البطاقات وزرّها</span>
@@ -298,11 +347,18 @@ summary em{font-style:normal;color:var(--mut);font-size:12px;background:#0e1218;
                 aria-controls="h_large_play_button" aria-label="شرح: إخفاء زرّ التشغيل الكبير وسط الصورة">!</button>
       </label>
       <p class="helpBody" id="h_large_play_button" hidden>الزرّ الكبير الذي يظهر قبل التشغيل أو بعد الإيقاف.</p>
+      <label class="row">
+        <input type="checkbox" />
+        <span class="lbl">إخفاء دوّامة التحميل</span>
+        <button class="help" type="button" aria-expanded="false"
+                aria-controls="h_spinner" aria-label="شرح: إخفاء دوّامة التحميل">!</button>
+      </label>
+      <p class="helpBody" id="h_spinner" hidden>الدائرة الدوّارة أثناء انتظار المقطع. ⚠️ إخفاؤها <b>لا يسرّع التحميل</b> — تُخفي الإشارة لا السبب.</p>
       <label class="row star">
         <input type="checkbox" />
-        <span class="lbl">إخفاء «مرّر للتفاصيل» وشبكة «مزيد من الفيديوهات» في ملء الشاشة</span>
+        <span class="lbl">إخفاء لوحة «مزيد من الفيديوهات» في ملء الشاشة</span>
         <button class="help" type="button" aria-expanded="false"
-                aria-controls="h_fullscreen_scroll_arrow" aria-label="شرح: إخفاء «مرّر للتفاصيل» وشبكة «مزيد من الفيديوهات» في ملء الشاشة">!</button>
+                aria-controls="h_fullscreen_scroll_arrow" aria-label="شرح: إخفاء لوحة «مزيد من الفيديوهات» في ملء الشاشة">!</button>
       </label>
       <p class="helpBody" id="h_fullscreen_scroll_arrow" hidden>⚠️ <b>الاسم القديم يَعِد بما لا يقع</b>: قِيس أن لوحة التعليم <code>.ytp-fullerscreen-edu-button</code> <b>لم تُنتَج حالُها</b> (تظهر مرّة واحدة لمستخدم). <b>والعامل فعلاً</b> هو شبكة «مزيد من الفيديوهات»، مقيسةً مرئيةً 800×600 في ملء الشاشة.</p>
     </details>
@@ -311,43 +367,25 @@ summary em{font-style:normal;color:var(--mut);font-size:12px;background:#0e1218;
       <p class="rule">ما يومض لحظةً وسط الصورة ثمّ يخبو (#62)</p>
       <label class="row star">
         <input type="checkbox" />
-        <span class="lbl">إخفاء وميض النصّ وسط الشاشة — الصوت <b>والسرعة معاً</b></span>
+        <span class="lbl">إخفاء وميض النصّ وسط الشاشة</span>
         <button class="help" type="button" aria-expanded="false"
-                aria-controls="h_bezel_text" aria-label="شرح: إخفاء وميض النصّ وسط الشاشة — الصوت **والسرعة معاً**">!</button>
+                aria-controls="h_bezel_text" aria-label="شرح: إخفاء وميض النصّ وسط الشاشة">!</button>
       </label>
-      <p class="helpBody" id="h_bezel_text" hidden>⚠️ <b>لا ينفصلان</b>: قِيس (#62) أن يوتيوب يعرض «0%» و«100%» و«1.25x» و«1x» <b>في العائلة نفسها</b>. فمن أراد كتم وميض السرعة <b>فقد وميض الصوت معه</b>. ⚠️ وشارة السرعة عندنا (#71) <b>لا يومض لها يوتيوب أصلاً</b> — قِيس أن الكتابة المباشرة لا تُنتج وميضاً.</p>
+      <p class="helpBody" id="h_bezel_text" hidden><b>الصوت والسرعة معاً — ولا ينفصلان</b>: قِيس (#62) أن يوتيوب يعرض «0%» و«100%» و«1.25x» و«1x» <b>في العائلة نفسها</b>. فمن أراد كتم وميض السرعة <b>فقد وميض الصوت معه</b>. ⚠️ وشارة السرعة عندنا (#71) <b>لا يومض لها يوتيوب أصلاً</b> — قِيس أن الكتابة المباشرة لا تُنتج وميضاً.</p>
       <label class="row star">
         <input type="checkbox" />
-        <span class="lbl">إخفاء وميض الأيقونة ذات النصّ — الصوت والسرعة</span>
+        <span class="lbl">إخفاء وميض الأيقونة ذات النصّ</span>
         <button class="help" type="button" aria-expanded="false"
-                aria-controls="h_bezel_icon_valued" aria-label="شرح: إخفاء وميض الأيقونة ذات النصّ — الصوت والسرعة">!</button>
+                aria-controls="h_bezel_icon_valued" aria-label="شرح: إخفاء وميض الأيقونة ذات النصّ">!</button>
       </label>
-      <p class="helpBody" id="h_bezel_icon_valued" hidden>⚠️ العائلة نفسها في #62: الأيقونة التي يرافقها رقم أو معامل سرعة.</p>
+      <p class="helpBody" id="h_bezel_icon_valued" hidden><b>الصوت والسرعة</b> — العائلة نفسها في #62: الأيقونة التي يرافقها رقم أو معامل سرعة.</p>
       <label class="row star">
         <input type="checkbox" />
-        <span class="lbl">إخفاء وميض الأيقونة بلا نصّ — التشغيل والإيقاف <b>والتقديم والإرجاع</b></span>
+        <span class="lbl">إخفاء وميض الأيقونة بلا نصّ</span>
         <button class="help" type="button" aria-expanded="false"
-                aria-controls="h_bezel_icon_plain" aria-label="شرح: إخفاء وميض الأيقونة بلا نصّ — التشغيل والإيقاف **والتقديم والإرجاع**">!</button>
+                aria-controls="h_bezel_icon_plain" aria-label="شرح: إخفاء وميض الأيقونة بلا نصّ">!</button>
       </label>
-      <p class="helpBody" id="h_bezel_icon_plain" hidden>⚠️ <b>الأربعة معاً</b>: قِيسا في العائلة نفسها فلا تنفصل. <b>وتغيير الجودة لا يومض أصلاً</b> — قِيس <code>bezel 0×0</code>.</p>
-    </details>
-    <details class="group" open>
-      <summary><span>حول المشغّل وحالة التحميل</span><em>2</em></summary>
-      <p class="rule">ما ليس زرّاً ولا طبقةً دائمة: التوهّج خارج الإطار، ومؤشّر التحميل</p>
-      <label class="row">
-        <input type="checkbox" />
-        <span class="lbl">إخفاء التوهّج المحيط بالمشغّل</span>
-        <button class="help" type="button" aria-expanded="false"
-                aria-controls="h_ambient_mode" aria-label="شرح: إخفاء التوهّج المحيط بالمشغّل">!</button>
-      </label>
-      <p class="helpBody" id="h_ambient_mode" hidden>الإضاءة الملوّنة التي تتسرّب من حواف الصورة إلى الصفحة (Ambient mode).</p>
-      <label class="row">
-        <input type="checkbox" />
-        <span class="lbl">إخفاء دوّامة التحميل</span>
-        <button class="help" type="button" aria-expanded="false"
-                aria-controls="h_spinner" aria-label="شرح: إخفاء دوّامة التحميل">!</button>
-      </label>
-      <p class="helpBody" id="h_spinner" hidden>الدائرة الدوّارة أثناء انتظار المقطع. ⚠️ إخفاؤها <b>لا يسرّع التحميل</b> — تُخفي الإشارة لا السبب.</p>
+      <p class="helpBody" id="h_bezel_icon_plain" hidden><b>التشغيل والإيقاف والتقديم والإرجاع — الأربعة معاً</b>: قِيسا في العائلة نفسها فلا تنفصل. <b>وتغيير الجودة لا يومض أصلاً</b> — قِيس <code>bezel 0×0</code>.</p>
     </details>
 </div>
 <script>

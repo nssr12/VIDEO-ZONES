@@ -81,6 +81,17 @@ const renamedHtml = RENAMED.map((r) => `      <div class="row rename">
       </div>
       <p class="helpBody" id="h_${r.id}" hidden>${rich(r.help)}</p>`).join("\n");
 
+// ── الحالات الثلاث معروضةً — **تُرى لا تُوصف** ─────────────────────────────
+// ⚠️ **والثالثة هي المقصودة**: «معطّل بسببٍ مكتوب» **ليس «مطفأً»**. والحالة
+// الحقيقية من #71: مدّة رقم الصوت صفر ⇒ شارة السرعة **تُعطَّل ويُكتب سببها**.
+const statesHtml = `      <label class="row"><input type="checkbox" />
+        <span class="lbl">مطفأ — المِقبض في أوّل المسار، والحدّ <b>متقطّع</b> والمسار أجوف</span></label>
+      <label class="row"><input type="checkbox" checked />
+        <span class="lbl">مُشغَّل — المِقبض في آخر المسار، والحدّ <b>متّصل</b> والمسار مملوء</span></label>
+      <label class="row"><input type="checkbox" disabled />
+        <span class="lbl">معطَّل بسببٍ مكتوب — المِقبض <b>في الوسط</b>، والحدّ <b>منقّط</b>
+        <br/><span class="why">معطّلة الآن: مدّة «رقم الصوت» صفر، والشارتان تتشاركان المدّة نفسها.</span></span></label>`;
+
 const stars = CURRENT.filter((c) => LABELS[c.key].measured).length;
 
 const html = `<!doctype html>
@@ -100,7 +111,37 @@ summary em{font-style:normal;color:var(--mut);font-size:12px;background:#0e1218;
 .rule{color:var(--mut);font-size:12px;margin:0 0 10px;padding-inline-start:2px}
 .row{display:flex;align-items:flex-start;gap:10px;padding:7px 2px;border-top:1px solid #1e242c}
 .row:first-of-type{border-top:0}
-.row input{margin-top:5px;width:16px;height:16px;accent-color:var(--acc);flex:none}
+/* ── المفتاح المنزلق (Toggle) — **مظهرٌ على input[type=checkbox] نفسه** ────
+   ١) العنصر كما هو: يصله Tab والمسافة وقارئ الشاشة **بالبناء**، ولا نعيد بناء
+      ما يعطيه المتصفّح مجّاناً. (وهو سبب اشتراط <button> للتلميح: العنصر
+      الصحيح أوّلاً، والمظهر بعده.)
+   ٢) **الحالة تُقرأ بلا لون**: الموضع يختلف (المِقبض يمين/يسار) **والشكل يختلف**
+      (حدٌّ متقطّع ⇒ متّصل · ومسارٌ أجوف ⇒ مملوء). فمن لا يميّز اللون يفرّق.
+   ٣) **وحالةٌ ثالثة للمعطَّل**: المِقبض **في الوسط** — موضعٌ لا هو مطفأ ولا
+      مُشغَّل — مع حدٍّ منقّط ومؤشّر منع. **فـ«معطّل» لا يبدو «مطفأً»**، وهما
+      مختلفان في المعنى (حالة مدّة الصفر في #71).
+   ٤) وصفر تغيّر في القيم والمفاتيح والوسوم: مظهرٌ لا تخزين. */
+.row input[type=checkbox]{
+  -webkit-appearance:none;appearance:none;margin:3px 0 0;flex:none;cursor:pointer;
+  position:relative;width:40px;height:22px;border-radius:22px;
+  border:2px dashed #6b7684;background:transparent;
+  transition:background .12s linear,border-color .12s linear;
+}
+.row input[type=checkbox]::after{
+  content:"";position:absolute;top:3px;inset-inline-start:3px;
+  width:12px;height:12px;border-radius:50%;background:#8d99a8;
+  transition:inset-inline-start .12s ease,background .12s linear,transform .12s ease;
+}
+.row input[type=checkbox]:checked{
+  border-style:solid;border-color:var(--acc);background:var(--acc);
+}
+.row input[type=checkbox]:checked::after{ inset-inline-start:21px;background:#0b1017;transform:scale(1.15) }
+.row input[type=checkbox]:focus-visible{ outline:2px solid var(--acc);outline-offset:3px }
+.row input[type=checkbox]:disabled{
+  border-style:dotted;border-color:#4a525d;background:transparent;cursor:not-allowed;opacity:.75;
+}
+.row input[type=checkbox]:disabled::after{ inset-inline-start:12px;background:#4a525d;transform:scale(.8) }
+.row.off .lbl{color:var(--mut)}
 .lbl{flex:1}
 .star .lbl::after{content:"★";color:var(--star);margin-inline-start:7px;font-size:12px}
 .help{flex:none;width:22px;height:22px;border-radius:50%;border:1px solid var(--line);
@@ -112,6 +153,7 @@ summary em{font-style:normal;color:var(--mut);font-size:12px;background:#0e1218;
 .helpBody code{background:#161c24;padding:1px 5px;border-radius:5px;font-size:12px;direction:ltr;display:inline-block}
 .rename{align-items:center}
 .rename s{color:#7d8794}
+.why{color:var(--mut);font-size:12px}
 /* المُنزلقات والأرقام تبقى LTR عمداً — حدٌّ معروف مكتوب لا يُصلَح */
 .ltr{direction:ltr}
 </style></head>
@@ -121,6 +163,11 @@ summary em{font-style:normal;color:var(--mut);font-size:12px;background:#0e1218;
 <div class="warn">⚠️ <b>معاينةٌ لا منتَج</b>: المربّعات لا تحفظ شيئاً ولا تقرأ تخزيناً ولا تؤثّر في الإضافة.
 الغرض <b>الحكم على الشكل والوسوم والشرح</b> قبل أن يُكتب سطر منطق.
 <br/>و<b>(!)</b> يُفتح <b>بالنقر وباللمس وبلوحة المفاتيح</b> (Tab ثمّ Enter/Space) ويُغلق بـEsc — لا بالتحويم وحده.</div>
+
+<details class="group" open><summary><span>حالات المفتاح المنزلق الثلاث</span><em>3</em></summary>
+      <p class="rule">تُرى لا تُوصف — والفرق بين الحالات في الموضع والشكل لا في اللون وحده</p>
+${statesHtml}
+</details>
 
 <details class="group" open><summary><span>ضوابط أُعيدت تسميتها</span><em>${RENAMED.length}</em></summary>
       <p class="rule">أسماءٌ أبهمت صاحب المشروع بنصّه — وما لم يفهمه لن يفهمه أحد</p>
