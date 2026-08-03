@@ -64,6 +64,8 @@ function makeFrame({ awake = true, value = "A" } = {}) {
     // ‏#64: البوّابة الواحدة يستدعيها flushReload عند إخفاء الشبكة
     extensionActive: () => true,
     remappingEnabled: () => true, hideOverlayNow: () => {},
+    // #76: `flushReload` تُنادي الاشتقاق بعد اكتمال المُحمِّلات — **مرساةٌ لا تأكيد**
+    refreshIdleConsumers: () => {},
     console
   };
   for (const fn of LOADERS) ctx[fn] = () => { st.loaders++; return Promise.resolve(); };

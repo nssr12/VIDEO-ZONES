@@ -83,6 +83,29 @@ console.log("\n[3] ⭐ الملكية بسمةٍ على العنصر، وتُح�
   check("[3] وعنصرٌ واحد يحملها اليوم", n === 1, `العدد ${n}`);
 }
 
+// ── [7] ⭐ #76 — المستهلك يضمن عنصره بنفسه، ولا يرث بناءً من جارٍ ──────────
+console.log("\n[7] ⭐ #76: يضمن عنصره بنفسه، ولا يرث بناءً من مسار المربّعات");
+{
+  const set = body("function setSpeedBtnShown(on)");
+  check("[7] `setSpeedBtnShown` تبني عنصرها قبل أن تطلبه",
+    !!set && /ensureVideoOverlay\(video\)/.test(set), set);
+  check("[7] والبناء **قبل** حارس `!vzSpeedBtn` لا بعده",
+    !!set && set.indexOf("ensureVideoOverlay") < set.indexOf("if (!vzSpeedBtn) return"), set);
+  check("[7] وبلا فيديو ⇒ لا زرّ (خروجٌ صريح لا انهيار)",
+    !!set && /if \(!video\) return;/.test(set), set);
+
+  // والنصّ يُزامَن من الموضع الواحد — لا من مسار الزرّ وحده
+  const rate = body("function setPlaybackRate(video, rate)");
+  check("[7] و`setPlaybackRate` تُزامن النصّ",
+    !!rate && /syncSpeedBtnLabel\(video\)/.test(rate), rate);
+  check("[7] وخلف مفتاح الزرّ فلا تُلمس DOM بلا سبب",
+    !!rate && /if \(speedButtonActive\(\)\) syncSpeedBtnLabel\(video\)/.test(rate), rate);
+
+  // ومواضع بناء الـoverlay صارت سبعة، وواحدها في مسار السكون
+  const n = (CODE.match(/ensureVideoOverlay\(/g) || []).length;
+  check("[7] ومواضع النداء سبعة (ستّةٌ قديمة + مسار السكون)", n === 7, `العدد ${n}`);
+}
+
 // ── [4] المؤشّر فوق زرّنا = نشاط ──────────────────────────────────────────
 console.log("\n[4] التحويم فوق الزرّ نشاطٌ — وإلا اختفى من تحت الفأرة");
 {

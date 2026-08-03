@@ -74,11 +74,15 @@ if (!SPEED_DEF || !SPEED_RUN) {
 // والعدّاد هنا **يُستعمل في القسم [6]** ليُبرهن أن الشارة تُنادى من الموضع
 // الواحد — فلا يصير الإعلان بديلاً صامتاً يُخفي أنها لا تُنادى أصلاً.
 const badgeCalls = [];
+const btnSyncs = [];
 let gateOpen = true;
 const ctx = {
   extensionActive: () => gateOpen,
   overlaySettings: { speedBadge: true },
-  showBadge: (video, channel, text) => badgeCalls.push({ channel, text, rate: video.playbackRate })
+  showBadge: (video, channel, text) => badgeCalls.push({ channel, text, rate: video.playbackRate }),
+  // #76: `setPlaybackRate` صارت تُزامن نصّ زرّ #72 من الموضع الواحد
+  speedButtonActive: () => ctx.__btn === true,
+  syncSpeedBtnLabel: (v) => btnSyncs.push(v.playbackRate)
 };
 vm.createContext(ctx);
 vm.runInContext(`${SPEED_DEF}
@@ -241,6 +245,21 @@ console.log("\n[6] #71 — الشارة من الموضع الواحد، بعد 
 
   const back = fire("ACTION:SPEED:+0.25");
   check("[6] وتعود بفتح البوّابتين", badgeCalls.length === 1 && back.playbackRate === 1.25, badgeCalls);
+
+  // ── #76: ونصّ زرّ #72 يُزامَن من الموضع الواحد لا من مسار الزرّ وحده ──────
+  ctx.__btn = true;
+  btnSyncs.length = 0;
+  fire("ACTION:SPEED:+0.25");
+  check("[6] وزرّ #72 يُزامَن من `setPlaybackRate` نفسها", btnSyncs.length === 1, btnSyncs);
+  check("[6] وبالقيمة بعد القصّ لا بالمطلوبة", btnSyncs[0] === 1.25, btnSyncs);
+  btnSyncs.length = 0;
+  fire("ACTION:SPEED:+9");
+  check("[6] وعند الحدّ يُزامَن بـ4 لا بـ10", btnSyncs[0] === 4, btnSyncs);
+  ctx.__btn = false;
+  btnSyncs.length = 0;
+  fire("ACTION:SPEED:+0.25");
+  check("[6] ومفتاح الزرّ مطفأ ⇒ صفر مزامنة (لا لمس DOM بلا سبب)",
+    btnSyncs.length === 0, btnSyncs);
 }
 
 // ── [5] الأرقام مطبوعة من التشغيل لا مكتوبة بيد (قرار 34) ───────────────────

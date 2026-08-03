@@ -1955,7 +1955,19 @@ function syncSpeedBtnLabel(video) {
   if (v) vzSpeedBtn.textContent = `${v.playbackRate || 1}x`;
 }
 
+// ── #76 — **كل مستهلكٍ يضمن ما يحتاجه بنفسه** ───────────────────────────────
+// **الدرس بنصّه: ميزةٌ تعتمد على مسارٍ لا تملكه.** كان الزرّ يحتاج عنصراً يبنيه
+// **مسارُ المربّعات** (`ensureVideoOverlay` لها ستّة مواضع نداء، **ولا واحد منها
+// في مسار السكون**)، فعلى صفحةٍ بلا ربطٍ لا يوجد — و`setSpeedBtnShown` كانت
+// **تخرج من أوّل سطر** فتموت الميزة صامتة. **والنقرة كانت تُصلحه لأنها المسار
+// الوحيد الذي يبني.**
+// ⇒ **ولا يرث مستهلكٌ بناءً من جارٍ قد لا يمرّ** (قاعدة المالك 2026-08-02).
 function setSpeedBtnShown(on) {
+  if (on) {
+    const video = speedBtnVideo();
+    if (!video) return;            // لا فيديو ⇒ لا زرّ، وهو الصواب
+    ensureVideoOverlay(video);     // ⭐ يضمن عنصره قبل أن يطلبه
+  }
   if (!vzSpeedBtn) return;
   if (on) syncSpeedBtnLabel();
   vzSpeedBtn.classList.toggle("vzHidden", !on);
@@ -2866,6 +2878,8 @@ async function flushReload() {
     loadMasterEnabled(data), loadGridAppearance(data), loadSubtitleSettings(data), loadYtAutoQualitySettings(data),
     loadYtShortsRedirectSetting(data), loadCleanPlayerSettings(data), loadIdleSettings(data)
   ]);
+  // #76: بعد اكتمال المُحمِّلات كلّها لا داخل أحدها — فالاشتقاق يقرأ حالةً تامّة
+  refreshIdleConsumers();
   triggerYtQuality();
   maybeRedirectShorts();
   // ‏#64: إطفاء الرئيسي يُخفي الشبكة كما يفعل إطفاء الريماب.
@@ -2882,7 +2896,7 @@ function runStartupSteps() {
   // ‏#64: الرئيسي يُقرأ مع الأوائل — بوّابة تُقرأ متأخّرة بوّابة مفتوحة لحظةً.
   startup("master", () => read.then(loadMasterEnabled));
   startup("zones", () => read.then(loadZoneSettings)); // ✅ مهم: تشغيل zones بعد refresh مباشرة
-  startup("overlay", () => read.then(loadOverlaySettings));
+  const overlayReady = startup("overlay", () => read.then(loadOverlaySettings));
   startup("blockedHosts", () => read.then(loadBlockedHosts));
   startup("soundDisplay", () => read.then(loadSoundDisplaySettings));
   startup("gridAppearance", () => read.then(loadGridAppearance));
@@ -2894,7 +2908,13 @@ function runStartupSteps() {
     read.then(loadYtShortsRedirectSetting), globalRulesReady, siteProfileReady
   ]).then(() => startYtShortsRedirect()));
   startup("cleanPlayer", () => read.then(loadCleanPlayerSettings));
-  startup("idle", () => read.then(loadIdleSettings));
+  // ⚠️ **التبعية صريحة لا ترتيبَ تسجيل** (#76): `refreshIdleConsumers` تشتقّ
+  // `idleWanted` من مفاتيح المستهلكين، **وهي في `overlaySettings`** — فلو استُؤنف
+  // هذا قبل ذاك لقُرئ المفتاح قبل أن يُكتب، **وبقي المحرّك مطفأً إلى أول تغيير
+  // إعدادات**. وكان يصحّ بترتيب المهامّ الدقيقة **مصادفةً لا بناءً**.
+  // والنمط هو نمط `ytShorts` أعلاه حرفياً: خطوةٌ تنتظر ما تعتمد عليه.
+  startup("idle", () => Promise.all([read.then(loadIdleSettings), overlayReady])
+    .then(refreshIdleConsumers));
   startup("boostReapply", startBoostReapply);
 }
 
@@ -3499,6 +3519,11 @@ function setPlaybackRate(video, rate) {
   if (!video) return false;
   video.playbackRate = Math.max(VZ_SPEED_MIN, Math.min(VZ_SPEED_MAX, Math.round(rate * 100) / 100));
   if (speedBadgeActive()) showBadge(video, "speed", `${video.playbackRate}x`);
+  // ⭐ #76 — والنصّ يُزامَن **من الموضع الواحد** لا من مسار الزرّ وحده. كان
+  // معلَّقاً على تحوّل `idle ⇒ active`، **فحركةٌ متّصلة لا تُعيد المزامنة**
+  // والنقرة تُعيدها لأنها تقع بعد أن سكن الزرّ. **والتحوّل نفسه صحيحٌ ورخيص —
+  // والعطب أن النصّ عُلِّق عليه، لا أن التحسين خاطئ** (قرار المالك).
+  if (speedButtonActive()) syncSpeedBtnLabel(video);
   return true;
 }
 
