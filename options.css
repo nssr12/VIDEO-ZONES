@@ -14,6 +14,7 @@
   --muted:#8a92a0;
   --muted-2:#5e6675;
   --accent:#ff4757;
+  --star:#ffcf5c;               /* #87 — كان يُستعمل ولا يُعرَّف، فتسقط النجمة إلى currentColor */
   --accent-soft:rgba(255,71,87,.14);
   --accent-glow:rgba(255,71,87,.35);
   --ok:#22c55e;
@@ -386,23 +387,30 @@ label{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:600;let
   width:12px;height:12px;border-radius:50%;background:#8d99a8;
   transition:inset-inline-start .12s ease,background .12s linear,transform .12s ease;
 }
+/* #87 — **اللون قناةٌ ثانية تُضاف، والفرق البنيويّ يبقى كما هو.**
+   ⛔ **والعلّة كانت عطباً لا ذوقاً (مقيس 2026-08-03):** `var(--acc)` مستعملة
+   **خمس مرّات وغيرُ معرَّفة إطلاقاً** — واللوحة تعرّف `--accent`. فكانت حالة
+   «مُشغَّل» **خلفيتُها شفافة وحدُّها أسود** (`rgb(0,0,0)` — سقوطُ `currentColor`)
+   على خلفيةٍ داكنة. ⇒ **«اللونان غير واضحين» لأن أحدهما لم يُرسَم أصلاً.**
+   ⚠️ **والحارس بنيويّ: `tools/test-css-vars.js` يُحمّر أي متغيّرٍ يُستعمل ولا
+   يُعرَّف** — فالخطأ يصير مستحيلاً لا مذكوراً (قرار 16ج). */
 .vzRow input[type=checkbox]:checked{
-  border-style:solid;border-color:var(--acc);background:var(--acc);
+  border-style:solid;border-color:var(--accent);background:var(--accent);
 }
 .vzRow input[type=checkbox]:checked::after{ inset-inline-start:21px;background:#0b1017;transform:scale(1.15) }
-.vzRow input[type=checkbox]:focus-visible{ outline:2px solid var(--acc);outline-offset:3px }
+.vzRow input[type=checkbox]:focus-visible{ outline:2px solid var(--accent);outline-offset:3px }
 .vzRow input[type=checkbox]:disabled{
   border-style:dotted;border-color:#4a525d;background:transparent;cursor:not-allowed;opacity:.75;
 }
 .vzRow input[type=checkbox]:disabled::after{ inset-inline-start:12px;background:#4a525d;transform:scale(.8) }
-.vzRow.off .vzLbl{color:var(--mut)}
+.vzRow.off .vzLbl{color:var(--muted)}
 .lbl{flex:1}
 .star .lbl::after{content:"★";color:var(--star);margin-inline-start:7px;font-size:12px}
-.help{flex:none;width:22px;height:22px;border-radius:50%;border:1px solid var(--line);
-  background:#0e1218;color:var(--mut);font-weight:700;cursor:pointer;line-height:1}
-.help:hover,.help:focus-visible{color:var(--acc);border-color:var(--acc);outline:none}
-.help[aria-expanded=true]{color:var(--acc);border-color:var(--acc)}
-.helpBody{margin:0 0 8px;padding:9px 12px;background:#0e1218;border:1px solid var(--line);
-  border-inline-start:3px solid var(--acc);border-radius:8px;color:#cdd7e3;font-size:13px}
+.help{flex:none;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);
+  background:#0e1218;color:var(--muted);font-weight:700;cursor:pointer;line-height:1}
+.help:hover,.help:focus-visible{color:var(--accent);border-color:var(--accent);outline:none}
+.help[aria-expanded=true]{color:var(--accent);border-color:var(--accent)}
+.helpBody{margin:0 0 8px;padding:9px 12px;background:#0e1218;border:1px solid var(--border);
+  border-inline-start:3px solid var(--accent);border-radius:8px;color:#cdd7e3;font-size:13px}
 .helpBody code{background:#161c24;padding:1px 5px;border-radius:5px;font-size:12px;direction:ltr;display:inline-block}
 .rename{align-items:center}
