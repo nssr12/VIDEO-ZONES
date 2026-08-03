@@ -85,6 +85,11 @@ const VISIBLE_FN = `(el) => {
 
 const BTN_STATE = `(() => {
   const vis = ${VISIBLE_FN};
+  // ⚠️ **الشفافية الفعّالة عبر السلاسل** — قِيس أن ابناً في شريط المضيف يقرأ
+  // \u0060opacity:1\u0060 بينما سلفُه \u00600\u0060: **فالرؤية على السلسلة لا على العنصر** (قرار 48).
+  const eff = (el) => { let o = 1, n = el;
+    while (n && n.nodeType === 1) { o *= Number(getComputedStyle(n).opacity); n = n.parentElement; }
+    return Math.round(o * 1000) / 1000; };
   const btn = document.querySelector(".vzSpeedBtn");
   const wrap = document.querySelector(".vzWrap");
   const v = document.querySelector("video");
@@ -96,8 +101,12 @@ const BTN_STATE = `(() => {
                  ? el.tagName + "." + el.className.trim().split(/\\s+/).join(".")
                  : el.tagName) : null;
   }
+  const inBar = !!(btn && btn.closest(".ytp-right-controls"));
   return {
     btn: b,
+    inBar,
+    hostSlot: !!document.querySelector(".ytp-right-controls"),
+    effOpacity: btn ? eff(btn) : null,
     wrapPointerEvents: wrap ? getComputedStyle(wrap).pointerEvents : null,
     wrapExists: !!wrap,
     hitAtBtnCenter: hit,
@@ -387,6 +396,21 @@ gate("ويزول بإطفاء مفتاحه", pos.steps.switchedOff?.btn?.visible
 }
 
 // ── #70 — النصف الثاني، ولا يُقاس إلا على المضيف ───────────────────────────
+{
+  // ── #85 — الموضع والسقوط، **والاسم يُحمّر حين يموت** ─────────────────────
+  const L = pos.steps.afterMove, Y = yt?.steps?.afterMove;
+  console.log("");
+  gate("محلياً (لا مضيف) ⇒ **سقوطٌ إلى الطبقة**", L?.inBar === false && L?.hostSlot === false,
+       `في الشريط=${L?.inBar} · الحاوية موجودة=${L?.hostSlot}`);
+  if (Y) {
+    gate("⭐ وعلى يوتيوب: الحاوية موجودة (**يُحمّر حين يموت الاسم**)", Y.hostSlot === true,
+         `.ytp-right-controls موجودة=${Y.hostSlot}`);
+    gate("⭐ والزرّ **داخل شريط المضيف** لا في طبقتنا", Y.inBar === true, `في الشريط=${Y.inBar}`);
+  } else {
+    console.log("   ⚪ #85 على المضيف لم يُقَس — يحتاج `--youtube`");
+  }
+}
+
 const bar = yt?.steps?.bar;
 if (!bar) {
   console.log("   ⚪ #70 لم يُقَس — يحتاج `--youtube` (والنصفان شرطٌ واحد)");

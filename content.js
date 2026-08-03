@@ -1869,7 +1869,11 @@ function focusInside(selector) {
 // وهي عليه: `getVideoUnderPointer` تُرجع `null` فوق الزرّ **بالتصميم** (علامة
 // الملكية تحجب مسار المربّعات)، فلو اكتفينا بها لعُدّ التحويم فوق زرّنا سكوناً.
 function pointerInsidePlayer(e) {
-  try { if (e?.target?.closest?.(".vzWrap")) return true; } catch {}
+  // ⚠️ **`.vzSpeedBtn` مذكورةٌ مع `.vzWrap` منذ #85:** الزرّ قد يعيش **داخل شريط
+  // المضيف** لا داخل غلافنا، **وعلامةُ الملكية تجعل `getVideoUnderPointer` تُرجع
+  // `null` فوقه بالتصميم** ⇒ **فبلا ذكره صراحةً يُقرأ التحويم عليه سكوناً**
+  // ويختفي من تحت الفأرة — وهو انحدار 12ب من بابٍ جديد.
+  try { if (e?.target?.closest?.(".vzWrap, .vzSpeedBtn")) return true; } catch {}
   return !!getVideoUnderPointer(e);
 }
 
@@ -2002,6 +2006,53 @@ function syncSpeedBtnLabel(video) {
 // **تخرج من أوّل سطر** فتموت الميزة صامتة. **والنقرة كانت تُصلحه لأنها المسار
 // الوحيد الذي يبني.**
 // ⇒ **ولا يرث مستهلكٌ بناءً من جارٍ قد لا يمرّ** (قاعدة المالك 2026-08-02).
+// ── #85 — **الزرّ في شريط المضيف، وسقوطٌ صريح إلى طبقتنا** ──────────────────
+// ⛔ **نقضٌ لقرار المالك 2 («الطبقة لا الحقن») — على الغرض لا على الحجّة.**
+// **الغرض:** زرٌّ **من** الشريط يظهر معه ويقف في صفّ أزراره — **والطبقة لا تعطيه
+// ذلك مهما نضجت**. **والحجّة لم تسقط:** محدِّدات المضيف تموت (11 من 59 · #68).
+// ⇒ ⭐ **وما بقي من الحجّة صمّم الشكل: يُحقن، وإن غاب الموضع سقط إلى الطبقة** —
+// **والطبقة مبنيّةٌ وتعمل فالسقوط مجّانيّ**، ومحدِّدٌ يموت **يُنقص الأناقة ولا
+// يُسقط الميزة**.
+//
+// ⚠️ **ولا حكم بنيويّ هنا (قرار المالك):** #65 نجح بنيوياً لأن «قابل للتمرير»
+// **تعريفُ المتصفّح**، **ولا نظير لـ«صفّ أزرار التحكّم»** — فالاسم لا مفرّ منه.
+// ⇒ **اسمٌ واحد بحدّه، لا قائمةَ مرشّحين:** قائمةٌ من ثلاثة **تموت واحداً واحداً
+// بلا أن يُحمّر شيء**، وذاك أسوأ من اسمٍ واحد معلوم الحدّ.
+//
+// ⚠️ **والسقوط سلوكُ المستخدم، والأحمر خبرُنا نحن — وهما شيئان:**
+// `bench-overlay-layer --youtube` **يُحمّر حين يموت الاسم**، فلا يسقط الزرّ
+// صامتاً ونحن لا نعلم.
+//
+// **والمقيس على مشغّلٍ حيّ 2026-08-03 قبل أن يُكتب سطر:** الحاوية **288×40** ·
+// **صفر إزالة** عبر إيقافٍ وقفزٍ وتشغيلٍ وقائمةٍ وملء شاشةٍ وخروج ·
+// **والشريط لا يُعاد بناؤه: العقدة نفسها** — **وملء الشاشة يَنقُل ولا يبني**.
+// ⇒ **فالثمن الذي حُذِّر منه يوم اخترنا الطبقة لم يقع، ومقيسٌ أنه لم يقع.**
+const YT_CONTROLS_SELECTOR = ".ytp-right-controls";
+
+function speedBtnHostSlot() {
+  if (!isYouTubeFamilyHost()) return null;
+  try {
+    const box = document.querySelector(YT_CONTROLS_SELECTOR);
+    if (!box || !box.isConnected) return null;
+    const r = box.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 ? box : null;   // مستطيلٌ صفريّ لا يُبنى عليه
+  } catch { return null; }
+}
+
+// **الموضع يُعاد حسمه عند كل إظهار** — فالشريط قد يُبنى بعد أوّل ظهور.
+function placeSpeedBtn() {
+  if (!vzSpeedBtn) return "none";
+  const slot = speedBtnHostSlot();
+  if (slot) {
+    if (vzSpeedBtn.parentElement !== slot) slot.insertBefore(vzSpeedBtn, slot.firstChild);
+    vzSpeedBtn.classList.add("vzInBar");
+    return "bar";
+  }
+  if (vzOverlay && vzSpeedBtn.parentElement !== vzOverlay) vzOverlay.appendChild(vzSpeedBtn);
+  vzSpeedBtn.classList.remove("vzInBar");
+  return "layer";
+}
+
 function setSpeedBtnShown(on) {
   if (on) {
     const video = speedBtnVideo();
@@ -2009,7 +2060,7 @@ function setSpeedBtnShown(on) {
     ensureVideoOverlay(video);     // ⭐ يضمن عنصره قبل أن يطلبه
   }
   if (!vzSpeedBtn) return;
-  if (on) syncSpeedBtnLabel();
+  if (on) { placeSpeedBtn(); syncSpeedBtnLabel(); }
   vzSpeedBtn.classList.toggle("vzHidden", !on);
   if (on) startOverlayTracking();
 }
@@ -2316,6 +2367,13 @@ const OVERLAY_CSS = `
       transition:opacity .12s linear;
     }
     .vzSpeedIcon{ width:24px; height:24px; flex:none; display:block; fill:#fff; }
+    /* #85 — داخل شريط المضيف: تُنزع زينةُ الطبقة ويُترك المقاس المقيس (40) */
+    .vzBtn.vzInBar{
+      position:static; right:auto; bottom:auto;
+      background:none; border:0; border-radius:0;
+      padding:0 6px; min-width:0; opacity:.9;
+    }
+    .vzBtn.vzInBar:hover{ background:none; opacity:1; }
     .vzSpeedNum{ font:700 13px/1 Arial, sans-serif; letter-spacing:.2px; }
     .vzBtn:hover{ background:rgba(0,0,0,.8); }
     .vzHidden{ display:none !important; }
