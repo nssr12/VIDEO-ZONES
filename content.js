@@ -1807,6 +1807,30 @@ function pointerInsideEl(el) {
          lastPointer.y >= r.top && lastPointer.y <= r.bottom;
 }
 
+// ── مُخبِرُ حالة المحرّك — **آلةُ قياسٍ لا علاج** (#86، 2026-08-04) ───────────
+// ⚠️ **وُلد من حدٍّ مقيس في الرِكاز، لا من رغبةٍ في تشخيص:** متغيّرات `let` في
+// أعلى سكربت المحتوى **لا تُقرأ** من `Runtime.evaluate` في عالم الإضافة —
+// **مقيس**: `typeof idleState === "undefined"` بينما `typeof pointerInsideEl
+// === "function"`. ⇒ **فالدوالّ تُقرأ والمتغيّرات لا**، وحالةُ المحرّك كانت
+// **تُستدلّ من أثرها** — **وأثرُنا وأثرُ المضيف متطابقان في العين** (قرار 48)،
+// فالاستدلال من الأثر **قال «اختفى» ولم يقل «من أخفاه»**.
+// ⇒ **دالّةٌ تقرأ ولا تكتب**: لا تُبدّل حالةً ولا تُنشئ عنصراً ولا تُطلق حدثاً،
+// **ولا يعتمد عليها سطرُ منتجٍ واحد** — تُحذف فلا يتغيّر سلوك.
+// **وتُنادى من عالم الإضافة**: في كونسول المتصفّح يُبدَّل السياق إلى اسم الإضافة.
+function vzIdleSnapshot() {
+  return {
+    held: idlePointerHeld,
+    state: idleState,
+    activityAt: idleLastActivityAt,
+    timerArmed: idleTimer != null,
+    wanted: idleWanted,
+    ms: idleMs,
+    pointer: { x: lastPointer.x, y: lastPointer.y },
+    fullscreen: document.fullscreenElement
+      ? (document.fullscreenElement.id || document.fullscreenElement.tagName) : null
+  };
+}
+
 // ⚠️ **مُطفأ لا يُتخطّى صامتاً** — **فيبقى إخفاؤه عالقاً بعد إطفاء مفتاحه**.
 // **حالةٌ تُترك على آخر ما كانت عليه هي حالةٌ لا يملك أحدٌ إخراجها**، فالتعافي
 // مبنيّ لا محروس. **وهذا النصف صحيحٌ ويبقى.**
