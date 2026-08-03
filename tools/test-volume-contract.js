@@ -26,7 +26,7 @@ function slice(from, to) {
 
 const CONTENT = fs.readFileSync("content.js", "utf8");
 const FRAMEWORK = slice("// ── البند #60 · قرار المالك 25", "// ── محوّل يوتيوب (#60 · قرار 25)");
-const ADAPTERS = slice("// ── محوّل يوتيوب (#60 · قرار 25)", "function runAction");
+const ADAPTERS = slice("// ── محوّل يوتيوب (#60 · قرار 25)", "function actionVideo");
 const VOL = slice("// Volume delta in percent", "// Speed: SET absolute value");
 const MUTE = slice("// Mute\n  if (action === \"ACTION:TOGGLE_MUTE\")", "// PiP");
 const BADGE = slice("function showVolumeIndicator(video) {", "// -------------------------------------------");
@@ -84,8 +84,8 @@ function buildWorld(host, hostModel, prepare) {
     ${ADAPTERS}
     ${BADGE.replace("function showVolumeIndicator(video) {",
         "function showVolumeIndicator(video) { __badge(video);")}
-    function runVolume(action, v) { const e = {}; const findVideoLoose = () => v; ${VOL} return false; }
-    function runMute(v) { const action = "ACTION:TOGGLE_MUTE"; const e = {}; const findVideoLoose = () => v; ${MUTE} return false; }
+    function runVolume(action, v) { const e = {}; const findVideoLoose = () => v; const actionVideo = (e) => e.__videoUnderPointer || findVideoLoose(e); ${VOL} return false; }
+    function runMute(v) { const action = "ACTION:TOGGLE_MUTE"; const e = {}; const findVideoLoose = () => v; const actionVideo = (e) => e.__videoUnderPointer || findVideoLoose(e); ${MUTE} return false; }
   `, Object.assign(ctx, { __badge: (v) => badges.push(null) }));
   // نلتقط نصّ الشارة من العنصر بعد أن تكتبه الدالة الحقيقية
   const readBadge = () => ctx.vzVolumeBadge.textContent || null;

@@ -87,7 +87,7 @@ const ctx = {
 vm.createContext(ctx);
 vm.runInContext(`${SPEED_DEF}
   function runSpeed(action, v) {
-    const e = {}; const findVideoLoose = () => v;
+    const e = {}; const findVideoLoose = () => v; const actionVideo = (e) => e.__videoUnderPointer || findVideoLoose(e);
     ${SPEED_RUN}
     return false;
   }`, ctx);

@@ -23,7 +23,7 @@ function slice(file, from, to) {
 const CONTENT = fs.readFileSync("content.js", "utf8");
 const ADAPTER = slice("content.js", "// ── البند #60 · قرار المالك 25", "// ── محوّل يوتيوب (#60 · قرار 25)");
 const VOL = slice("content.js", "// Volume delta in percent", "// Speed: SET absolute value");
-const YTAD = slice("content.js", "// ── محوّل يوتيوب (#60 · قرار 25)", "function runAction");
+const YTAD = slice("content.js", "// ── محوّل يوتيوب (#60 · قرار 25)", "function actionVideo");
 const MUTE = slice("content.js", "// Mute\n  if (action === \"ACTION:TOGGLE_MUTE\")", "// PiP");
 
 let pass = 0, fail = 0;
@@ -75,13 +75,13 @@ function makeWorld(host = "example.com", noPlayer = false) {
   vm.runInContext(`${ADAPTER}
     ${YTAD}
     function runVolume(action, v) {
-      const e = {}; const findVideoLoose = () => v;
+      const e = {}; const findVideoLoose = () => v; const actionVideo = (e) => e.__videoUnderPointer || findVideoLoose(e);
       ${VOL}
       return false;
     }
     function runMute(v) {
       const action = "ACTION:TOGGLE_MUTE";
-      const e = {}; const findVideoLoose = () => v;
+      const e = {}; const findVideoLoose = () => v; const actionVideo = (e) => e.__videoUnderPointer || findVideoLoose(e);
       ${MUTE}
       return false;
     }`, ctx);
@@ -353,7 +353,7 @@ console.log("\n[13] لا نسخة ثانية من التحقّق أو السقو
 
 console.log("\n[14] محوّل تويتش — المحدّد بالبنية لا بالاسم، واستثناء عناصرنا");
 {
-  const ADP = slice("content.js", "// ── عائلة «منزلق المضيف» (#60)", "function runAction");
+  const ADP = slice("content.js", "// ── عائلة «منزلق المضيف» (#60)", "function actionVideo");
   // ⚠️ معرّفات تويتش `player-volume-slider-<UUID>` وأصنافه `ScRangeInput-sc-…`
   // بصمات تتغيّر مع كل بناء. تسلّلُ أيٍّ منها إلى الكود **يُفشل البناء هنا**.
   check("لا UUID في كود المحوّلات",
@@ -381,7 +381,7 @@ console.log("\n[15] حصانة المدى — المحوّل يعمل على م�
   // ⚠️ **تناقض مقيس صار حصانة**: قِيس مدى تويتش **0..1** بينما قراءة المالك من
   // متصفّحه **0..100**، ولم يُحسم أيّهما السياق العام. فبدل أن نُرجّح، يُشغَّل
   // المحوّل على **الاثنين** ويُشترط نجاحه فيهما — والمدى يُقرأ وقت التنفيذ.
-  const ADP = slice("content.js", "// ── عائلة «منزلق المضيف» (#60)", "function runAction");
+  const ADP = slice("content.js", "// ── عائلة «منزلق المضيف» (#60)", "function actionVideo");
   const code = ADP.replace(/\/\/.*$/gm, "");
   check("لا رقم مدى محفوظ: لا 100 ولا 1 كافتراض",
     !/\bmax\s*=\s*(100|1)\b/.test(code) && !/\?\s*(100|1)\s*:/.test(code), "افتراض مدى");

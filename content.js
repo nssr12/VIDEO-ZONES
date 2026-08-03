@@ -3361,10 +3361,25 @@ hostAdapters.set("youtube.com", makeKeyStepAdapter({
   unmuteKey: "m"
 }));
 
+// ── الجذر الأوّل في #72 — **موضع اشتقاقٍ واحد لكل أوامر `runAction`** ──────
+// **المبدأ (قرار المالك): من يملك الحدث يعرف فيديوه، فلا يُعيد `runAction`
+// اشتقاق ما تسلّمه.** كان **2 من 8** فروعٍ تحترم المُمرَّر، والستّة تشتقّ —
+// **فيُهدَر ما حلّه المُنادي ويُعاد حسابه من المؤشّر**.
+// ⛔ **والعطب المقيس:** المؤشّر فوق زرّ السرعة ⇒ علامةُ الملكية ⇒
+// `BLOCKED_BY_LAYER` ⇒ `findVideoAtPoint` تُرجع `null` **عمداً** («الحدث ليس
+// لمسار المربّعات») ⇒ الفرع يقرؤها «لا فيديو هنا» ⇒ `return false`.
+// ⇒ ⭐ **علامة الملكية تحمي الزرّ من مسار المربّعات وتُعمي أمرَ الزرّ نفسه.**
+// **جذرٌ واحد كان يُسقط 14 و15 و16 و18 معاً**، ويُبقي 13 عاملةً (المؤشّر هناك على
+// الصورة لا على الزرّ). **وحارسه `tools/test-action-video.js`: فرعٌ يشتقّ بنفسه
+// يُحمّر المجموعة.**
+function actionVideo(e) {
+  return e.__videoUnderPointer || findVideoLoose(e);
+}
+
 function runAction(action, e) {
   // Play/Pause: فقط فيديو نفسه
   if (action === "ACTION:TOGGLE_PLAY") {
-    const video = e.__videoUnderPointer || findVideoLoose(e);
+    const video = actionVideo(e);
     if (!video) return false;
     togglePlay(video);
     return true;
@@ -3374,7 +3389,7 @@ function runAction(action, e) {
   if (action.startsWith("ACTION:SEEK:")) {
     const n = Number(action.split(":")[2]);
     if (isNaN(n)) return false;
-    const video = findVideoLoose(e);
+    const video = actionVideo(e);
     if (!video) return false;
     seek(video, n);
     return true;
@@ -3383,7 +3398,7 @@ function runAction(action, e) {
   // Fullscreen: loose (عشان Twitch overlays/iframes)
 if (action === "ACTION:TOGGLE_FULLSCREEN") {
   // ✅ لو Mouse2 جهّز لنا فيديو تحت المؤشر، استخدمه
-  const video = e.__videoUnderPointer || findVideoLoose(e);
+  const video = actionVideo(e);
   if (!video) return false;
 
   const t = nowMs();
@@ -3396,7 +3411,7 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
 
   // Mute
   if (action === "ACTION:TOGGLE_MUTE") {
-    const video = findVideoLoose(e);
+    const video = actionVideo(e);
     if (!video) return false;
     // الكتابة المباشرة كما هي حرفياً — والمحوّل يستدعيها نفسها عند السقوط،
     // فلا تُكتب مرتين ولا تتباعد نسختان.
@@ -3413,7 +3428,7 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
 
   // PiP
   if (action === "ACTION:TOGGLE_PIP") {
-    const video = findVideoLoose(e);
+    const video = actionVideo(e);
     if (!video) return false;
     const doc = document;
     if (doc.pictureInPictureElement) {
@@ -3437,7 +3452,7 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
   if (action.startsWith("ACTION:VOLUME:")) {
     const n = Number(action.split(":")[2]);
     if (isNaN(n)) return false;
-    const video = findVideoLoose(e);
+    const video = actionVideo(e);
     if (!video) return false;
     const delta = n / 100;
     // Mute state and level are two independent facts (audit #35): mute is never
@@ -3476,7 +3491,7 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
   if (action.startsWith("ACTION:SPEED:SET:")) {
     const n = Number(action.split(":")[3]);
     if (isNaN(n)) return false;
-    const video = findVideoLoose(e);
+    const video = actionVideo(e);
     if (!video) return false;
     return setPlaybackRate(video, n);
   }
@@ -3485,7 +3500,7 @@ if (action === "ACTION:TOGGLE_FULLSCREEN") {
   if (action.startsWith("ACTION:SPEED:")) {
     const n = Number(action.split(":")[2]);
     if (isNaN(n)) return false;
-    const video = findVideoLoose(e);
+    const video = actionVideo(e);
     if (!video) return false;
     return stepPlaybackRate(video, n);
   }

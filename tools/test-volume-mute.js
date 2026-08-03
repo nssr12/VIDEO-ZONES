@@ -46,7 +46,7 @@ const runner = VOL && ADAPTER && vm.runInNewContext(
      ${ADAPTER}
      return function runVolume(action, v) {
        const e = {};
-       const findVideoLoose = () => v;
+       const findVideoLoose = () => v; const actionVideo = (e) => e.__videoUnderPointer || findVideoLoose(e);
        ${VOL}
        return false;
      };
