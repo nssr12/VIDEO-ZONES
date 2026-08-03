@@ -80,6 +80,13 @@ list — never hand-write either number anywhere. It exits non-zero on a failure
 understands and silently skips the rest prints a total smaller than the truth and
 still looks green.
 
+⚠️ **`node tools/bench-options-page.mjs` is a release gate, not an optimisation** (#77): the
+unit suite and 43 structural checks were all green while the settings page was **dead** —
+`node --check` passes an undefined *reference*. It asserts **zero console errors on load**,
+that **section navigation works**, and that **one control actually responds**. Run it after any
+change to `options.*` or `settings-ui.js`. `--witness` proves it sees: it breaks the page
+deliberately once, confirms red, and restores the file.
+
 `tools/bench-*.mjs` and `repro-*.mjs` need a real Chrome and load the extension
 through `tools/ext-harness.mjs` (`Extensions.loadUnpacked` over CDP —
 `--load-extension` was measured to silently load nothing on Chrome 150). Every

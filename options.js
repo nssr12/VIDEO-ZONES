@@ -703,6 +703,29 @@ function renderOverlayTiming(settings) {
   syncSpeedBadgeRow(timingValueOf(settings, "volumeDuration"));
 }
 
+// ── #71 — المربّع يُعطَّل **بسببٍ مكتوب**، ولا يُترك يكذب ────────────────────
+// شارة السرعة **ترث `volumeAutoHideMs`** (لا مفتاح مدّة ثانٍ)، **ومن ثَمّ `0`
+// تعني «لا شارة» للقناتين معاً**. فضابطٌ يُضغط ولا يفعل شيئاً **انحدارٌ** (#24) —
+// يُعطَّل **ويقول لماذا**، وحالتُه المخزَّنة لا تُغيَّر من تحته.
+//
+// ⚠️ **وحُذفت هذه الدالّة سهواً في #77 فماتت الصفحة كلّها** (رمية داخل `init`
+// تقتل ما بعدها، فلم تُفتح حتى الأقسام التي لم تُمسّ). **والنحو مرّ عليها**:
+// `node --check` يفحص الصياغة لا المراجع وقت التشغيل. ⇒ الحارس الحقيقي
+// `tools/bench-options-page.mjs`: **صفر خطأ في الكونسول عند التحميل**.
+function syncSpeedBadgeRow(vol) {
+  const el = timingInputs.speedBadgeEnabled;
+  if (!el) return;
+  const off = Number(vol) <= 0;
+  el.disabled = off;
+  const body = $("help_speedBadgeEnabled");
+  const c = VZ_UI_TIMING.find((x) => x.id === "speedBadgeEnabled");
+  if (body && c) {
+    body.textContent = off
+      ? "معطّلة الآن: مدّة «رقم الصوت» صفر، والشارتان تتشاركان المدّة نفسها. ارفعها فوق الصفر لتعمل."
+      : c.help;
+  }
+}
+
 function renderGridAppearance(appearance) {
   const g = resolveGridAppearance(appearance);
   $("gridCellBg").value = g.cellBg;
