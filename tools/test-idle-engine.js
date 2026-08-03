@@ -168,9 +168,13 @@ console.log("\n[4] ⭐ المصيدة (٢): «النشاط يُقاس عند ا�
   for (const ev of ["timeupdate", "seeking", "seeked", "ratechange", "volumechange"]) {
     check(`[4] لا «${ev}» في الكود إطلاقاً`, !new RegExp(`["']${ev}["']`).test(CODE));
   }
-  // و`play`/`pause` قد تردان لأغراض أخرى — الشرط ألّا تُنادي المحرّك
+  // و`play`/`pause` قد تردان لأغراض أخرى — الشرط ألّا تُنادي المحرّك.
+  // ⚠️ **والعدد يُحدَّث عمداً مع كل مصدرٍ جديد، ولا يُرفع ليَمرّ:** المواضع
+  // الستّة هي — المؤشّر (`noteIdleFromPointerEvent`) · ملء الشاشة ·
+  // مفتاحٌ أصاب أمر المربّع · مفتاحٌ أصاب أمراً عامّاً · عجلة زرّ #72 · نقرته.
+  // **ومن زاد سابعاً يكتبه هنا بعد أن يسأل: أهو إدخالٌ أم أثرُ إدخال؟**
   const marks = (CODE.match(/markIdleActivity\(\)/g) || []).length;
-  check("[4] ومواضع نداء النشاط معدودة ومقصودة (٤)", marks === 4, `العدد ${marks}`);
+  check("[4] ومواضع نداء النشاط معدودة ومقصودة (٦)", marks === 6, `العدد ${marks}`);
   check("[4] ولا نداء من مستمع وسائط",
     !/addEventListener\("(play|pause|timeupdate|seeking|ratechange)"[\s\S]{0,120}markIdleActivity/.test(SRC));
 }

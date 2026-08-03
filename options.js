@@ -269,6 +269,8 @@ async function getSettings() {
   // بلا طلب**، فلا يرى من لم يطلبها حرفاً. الشكلان لا يُوحَّدان.
   if (typeof settings.overlay.speedBadge !== "boolean") settings.overlay.speedBadge = false;
   if (typeof settings.overlay.hideProgressBar !== "boolean") settings.overlay.hideProgressBar = false;
+  if (typeof settings.overlay.speedButton !== "boolean") settings.overlay.speedButton = false;
+  if (!(Number(settings.overlay.speedButtonPreset) > 0)) settings.overlay.speedButtonPreset = 2;
   // #70 · #72 — مهلة السكون: الحدّ الأدنى صريح، و«صفر» ليست إطفاءً
   settings.idle ||= {};
   if (typeof settings.idle.ms !== "number" || settings.idle.ms <= 0) settings.idle.ms = 2000;
@@ -616,6 +618,10 @@ function renderOverlayTiming(overlay) {
   $("speedBadgeEnabled").checked = overlay?.speedBadge === true;
   syncSpeedBadgeRow(vol);
   $("hideProgressBar").checked = overlay?.hideProgressBar === true;
+  $("speedButtonEnabled").checked = overlay?.speedButton === true;
+  const preset = Number(overlay?.speedButtonPreset) > 0 ? Number(overlay.speedButtonPreset) : 2;
+  $("speedButtonPreset").value = String(preset);
+  $("speedButtonPresetValue").textContent = `${preset}x`;
 }
 
 // #70 · #72 — مهلة السكون مشتركة بين المستهلكين، **ولا «صفر تعني مطفأ»**:
@@ -1041,6 +1047,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     s.overlay.hintEnabled = $("zoneHintEnabled").checked;
     s.overlay.speedBadge = $("speedBadgeEnabled").checked;
     s.overlay.hideProgressBar = $("hideProgressBar").checked;
+    s.overlay.speedButton = $("speedButtonEnabled").checked;
+    s.overlay.speedButtonPreset = Number($("speedButtonPreset").value);
     s.idle = { ms: Number($("idleDuration").value) };
     s.overlay.enabled = grid > 0 || vol > 0;
     await saveSettings(s);
@@ -1057,6 +1065,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("zoneHintEnabled").addEventListener("change", persistOverlayTiming);
   $("speedBadgeEnabled").addEventListener("change", persistOverlayTiming);
   $("hideProgressBar").addEventListener("change", persistOverlayTiming);
+  $("speedButtonEnabled").addEventListener("change", persistOverlayTiming);
+  $("speedButtonPreset").addEventListener("input", () => {
+    $("speedButtonPresetValue").textContent = `${Number($("speedButtonPreset").value)}x`;
+  });
+  $("speedButtonPreset").addEventListener("change", persistOverlayTiming);
   $("idleDuration").addEventListener("input", () => {
     $("idleDurationValue").textContent = `${(Number($("idleDuration").value) / 1000).toFixed(1)} ثانية`;
   });

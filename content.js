@@ -1586,6 +1586,16 @@ function videoFromStack(stack, x, y, blockScrollable) {
     // ⚠️ الترتيب مقصود: `elementsFromPoint` تُرجع الأعلى طلاءً أولاً والأسلاف
     // بعد أبنائها، فما يسبق الفيديو هنا **مرسومٌ فوقه** لا حاوٍ له. ولذلك لا
     // يُحجب مشغّلٌ بحاوية صفحة قابلة للتمرير: الفيديو يسبقها في الكومة.
+    // ── #72: **علامةٌ بنيوية تفرّق بين عناصرنا التي تملك وتلك التي لا تملك** ──
+    // الشبكة والشارتان **لا تملكان** (`pointer-events:none`، ومرورها هنا لا
+    // يغيّر شيئاً)، **والزرّ يملك**. والفارق **سمةٌ على العنصر لا اسم صنف** —
+    // فالصنف اسمٌ يتغيّر، والسمة عقدٌ يُقرأ.
+    // ⚠️ **ولا يمكن أن يفوز الزرّ بترتيب المستمعين**: مستمعنا في `window`
+    // +`capture` **يسبق أي مستمع على الزرّ بنيوياً**. فالحسم هنا، في الكومة.
+    // **وغير مشروطٍ بـ`blockScrollable`**: الملكية تسري على العجلة والنقر معاً،
+    // بخلاف «قابل للتمرير» التي هي دلالةٌ خاصّة بالعجلة (#65).
+    if (el.dataset?.vzOwns) return BLOCKED_BY_LAYER;
+
     if (blockScrollable && isScrollableLayer(el)) return BLOCKED_BY_LAYER;
 
     const descendantVideos = el.querySelectorAll?.("video");
@@ -1830,7 +1840,11 @@ function focusInside(selector) {
 // `getVideoUnderPointer`)، **بلا محدِّد مضيف ولا صنف جديد**.
 // ⚠️ **وملء الشاشة يُسقط سؤال «خارج المشغّل» بنيوياً**: المشغّل يملأ الشاشة،
 // والقاعدة مكتوبة على **المستطيل** لا على «الصفحة»، فتصمد بلا استثناء.
+// ⚠️ **وطبقتنا جزءٌ من المشغّل لغرض النشاط** — وإلا اختفى الزرّ من تحت الفأرة
+// وهي عليه: `getVideoUnderPointer` تُرجع `null` فوق الزرّ **بالتصميم** (علامة
+// الملكية تحجب مسار المربّعات)، فلو اكتفينا بها لعُدّ التحويم فوق زرّنا سكوناً.
 function pointerInsidePlayer(e) {
+  try { if (e?.target?.closest?.(".vzWrap")) return true; } catch {}
   return !!getVideoUnderPointer(e);
 }
 
@@ -1911,6 +1925,84 @@ IDLE_CONSUMERS.progressBar = {
   onActive: () => setYtProgressHidden(false),
   onIdle: () => setYtProgressHidden(true)
 };
+// ── #72 — زرّ السرعة في طبقتنا ──────────────────────────────────────────────
+// **عجلةٌ فوقه تغيّر السرعة · نقرةٌ تختار سرعةً مفضّلة · ونقرة اليمين بعد `S9`.**
+//
+// ⚠️ **ولا يكتب `playbackRate` بيده — يُصدر أمراً من نحو `ACTION:SPEED` نفسه**
+// (قرار المالك). **والحارس بنيويّ لا تذكّر**: `tools/test-speed-source.js` يعدّ
+// مواضع الكتابة ويشترط **واحداً**، فمسارٌ يكتب بيده يُحمّر المجموعة. ومن ثَمّ
+// **يرث شارة #71 بلا سطر**، ويرث القصّ 0.25–4 بلا رقمٍ ثانٍ.
+//
+// ⚠️ **ونقرة اليمين مؤجَّلة إلى `S9`** — مسارا `contextmenu` و`auxclick` **غير
+// مقيسين** أمام معالج المضيف (قِيس الزرّ الأيسر وحده في `S6`)، **ولا يُبنى على
+// غير مقيس**. فثلثُ الميزة معلَّق صراحةً لا منسيّاً.
+const VZ_SPEED_STEP = 0.25;
+
+function speedButtonActive() {
+  if (!extensionActive()) return false;   // #64: الرئيسي ثم الحظر
+  return overlaySettings.speedButton === true;
+}
+
+function speedBtnVideo() {
+  return (vzOverlayVideo && vzOverlayVideo.isConnected)
+    ? vzOverlayVideo
+    : getVideoFromPointerPosition();
+}
+
+function syncSpeedBtnLabel(video) {
+  if (!vzSpeedBtn) return;
+  const v = video || speedBtnVideo();
+  if (v) vzSpeedBtn.textContent = `${v.playbackRate || 1}x`;
+}
+
+function setSpeedBtnShown(on) {
+  if (!vzSpeedBtn) return;
+  if (on) syncSpeedBtnLabel();
+  vzSpeedBtn.classList.toggle("vzHidden", !on);
+  if (on) startOverlayTracking();
+}
+
+// الزرّ يظهر **مع النشاط** كما يفعل شريط المضيف، ويختفي بالسكون. ولا شرط امتناع:
+// **استثناء التوقّف سقط بالقياس** — يوتيوب يُخفي شريطه وهو متوقّف (الحالة 3)،
+// **والقاعدة الواحدة بلا استثناء أفضل** (حكم #65).
+IDLE_CONSUMERS.speedButton = {
+  enabled: speedButtonActive,
+  onActive: () => setSpeedBtnShown(true),
+  onIdle: () => setSpeedBtnShown(false)
+};
+
+// **الأحداث فوق الزرّ**: مستمعونا في `window`+`capture` يخرجون بالعلامة البنيوية
+// (`videoFromStack`)، ثمّ يصل الحدث إلى الزرّ فيُنفّذ أمرَه — فلا تسابق ولا
+// اعتماد على ترتيب التسجيل.
+function speedBtnWheel(e) {
+  if (!speedButtonActive()) return;
+  const video = speedBtnVideo();
+  if (!video) return;
+  e.preventDefault();
+  e.stopPropagation();
+  runAction(`ACTION:SPEED:${e.deltaY < 0 ? "+" : "-"}${VZ_SPEED_STEP}`,
+    Object.assign(e, { __videoUnderPointer: video }));
+  syncSpeedBtnLabel(video);
+  markIdleActivity();
+}
+
+function speedBtnClick(e) {
+  if (e.button !== 0) return;            // اليمين والأوسط: بعد `S9`
+  if (!speedButtonActive()) return;
+  const video = speedBtnVideo();
+  if (!video) return;
+  e.preventDefault();
+  e.stopPropagation();
+  // «السرعة المفضّلة» هي `ACTION:SPEED:SET` القائمة **لا مفهومٌ ثانٍ** — وقلبٌ
+  // بينها وبين 1x، فالزرّ الواحد يذهب ويعود بلا حالةٍ نحفظها.
+  const pref = Number(overlaySettings.speedButtonPreset) || 2;
+  const target = (video.playbackRate || 1) === pref ? 1 : pref;
+  runAction(`ACTION:SPEED:SET:${target}`, Object.assign(e, { __videoUnderPointer: video }));
+  syncSpeedBtnLabel(video);
+  markIdleActivity();
+}
+
+
 
 function getVideoFromPointerPosition() {
   if (typeof lastPointer.x !== "number" || typeof lastPointer.y !== "number") return null;
@@ -2053,7 +2145,10 @@ async function loadOverlaySettings(pre) {
     // يشترطه هناك**، فخلطُ الشكلين يُطفئ إضافةَ من لم يفتح الإعدادات قط.
     speedBadge: !!o.speedBadge,
     // #70 — ميزةٌ جديدة، افتراضها مطفأ بالشكل نفسه
-    hideProgressBar: !!o.hideProgressBar
+    hideProgressBar: !!o.hideProgressBar,
+    // #72 — الزرّ ومفتاحه وسرعته المفضّلة (والقصّ للمفضّلة في `runAction` نفسها)
+    speedButton: !!o.speedButton,
+    speedButtonPreset: Number(o.speedButtonPreset) > 0 ? Number(o.speedButtonPreset) : 2
   };
 
   if (!overlaySettings.enabled) hideOverlayNow();
@@ -2117,6 +2212,23 @@ const OVERLAY_CSS = `
     }
     .vzVolume{ left:10px; }
     .vzSpeed{ right:10px; }
+    /* ── #72: زرّنا في طبقتنا، لا في شريط المضيف ────────────────────────
+       والسبب ليس ذوقاً (قرار المالك): قائمة محدِّدات المضيف هي ما قضينا
+       الجلسة نزيله — multicam مات، والتضمين هجر ytp- كلها، وS7 أثبت أن
+       11 من 59 لم يعد يطابق. فالحقن يشتري «يبدو أصيلاً» بعملةٍ تموت.
+       ⚠️ **pointer-events:auto على الابن وحده لا على .vzWrap** — والطبقة
+       تبقى شفّافة للأحداث كما كانت، فهذا أوّل عنصرٍ لنا يأخذ حدثاً. */
+    .vzBtn{
+      position:absolute; right:10px; bottom:10px;
+      pointer-events:auto; cursor:pointer;
+      font:700 14px/1 Arial, sans-serif;
+      color:#fff; background:rgba(0,0,0,.62);
+      border:1px solid rgba(255,255,255,.28); border-radius:8px;
+      padding:6px 10px; min-width:44px; text-align:center;
+      user-select:none;
+      transition:opacity .12s linear;
+    }
+    .vzBtn:hover{ background:rgba(0,0,0,.8); }
     .vzHidden{ display:none !important; }
     /* البند #47 — لا تنطبق إلا حين تُضاف السمة، أي في حالة واحدة: عنصر ملء
        الشاشة هو <video> نفسه. أنماط المتصفح الافتراضية لـ [popover] تفرض
@@ -2143,6 +2255,7 @@ let vzGridEl = null;
 let vzHintEl = null;
 let vzVolumeBadge = null;
 let vzSpeedBadge = null;         // #71 — قناة ثانية، عنصرٌ مستقلّ لا حقلٌ مشترك
+let vzSpeedBtn = null;           // #72 — زرّنا في طبقتنا
 let vzOverlayHost = null;        // parent it's currently attached to (body or fullscreen el)
 let vzTrackRafId = null;
 
@@ -2156,6 +2269,7 @@ function buildOverlayElement() {
     <div class="vzHint vzHidden">Zones</div>
     <div class="vzVolume vzHidden">100</div>
     <div class="vzSpeed vzHidden">1x</div>
+    <div class="vzBtn vzSpeedBtn vzHidden" role="button" tabindex="-1" data-vz-owns="wheel click">1x</div>
   `;
   applyGridVars(el); // يزرع الأرقام بـ textContent بعد بناء الخلايا
   return el;
@@ -2324,6 +2438,7 @@ function teardownOverlay() {
   vzHintEl = null;
   vzVolumeBadge = null;
   vzSpeedBadge = null;
+  vzSpeedBtn = null;
   vzOverlayVideo = null;
   vzOverlayHost = null;
   if (vzTrackRafId != null) {
@@ -2352,6 +2467,10 @@ function ensureVideoOverlay(video) {
   vzHintEl = vzOverlay.querySelector(".vzHint");
   vzVolumeBadge = vzOverlay.querySelector(".vzVolume");
   vzSpeedBadge = vzOverlay.querySelector(".vzSpeed");
+  vzSpeedBtn = vzOverlay.querySelector(".vzSpeedBtn");
+  // على الزرّ نفسه لا على النافذة: عنصرٌ واحد يملك حدثه، ويُهدَم معه
+  vzSpeedBtn?.addEventListener("wheel", speedBtnWheel, { passive: false });
+  vzSpeedBtn?.addEventListener("click", speedBtnClick);
   vzOverlayVideo = video;
   attachOverlayToHost(preferredOverlayHost(video));
   positionOverlayToVideo();
@@ -2420,10 +2539,11 @@ function showVolumeIndicator(video) {
 // دوالّ لا مراجع مباشرة: العناصر تُعاد بناؤها في `ensureVideoOverlay`، فمرجعٌ
 // مُجمَّد في السجلّ يشير إلى عقدةٍ خرجت من الـDOM.
 const OVERLAY_PARTS = {
-  grid:   () => vzGridEl,
-  hint:   () => vzHintEl,
-  volume: () => vzVolumeBadge,
-  speed:  () => vzSpeedBadge
+  grid:      () => vzGridEl,
+  hint:      () => vzHintEl,
+  volume:    () => vzVolumeBadge,
+  speed:     () => vzSpeedBadge,
+  speedBtn:  () => vzSpeedBtn      // #72 — والقناة الخامسة لم تحتج تعديلاً هنا
 };
 
 // مؤقّتٌ **لكل قناة**: حقلٌ ساكن واحد كان يعني أن مؤقّت السرعة يُلغي مؤقّت الصوت

@@ -152,6 +152,15 @@
               <input id="hideProgressBar" type="checkbox" />
               إخفاء شريط تقدّم يوتيوب بعد سكون الفأرة (YouTube فقط)
             </label>
+            <label class="checkRow">
+              <input id="speedButtonEnabled" type="checkbox" />
+              إظهار زرّ السرعة داخل المشغّل (عجلة = تغيير · نقرة = السرعة المفضّلة)
+            </label>
+            <label>السرعة المفضّلة لزرّ السرعة
+              <input id="speedButtonPreset" type="range" min="0.25" max="4" step="0.25" />
+              <span class="rangeValue" id="speedButtonPresetValue">2x</span>
+            </label>
+            <p class="hint">يظهر مع حركة الفأرة ويختفي بسكونها كشريط المشغّل. ونقرة اليمين مؤجَّلة حتى يُقاس مسارها.</p>
             <p class="hint">يُخفي الشريط والخريطة الحرارية والعلامات والمِقبض وحدها — الوقت والأزرار تبقى. ويعود بأي حركة أو نقرة أو أمر. ولا يُخفى أثناء سحب الشريط ولا حين يكون التركيز عليه.</p>
           </div>
         </section>
