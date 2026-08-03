@@ -106,7 +106,7 @@ console.log("\n[4] البوّابة #64 والمفتاح المطفأ افترا
 // ── [5] ⭐ السلوك — على الكود نفسه ──────────────────────────────────────────
 console.log("\n[5] ⭐ السلوك: يُخفي بالسكون، ويمتنع تحت اليد وتحت التركيز");
 {
-  const ENGINE = slice("const IDLE_MIN_MS = 500;", "// الدخول إلى ملء الشاشة");
+  const ENGINE = slice("const IDLE_MIN_MS", "// الدخول إلى ملء الشاشة");
   const FEATURE = slice("const YT_PROGRESS_SELECTOR", "\n};");
   if (!ENGINE || !FEATURE) {
     console.log("  ❌ تعذّر الاقتطاع — **المرساة سقطت، أصلِح المرساة لا التأكيد**");

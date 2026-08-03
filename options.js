@@ -672,7 +672,7 @@ function timingValueOf(s, id) {
   const o = s.overlay || {};
   if (id === "gridDuration") return Number(o.autoHideMs ?? 900);
   if (id === "volumeDuration") return Number(o.volumeAutoHideMs ?? o.autoHideMs ?? 900);
-  if (id === "idleDuration") return Math.max(500, Number(s.idle?.ms) > 0 ? Number(s.idle.ms) : 2000);
+  if (id === "idleDuration") return Math.max(100, Number(s.idle?.ms) > 0 ? Number(s.idle.ms) : 2000);
   if (id === "zoneHintEnabled") return o.hintEnabled !== false;
   if (id === "speedBadgeEnabled") return o.speedBadge === true;
   if (id === "hideProgressBar") return o.hideProgressBar === true;

@@ -22,7 +22,7 @@ const slice = (from, to) => {
   return a === -1 || b === -1 ? null : SRC.slice(a, b);
 };
 
-const ENGINE = slice("const IDLE_MIN_MS = 500;", "// الدخول إلى ملء الشاشة");
+const ENGINE = slice("const IDLE_MIN_MS", "// الدخول إلى ملء الشاشة");
 // المرساة: من دالّة العدّ إلى ما بعد حلقة التتبّع مباشرةً
 const TRACK = slice("function positionOverlayToVideo()", "function attachOverlayToHost");
 if (!ENGINE || !TRACK) {
