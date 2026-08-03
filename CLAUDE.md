@@ -52,6 +52,7 @@ they are development artefacts and must not reach the Chrome Web Store package:
 ```
 tools/        # e.g. tools/make-icons.js — regenerates icons/*.png, needs only node's zlib
 AUDIT.md      # audit report
+tools/preview-77.html   # مخرَج مُولَّد للمراجعة، ليس منتجاً
 AUDIT.html    # rendered audit view (already gitignored)
 HANDOFF.md    # work-state handoff
 .git/ .gitignore CLAUDE.md
