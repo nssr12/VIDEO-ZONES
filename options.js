@@ -525,17 +525,41 @@ function renderYtShortsRedirect(enabled) {
 
 let cleanPlayerSaving = 0; // guards the storage.onChanged re-render against reverting mid-save toggles
 
+// ── #78 — الكائن لا يُعاد بناؤه من أربعين ضابطاً ────────────────────────────
+// **آليّةٌ واحدة مع `persistOverlayTiming`، وانكشافٌ أضيق** (قرار 16د): هذا
+// **يولّد ضوابطه من السجلّ الذي يكتبه** فمسافته صفر، **لكنه يظلّ يقرأ الأربعين
+// ليكتب واحداً** — وضابطٌ لم يُبنَ يُقرأ «غير مؤشَّر» **فيسقط مفتاحٌ مخزَّن**.
+// ⇒ **صار كلُّ تغييرٍ يكتب مفتاحه وحده**، ويُحافظ على «المؤشَّر وحده يُخزَّن»
+// (#66 وحصّة 8KB): المؤشَّر يُضاف، وغيرُه **يُحذف** لا يُكتب `false`.
+async function persistCleanPlayerItem(key) {
+  const el = $(`cp_${key}`);
+  if (!el) {
+    showToast("bad", "لم يُحفظ: المربّع لم يُبنَ بعد.");
+    console.debug("[VIDEO-ZONES] #78: رُفضت كتابة مربّع غير مبنيّ:", key);
+    return;
+  }
+  cleanPlayerSaving++;
+  try {
+    const s = await getSettings();
+    const items = { ...(s.cleanPlayer?.items || {}) };
+    if (el.checked) items[key] = true; else delete items[key];
+    s.cleanPlayer = { ...(s.cleanPlayer || {}), items };
+    if (!(await saveSettings(s))) return;
+    const tabs = await chrome.tabs.query({});
+    for (const t of tabs) {
+      if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_CLEAN_PLAYER" }).catch(() => {});
+    }
+  } finally {
+    cleanPlayerSaving--;
+  }
+}
+
 async function persistCleanPlayer() {
   cleanPlayerSaving++;
   try {
     const s = await getSettings();
-    // Store only checked keys — keeps the settings item small (sync storage
-    // has an 8KB per-item quota) and missing keys read as false anyway.
-    const items = {};
-    for (const { key } of CLEAN_PLAYER_OPTIONS) {
-      if ($(`cp_${key}`)?.checked) items[key] = true;
-    }
-    s.cleanPlayer = { enabled: $("cleanPlayerEnabled").checked, items };
+    // المفتاح الرئيسي وحده — والمربّعات لكلٍّ مسارُه (`persistCleanPlayerItem`)
+    s.cleanPlayer = { ...(s.cleanPlayer || {}), enabled: $("cleanPlayerEnabled").checked };
     await saveSettings(s);
     const tabs = await chrome.tabs.query({});
     for (const t of tabs) {
@@ -557,7 +581,7 @@ function buildCleanPlayerList() {
     const input = document.createElement("input");
     input.type = "checkbox";
     input.id = `cp_${key}`;
-    input.addEventListener("change", persistCleanPlayer);
+    input.addEventListener("change", () => persistCleanPlayerItem(key));
 
     const span = document.createElement("span");
     span.textContent = label;
@@ -607,6 +631,39 @@ function formatDurationMs(ms) {
   return `${(ms / 1000).toFixed(1)} ثانية`;
 }
 
+// ── #78 — سجلّ ضوابط التوقيت: **يرسم منه ويكتب منه** ────────────────────────
+// **قرار 16د: الخطر يتناسب مع المسافة بين مَن يرسم الضابط ومَن يكتب الحقل.**
+// كان الرسم في `renderOverlayTiming` والكتابة في `persistOverlayTiming` **بيدين
+// منفصلتين على ثمانية ضوابط**، فحقلٌ أُضيف إلى إحداهما ولم يُرسَم بعدُ **يُحفَظ
+// بما تركه المتصفّح فيه** — ومُنزلق مدىً بلا `value` يبدأ من طرفه.
+// **مقيسٌ في تخزين المالك: `speedButtonPreset = 0.25` والافتراض 2.**
+//
+// ⇒ **والعلاج تعميم النمط القائم لا ابتكار ثالث** (قرار المالك): `popup.js` كلّها
+// و**14 من 16** معالجاً في هذا الملف تفعله سلفاً — **يفرد المخزَّن · يستبدل حقلاً
+// واحداً · ويحتمل غياب العنصر**. وهذا السجلّ يجعل المسافة **صفراً**.
+//
+// ⚠️ **ولا هجرة (قرار المالك):** `0.25` المشوَّهة **لا تُميَّز** عن `0.25`
+// اختارها مستخدم عمداً. **الإصلاح إلى الأمام، والقيم القائمة تبقى** —
+// **وتسجيلُ ما لا يُمكن إصلاحه أصدق من هجرةٍ تخمّن.**
+const TIMING_CONTROLS = {
+  gridDuration:       (s, el) => { s.overlay.autoHideMs = Number(el.value); },
+  volumeDuration:     (s, el) => { s.overlay.volumeAutoHideMs = Number(el.value); },
+  idleDuration:       (s, el) => { s.idle = { ...(s.idle || {}), ms: Number(el.value) }; },
+  zoneHintEnabled:    (s, el) => { s.overlay.hintEnabled = el.checked; },
+  speedBadgeEnabled:  (s, el) => { s.overlay.speedBadge = el.checked; },
+  hideProgressBar:    (s, el) => { s.overlay.hideProgressBar = el.checked; },
+  speedButtonEnabled: (s, el) => { s.overlay.speedButton = el.checked; },
+  speedButtonPreset:  (s, el) => { s.overlay.speedButtonPreset = Number(el.value); }
+};
+
+// **ختمُ «رُسِم»** — يضعه الراسم وحده، ويشترطه الكاتب. وهو الحارس الذي يرثه
+// مُولِّد #77: **مُولِّدٌ يرسم بلا ختم يُرفض حفظُه**، فلا يُعيد المسافة من بابه.
+const VZ_RENDERED = "vzRendered";
+function markRendered(id) {
+  const el = $(id);
+  if (el) el.dataset[VZ_RENDERED] = "1";
+}
+
 function renderOverlayTiming(overlay) {
   const grid = Number(overlay?.autoHideMs ?? 900);
   const vol = Number(overlay?.volumeAutoHideMs ?? grid);
@@ -622,6 +679,8 @@ function renderOverlayTiming(overlay) {
   const preset = Number(overlay?.speedButtonPreset) > 0 ? Number(overlay.speedButtonPreset) : 2;
   $("speedButtonPreset").value = String(preset);
   $("speedButtonPresetValue").textContent = `${preset}x`;
+  // كلُّ ضابطٍ رُسم يُختَم — والختم شرطُ الكتابة (#78)
+  for (const id of Object.keys(TIMING_CONTROLS)) if (id !== "idleDuration") markRendered(id);
 }
 
 // #70 · #72 — مهلة السكون مشتركة بين المستهلكين، **ولا «صفر تعني مطفأ»**:
@@ -630,6 +689,7 @@ function renderIdleTiming(idle) {
   const ms = Math.max(500, Number(idle?.ms) > 0 ? Number(idle.ms) : 2000);
   $("idleDuration").value = String(ms);
   $("idleDurationValue").textContent = `${(ms / 1000).toFixed(1)} ثانية`;
+  markRendered("idleDuration");
 }
 
 // ── #71 — المربّع يُعطَّل **بسببٍ مكتوب**، ولا يُترك يكذب ────────────────────
@@ -1037,21 +1097,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderGridAppearance(s.gridAppearance);
   });
 
-  async function persistOverlayTiming() {
+  // #78 — **ضابطٌ واحد ⇒ حقلٌ واحد**، على نمط `popup.js` حرفياً.
+  async function persistTiming(id) {
+    const el = $(id);
+    const apply = TIMING_CONTROLS[id];
+    // ⚠️ **ضابطٌ غائب أو لم يُرسَم لا يُكتب منه** — وهو العطب بعينه: كنّا نكتب
+    // ثمانية حقول من ثمانية ضوابط عند لمس أيٍّ منها، فيُحفَظ ما لم يقرأه أحد.
+    // **ولا صمت**: رفضٌ صامت يترك المستخدم يظنّ أنه حفظ (درس #57 و#69).
+    if (!el || !apply || el.dataset[VZ_RENDERED] !== "1") {
+      showToast("bad", "لم يُحفظ: الضابط لم يُرسَم بعد. أعد فتح الصفحة وحاول.");
+      console.debug("[VIDEO-ZONES] #78: رُفضت كتابة ضابطٍ غير مرسوم:", id);
+      return;
+    }
     const s = await getSettings();
-    const grid = Number($("gridDuration").value);
-    const vol = Number($("volumeDuration").value);
     s.overlay ||= {};
-    s.overlay.autoHideMs = grid;
-    s.overlay.volumeAutoHideMs = vol;
-    s.overlay.hintEnabled = $("zoneHintEnabled").checked;
-    s.overlay.speedBadge = $("speedBadgeEnabled").checked;
-    s.overlay.hideProgressBar = $("hideProgressBar").checked;
-    s.overlay.speedButton = $("speedButtonEnabled").checked;
-    s.overlay.speedButtonPreset = Number($("speedButtonPreset").value);
-    s.idle = { ms: Number($("idleDuration").value) };
-    s.overlay.enabled = grid > 0 || vol > 0;
-    await saveSettings(s);
+    apply(s, el);
+    // **مشتقٌّ من المخزَّن بعد التطبيق، لا من الـDOM**: قيمةُ حقلٍ آخر تُقرأ من
+    // مصدرها لا من ضابطٍ قد لا يكون مرسوماً.
+    s.overlay.enabled = Number(s.overlay.autoHideMs) > 0 || Number(s.overlay.volumeAutoHideMs) > 0;
+    if (!(await saveSettings(s))) return;
     const tabs = await chrome.tabs.query({});
     for (const t of tabs) {
       if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_OVERLAY_SETTINGS" }).catch(() => {});
@@ -1061,25 +1125,25 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("gridDuration").addEventListener("input", () => {
     $("gridDurationValue").textContent = formatDurationMs(Number($("gridDuration").value));
   });
-  $("gridDuration").addEventListener("change", persistOverlayTiming);
-  $("zoneHintEnabled").addEventListener("change", persistOverlayTiming);
-  $("speedBadgeEnabled").addEventListener("change", persistOverlayTiming);
-  $("hideProgressBar").addEventListener("change", persistOverlayTiming);
-  $("speedButtonEnabled").addEventListener("change", persistOverlayTiming);
+  $("gridDuration").addEventListener("change", () => persistTiming("gridDuration"));
+  $("zoneHintEnabled").addEventListener("change", () => persistTiming("zoneHintEnabled"));
+  $("speedBadgeEnabled").addEventListener("change", () => persistTiming("speedBadgeEnabled"));
+  $("hideProgressBar").addEventListener("change", () => persistTiming("hideProgressBar"));
+  $("speedButtonEnabled").addEventListener("change", () => persistTiming("speedButtonEnabled"));
   $("speedButtonPreset").addEventListener("input", () => {
     $("speedButtonPresetValue").textContent = `${Number($("speedButtonPreset").value)}x`;
   });
-  $("speedButtonPreset").addEventListener("change", persistOverlayTiming);
+  $("speedButtonPreset").addEventListener("change", () => persistTiming("speedButtonPreset"));
   $("idleDuration").addEventListener("input", () => {
     $("idleDurationValue").textContent = `${(Number($("idleDuration").value) / 1000).toFixed(1)} ثانية`;
   });
-  $("idleDuration").addEventListener("change", persistOverlayTiming);
+  $("idleDuration").addEventListener("change", () => persistTiming("idleDuration"));
   $("volumeDuration").addEventListener("input", () => {
     $("volumeDurationValue").textContent = formatDurationMs(Number($("volumeDuration").value));
     // السببُ يتبع المُنزلق أثناء السحب لا بعد الحفظ: `input` يعرض و`change` يكتب
     syncSpeedBadgeRow(Number($("volumeDuration").value));
   });
-  $("volumeDuration").addEventListener("change", persistOverlayTiming);
+  $("volumeDuration").addEventListener("change", () => persistTiming("volumeDuration"));
 
   async function persistSubtitles() {
     syncCleanPlayerCaptionNote(); // immediate, before the storage round-trip

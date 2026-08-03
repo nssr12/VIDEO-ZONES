@@ -78,8 +78,13 @@ console.log("\n[3] المسار كامل: واجهة ⇄ تخزين ⇄ سكرب
   check("صندوق الاختيار في options.html", /id="zoneHintEnabled"/.test(HTML));
   check("ووسمه يذكر المثال الذي يراه المستخدم", /Zone B1/.test(HTML));
   check("ويُقرأ عند العرض", /\$\("zoneHintEnabled"\)\.checked = overlay\?\.hintEnabled !== false/.test(OPTIONS));
-  check("ويُحفظ في overlay.hintEnabled", /s\.overlay\.hintEnabled = \$\("zoneHintEnabled"\)\.checked/.test(OPTIONS));
-  check("ومربوط بمستمع يحفظ", /\$\("zoneHintEnabled"\)\.addEventListener\("change", persistOverlayTiming\)/.test(OPTIONS));
+  // ⚠️ **مرساةٌ صُحّحت لا تأكيدٌ أُضعف (قرار 33، #78):** صار الحفظ **ضابطاً
+  // واحداً ⇒ حقلاً واحداً** عبر سجلّ `TIMING_CONTROLS`، فالنيّة نفسها والموضع
+  // تغيّر — والحقل ما زال `overlay.hintEnabled` ومصدره الضابط نفسه.
+  check("ويُحفظ في overlay.hintEnabled",
+    /zoneHintEnabled:\s*\(s, el\) => \{ s\.overlay\.hintEnabled = el\.checked; \}/.test(OPTIONS));
+  check("ومربوط بمستمع يحفظ حقلَه وحده",
+    /\$\("zoneHintEnabled"\)\.addEventListener\("change", \(\) => persistTiming\("zoneHintEnabled"\)\)/.test(OPTIONS));
   // بلا رسالة جديدة: يمرّ على RELOAD_OVERLAY_SETTINGS القائمة
   check("ولا رسالة جديدة — يمرّ على RELOAD_OVERLAY_SETTINGS",
     /RELOAD_OVERLAY_SETTINGS/.test(OPTIONS) && !/RELOAD_ZONE_HINT/.test(OPTIONS + CONTENT));

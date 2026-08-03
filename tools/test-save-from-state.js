@@ -1,0 +1,159 @@
+// البند #78 — الحفظ يكتب حقلاً واحداً من ضابطٍ رُسم، لا كلَّ الحقول من الـDOM
+//
+// **العطب المقيس (تخزين المالك 2026-08-02): `speedButtonPreset = 0.25`** والافتراض
+// المكتوب في ثلاثة مواضع **2**. والآليّة: `persistOverlayTiming` كانت تكتب **9
+// حقول من 8 ضوابط** عند أيّ تغيير، **فحقلٌ لم يُرسَم بعدُ يُحفَظ بما تركه
+// المتصفّح فيه** — ومُنزلق مدىً بلا `value` يبدأ من طرفه.
+//
+// ⚠️ **والقاعدة التي وُلد منها (قرار 16د): الخطر يتناسب مع المسافة بين مَن يرسم
+// الضابط ومَن يكتب الحقل.** ولذلك نجا `persistCleanPlayer` (يولّد ضوابطه من
+// السجلّ الذي يكتبه ⇒ مسافةٌ صفر) وسقط جارُه (HTML بيد ⇄ JS بيد ⇒ أقصى مسافة).
+//
+// ⚠️ **وهذا الملف مكتوبٌ ليرثه مُولِّد #77 لا ليستبدله:** الحارس على **الختم**
+// (`data-vz-rendered`) لا على أسماء الضوابط. **فمُولِّدٌ يرسم بلا ختم يُرفض
+// حفظُه**، ومُولِّدٌ يختم يمرّ — **بلا سطرٍ جديد هنا**. ومن غيّر آليّة الرسم في
+// #77 **يجد الأحمر هنا قبل أن يجده المستخدم في تخزينه**.
+//
+// ⛔ **ولا هجرة (قرار المالك):** `0.25` المشوَّهة **لا تُميَّز** عن `0.25` اختارها
+// مستخدم عمداً. **القيم القائمة تبقى، والمالك يُعيد ضبط قيمته بيده** —
+// **وتسجيلُ ما لا يُمكن إصلاحه أصدق من هجرةٍ تخمّن.**
+const fs = require("fs");
+const vm = require("vm");
+
+const OPTIONS = fs.readFileSync("options.js", "utf8");
+const POPUP = fs.readFileSync("popup.js", "utf8");
+
+let pass = 0, fail = 0;
+const check = (name, cond, extra) => cond
+  ? (pass++, console.log("  ✅ " + name))
+  : (fail++, console.log("  ❌ " + name, extra ?? ""));
+
+function slice(src, from, to) {
+  const a = src.indexOf(from), b = src.indexOf(to, a);
+  return a === -1 || b === -1 ? null : src.slice(a, b);
+}
+function body(src, name) {
+  const i = src.indexOf(name);
+  if (i === -1) return null;
+  const j = src.indexOf("\n}", i);
+  return j === -1 ? null : src.slice(i, j);
+}
+
+console.log("\n=== #78 — الحفظ من الحالة لا من الـDOM ===\n");
+
+// ── [1] لا معالجَ يكتب أكثر من حقلٍ من ضوابط متعدّدة ──────────────────────
+console.log("[1] ضابطٌ واحد ⇒ حقلٌ واحد");
+{
+  // مرساة: الدالّة **مُعشَّشة** فتُقتطع عند إغلاقها بمسافتين لا عند العمود الأول
+  const persist = slice(OPTIONS, "async function persistTiming(id)", "\n  }");
+  check("[1] `persistTiming` موجود ويأخذ مُعرّف الضابط", !!persist);
+  // ⚠️ العَرَض بعينه: الدالّة القديمة كانت تقرأ ثمانية `$(...)` في جسمها
+  const reads = persist ? (persist.match(/\$\("[A-Za-z]+"\)/g) || []).length : -1;
+  check("[1] ولا يقرأ إلا ضابطه (`$(id)` وحده)", reads === 0, `قراءات معرَّفة صراحةً: ${reads}`);
+  check("[1] ولا وجود لـ`persistOverlayTiming` القديمة",
+    !/async function persistOverlayTiming/.test(OPTIONS));
+
+  // كل ضابطٍ مربوطٌ باسمه هو — لا معالجٌ مشترك.
+  // ⚠️ **ولا انهيار عند سقوط المرساة**: مِجَسٌّ ينهار يطبع خرْجاً لا يُفهَم بدل
+  // أن يقول ما الناقص — وهو ما بُني `run-tests` على كشفه، لا على احتماله.
+  const regSrc = slice(OPTIONS, "const TIMING_CONTROLS = {", "\n};");
+  const ids = regSrc
+    ? Object.keys(vm.runInNewContext(regSrc + "\n};\nTIMING_CONTROLS", {}, { timeout: 1000 }) || {})
+    : [];
+  check("[1] سجلّ `TIMING_CONTROLS` موجود", !!regSrc, "المرساة سقطت أو السجلّ غير مكتوب");
+  check("[1] وفيه الضوابط الثمانية", ids.length === 8, ids);
+  for (const id of ids) {
+    check(`[1] «${id}» مربوطٌ بحقله وحده`,
+      new RegExp(`\\$\\("${id}"\\)\\.addEventListener\\("change", \\(\\) => persistTiming\\("${id}"\\)\\)`).test(OPTIONS));
+  }
+}
+
+// ── [2] ⭐ الحارس: ضابطٌ لم يُرسَم لا يُكتب منه ────────────────────────────
+console.log("\n[2] ⭐ الختم شرطُ الكتابة — ويرثه مُولِّد #77");
+{
+  // مرساة: الدالّة **مُعشَّشة** فتُقتطع عند إغلاقها بمسافتين لا عند العمود الأول
+  const persist = slice(OPTIONS, "async function persistTiming(id)", "\n  }");
+  check("[2] الكتابة تشترط الختم", !!persist && /dataset\[VZ_RENDERED\] !== "1"/.test(persist), persist);
+  check("[2] والرفض قبل أي قراءة تخزين",
+    !!persist && persist.indexOf("VZ_RENDERED") < persist.indexOf("await getSettings()"), persist);
+  // ⚠️ ولا صمت: رفضٌ صامت يترك المستخدم يظنّ أنه حفظ (درسا #57 و#69)
+  check("[2] ولا يُرفض صامتاً", !!persist && /showToast\("bad"/.test(persist), persist);
+  // والختم يضعه الراسم وحده
+  const render = body(OPTIONS, "function renderOverlayTiming(overlay)");
+  check("[2] والراسم يختم ما رسمه", !!render && /markRendered\(/.test(render), render);
+  check("[2] و`markRendered` تكتب الختم", /el\.dataset\[VZ_RENDERED\] = "1"/.test(OPTIONS));
+  // ⚠️ الحارس على الختم لا على الأسماء — فمُولِّد #77 يرثه بلا تعديل
+  const mark = body(OPTIONS, "function markRendered(id)");
+  check("[2] ⭐ والختم عامّ لا مقصورٌ على ضوابط اليوم (يرثه مُولِّد #77)",
+    !!mark && !/gridDuration|speedButton|hideProgress/.test(mark), mark);
+}
+
+// ── [3] ⭐ سلوكياً: الحقل الذي لم يُلمس لا يُكتب ───────────────────────────
+console.log("\n[3] ⭐ لمسُ ضابطٍ لا يكتب حقلَ جاره");
+{
+  const REG = slice(OPTIONS, "const TIMING_CONTROLS = {", "\n};");
+  if (!REG) {
+    console.log("  ❌ تعذّر اقتطاع السجلّ — **المرساة سقطت، أصلِح المرساة لا التأكيد**");
+    fail++;
+  } else {
+    const ctx = {};
+    vm.createContext(ctx);
+    vm.runInContext(REG + "\n};", ctx);
+    const reg = vm.runInContext("TIMING_CONTROLS", ctx);
+
+    // مخزَّنٌ فيه قيمةٌ اختارها المستخدم عمداً
+    const stored = () => ({ overlay: { autoHideMs: 900, volumeAutoHideMs: 900, speedButtonPreset: 3 }, idle: { ms: 2500 } });
+
+    // يلمس مربّعاً واحداً — والقيم الأخرى **يجب ألّا تُمَسّ**
+    const s = stored();
+    reg.hideProgressBar(s, { checked: true });
+    check("[3] لمسُ مربّع يكتب حقله", s.overlay.hideProgressBar === true);
+    check("[3] ⭐ ولا يمسّ `speedButtonPreset` الذي اختاره المستخدم",
+      s.overlay.speedButtonPreset === 3, s.overlay.speedButtonPreset);
+    check("[3] ولا يمسّ `idle.ms`", s.idle.ms === 2500, s.idle.ms);
+
+    // والمدى يكتب رقمه هو
+    const s2 = stored();
+    reg.speedButtonPreset(s2, { value: "1.5" });
+    check("[3] والمُنزلق يكتب رقمه", s2.overlay.speedButtonPreset === 1.5, s2.overlay.speedButtonPreset);
+    check("[3] ولا يمسّ مدّة الشبكة", s2.overlay.autoHideMs === 900);
+
+    // و`idle` تُفرد لا تُستبدل — فحقلٌ مستقبليّ فيها لا يُمحى
+    const s3 = { overlay: {}, idle: { ms: 2500, future: "x" } };
+    reg.idleDuration(s3, { value: "3000" });
+    check("[3] و`idle` تُفرد لا تُستبدل (نمط `popup.js`)",
+      s3.idle.ms === 3000 && s3.idle.future === "x", s3.idle);
+  }
+}
+
+// ── [4] Clean Player: مفتاحٌ واحد لا أربعون ────────────────────────────────
+console.log("\n[4] Clean Player — كلُّ تغييرٍ يكتب مفتاحه وحده");
+{
+  const item = body(OPTIONS, "async function persistCleanPlayerItem(key)");
+  check("[4] `persistCleanPlayerItem` موجود", !!item);
+  check("[4] ولا يقرأ السجلّ كلّه", !!item && !/CLEAN_PLAYER_OPTIONS/.test(item), item);
+  check("[4] ويفرد المخزَّن", !!item && /\.\.\.\(s\.cleanPlayer\?\.items \|\| \{\}\)/.test(item), item);
+  check("[4] والمؤشَّر وحده يُخزَّن — وغيرُه يُحذف لا يُكتب `false` (#66 وحصّة 8KB)",
+    !!item && /delete items\[key\]/.test(item), item);
+  check("[4] والمربّع مربوطٌ بمفتاحه", /persistCleanPlayerItem\(key\)/.test(OPTIONS));
+  const master = body(OPTIONS, "async function persistCleanPlayer()");
+  check("[4] والمفتاح الرئيسي يكتب `enabled` وحده",
+    !!master && /\.\.\.\(s\.cleanPlayer \|\| \{\}\), enabled:/.test(master), master);
+  check("[4] ولا يُعيد بناء `items` من الـDOM",
+    !!master && !/cp_\$\{key\}/.test(master), master);
+}
+
+// ── [5] النمط المرجع باقٍ في `popup.js` — لا صياغةٌ ثالثة ─────────────────
+console.log("\n[5] النمط المرجع — عُمِّم ولم يُبتكَر");
+{
+  // `popup.js` كان صفراً في العدّ، وهو المرجع: يفرد ويستبدل حقلاً ويحتمل الغياب
+  check("[5] `popup.js` ما زال يفرد المخزَّن", /\.\.\.\(settings\.subtitles \|\| \{\}\)/.test(POPUP));
+  check("[5] ويحتمل غياب العنصر", /\$\("subtitlesEnabled"\)\?\.checked/.test(POPUP));
+  check("[5] وببديلٍ صريح عند الغياب", /dur \? Number\(dur\.value\) : 900/.test(POPUP));
+  // ولا معالجَ في options.js يعود إلى كتابة عدّة حقول من عدّة ضوابط
+  const multi = (OPTIONS.match(/s\.overlay\.\w+ = \$\("/g) || []).length;
+  check("[5] وصفر كتابةٍ مباشرة `s.overlay.x = $(...)` خارج السجلّ", multi === 0, `العدد ${multi}`);
+}
+
+console.log(`\n✅ نجح ${pass} / فشل ${fail}\n`);
+process.exit(fail ? 1 : 0);
