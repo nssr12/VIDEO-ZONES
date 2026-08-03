@@ -101,6 +101,25 @@ ok(dB && dB.onlyOptions.length === 1 && dB.onlyOptions[0] === "c",
 ok(itemKeys("const SOMETHING_ELSE = {};") === null, "مصدر بلا سجلّ قُرئ تطابقاً بدل أن يسقط");
 ok(optionKeys("const SOMETHING_ELSE = [];") === null, "مصدر بلا سجلّ قُرئ تطابقاً بدل أن يسقط");
 
+// ── #91 — المحدِّد المقيس لعنوان ملء الشاشة، مثبَّتٌ باسمه ──────────────────
+// ⚠️ **فشل هذا التثبيت يعني أن `top_titles` فقد عنصر ملء الشاشة** — والعَرَض
+// عندها: المفتاح مؤشَّرٌ والعنوان ظاهرٌ في ملء الشاشة، **وهو #91 عائداً**.
+// **قِيس 2026-08-04** (`tools/bench-91-title.mjs`): `.ytp-title` يُخفى فعلاً
+// (شاهدٌ من صنعنا)، **والظاهر عنصرٌ آخر** `.ytp-fullscreen-metadata` — **مرئيّ
+// 466×56 في ملء الشاشة و`0×0` خارجه**، ويحمل العنوان والقناة والمشاهدات وحدها.
+{
+  const CONTENT = require("fs").readFileSync("content.js", "utf8");
+  const row = (CONTENT.match(/top_titles:\s*\[([^\]]*)\]/) || [])[1] || "";
+  ok(/\.ytp-title\b/.test(row), "top_titles ما زال يحمل `.ytp-title`");
+  ok(/\.ytp-fullscreen-metadata/.test(row),
+     "top_titles يحمل `.ytp-fullscreen-metadata` (#91) — **وبدونه يعود العَرَض**");
+  // شاهدٌ على الحارس: سجلٌّ بلا المحدِّد **يجب أن يُقرأ ناقصاً**
+  const fakeRow = (`top_titles: [".ytp-title", ".ytp-title-channel"],`
+    .match(/top_titles:\s*\[([^\]]*)\]/) || [])[1] || "";
+  ok(!/\.ytp-fullscreen-metadata/.test(fakeRow),
+     "والحارس يرى غيابه في سجلٍّ مُفتعَل — **وإلّا فخضرتُه لا تعني شيئاً**");
+}
+
 // الصيغة هي التي يفهمها `tools/run-tests.js` — ملفٌ بخرْج آخر يُحسب **مجهولاً
 // لا صفراً**، فيُحمّر المجموعة بدل أن يُتخطّى صامتاً.
 console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);

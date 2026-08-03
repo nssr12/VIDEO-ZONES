@@ -1281,7 +1281,18 @@ function startYtShortsRedirect() {
 const CLEAN_PLAYER_ITEMS = {
   ambient_mode:            ["#cinematics-container", "#cinematics"],
   top_section:             [".ytp-chrome-top", ".ytp-gradient-top", ".ytp-chrome-top-buttons"],
-  top_titles:              [".ytp-title", ".ytp-title-channel"],
+  // ── #91 — **وعنصرُ ملء الشاشة ثالثاً، وهو المقيس لا المُخمَّن (2026-08-04)** ──
+  // ⚠️ **الجذر (ب) لا (أ):** `.ytp-title` **يُطابَق ويُخفى فعلاً** — وأُثبت بشاهدٍ
+  // من صنعنا (عنصرٌ مُفتعَل بالصنف ⇒ `display:none`، وبصنفٍ محايد ⇒ `block`) —
+  // **ومع ذلك يبقى العنوان ظاهراً في ملء الشاشة**، لأن يوتيوب يرسمه هناك في
+  // **عنصرٍ آخر**: `.ytp-fullscreen-metadata` (**مرئيّ 466×56 في ملء الشاشة، و`0×0`
+  // خارجه**). ⇒ **حالٌ لم تُنتَج تُقرأ محدِّداً ميّتاً** (`S7`)، **وعلاجُها محدِّدٌ
+  // للحال لا إصلاحُ قاعدة**.
+  // ⚠️ **ولم يُنشأ مفتاحٌ ثانٍ رغم أن الخطّة الأولى قالت به**: القياس بيّن أن
+  // **الوعد واحد** («العنوان واسم القناة»)، **ومفتاحٌ ثانٍ يترك الأوّل كاذباً** —
+  // وهو داء #66 بعينه. **والمقيس أن الحاوية تحمل العنوان والقناة والمشاهدات
+  // وحدها** (لا زرّ اشتراك ولا غيره)، فإخفاؤها **هو الوعد لا أوسع منه**.
+  top_titles:              [".ytp-title", ".ytp-title-channel", ".ytp-fullscreen-metadata"],
   top_playlist_menu:       [".ytp-playlist-menu-button"],
   top_watch_later:         [".ytp-watch-later-button"],
   top_share:               [".ytp-share-button"],
