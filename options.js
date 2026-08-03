@@ -268,6 +268,11 @@ async function getSettings() {
   // ⚠️ **#71 — والافتراض هنا مطفأ، والشكل مقلوب عمداً:** ميزةٌ جديدة **لا تُشغَّل
   // بلا طلب**، فلا يرى من لم يطلبها حرفاً. الشكلان لا يُوحَّدان.
   if (typeof settings.overlay.speedBadge !== "boolean") settings.overlay.speedBadge = false;
+  if (typeof settings.overlay.hideProgressBar !== "boolean") settings.overlay.hideProgressBar = false;
+  // #70 · #72 — مهلة السكون: الحدّ الأدنى صريح، و«صفر» ليست إطفاءً
+  settings.idle ||= {};
+  if (typeof settings.idle.ms !== "number" || settings.idle.ms <= 0) settings.idle.ms = 2000;
+  settings.idle.ms = Math.max(500, settings.idle.ms);
   if (typeof settings.ytAutoQuality !== "string") settings.ytAutoQuality = "";
   if (typeof settings.ytShortsRedirect !== "boolean") settings.ytShortsRedirect = true;
   settings.cleanPlayer ||= {};
@@ -610,6 +615,15 @@ function renderOverlayTiming(overlay) {
   $("volumeDurationValue").textContent = formatDurationMs(vol);
   $("speedBadgeEnabled").checked = overlay?.speedBadge === true;
   syncSpeedBadgeRow(vol);
+  $("hideProgressBar").checked = overlay?.hideProgressBar === true;
+}
+
+// #70 · #72 — مهلة السكون مشتركة بين المستهلكين، **ولا «صفر تعني مطفأ»**:
+// الحدّ الأدنى صريح (500) والإطفاء بمفتاح الميزة وحده (الشاهد الرابع والعشرون).
+function renderIdleTiming(idle) {
+  const ms = Math.max(500, Number(idle?.ms) > 0 ? Number(idle.ms) : 2000);
+  $("idleDuration").value = String(ms);
+  $("idleDurationValue").textContent = `${(ms / 1000).toFixed(1)} ثانية`;
 }
 
 // ── #71 — المربّع يُعطَّل **بسببٍ مكتوب**، ولا يُترك يكذب ────────────────────
@@ -1026,6 +1040,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     s.overlay.volumeAutoHideMs = vol;
     s.overlay.hintEnabled = $("zoneHintEnabled").checked;
     s.overlay.speedBadge = $("speedBadgeEnabled").checked;
+    s.overlay.hideProgressBar = $("hideProgressBar").checked;
+    s.idle = { ms: Number($("idleDuration").value) };
     s.overlay.enabled = grid > 0 || vol > 0;
     await saveSettings(s);
     const tabs = await chrome.tabs.query({});
@@ -1040,6 +1056,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("gridDuration").addEventListener("change", persistOverlayTiming);
   $("zoneHintEnabled").addEventListener("change", persistOverlayTiming);
   $("speedBadgeEnabled").addEventListener("change", persistOverlayTiming);
+  $("hideProgressBar").addEventListener("change", persistOverlayTiming);
+  $("idleDuration").addEventListener("input", () => {
+    $("idleDurationValue").textContent = `${(Number($("idleDuration").value) / 1000).toFixed(1)} ثانية`;
+  });
+  $("idleDuration").addEventListener("change", persistOverlayTiming);
   $("volumeDuration").addEventListener("input", () => {
     $("volumeDurationValue").textContent = formatDurationMs(Number($("volumeDuration").value));
     // السببُ يتبع المُنزلق أثناء السحب لا بعد الحفظ: `input` يعرض و`change` يكتب
@@ -1210,6 +1231,7 @@ async function renderAllFromStorage() {
   renderSoundSettings(s.soundDisplay);
   renderGridAppearance(s.gridAppearance);
   renderOverlayTiming(s.overlay);
+  renderIdleTiming(s.idle);
   renderSubtitles(s.subtitles);
   renderYtAutoQuality(s.ytAutoQuality);
   renderYtShortsRedirect(s.ytShortsRedirect);

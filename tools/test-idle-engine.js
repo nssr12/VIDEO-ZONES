@@ -61,18 +61,27 @@ function makeWorld({ consumers = {}, gate = true } = {}) {
     extensionActive: () => ctx.__gate,
     settingsRead: async () => ({ settings: ctx.__settings }),
     getVideoUnderPointer: (e) => (ctx.__inside ? { tagName: "VIDEO" } : null),
+    // مستمعو مخارج الامتناع تُلتقط كي **تُختبَر لا تُدّعى** (شرط قبول المالك)
+    window: { addEventListener: (t, fn) => { (listeners[t] ||= []).push(fn); } },
+    document: {
+      addEventListener: (t, fn) => { (listeners[t] ||= []).push(fn); },
+      hidden: false,
+      activeElement: null
+    },
     __gate: gate,
     __settings: {},
     __inside: true,
     __log: log
   };
+  const listeners = {};
   vm.createContext(ctx);
   vm.runInContext(ENGINE, ctx);
   // المستهلكون يُحقنون في السجلّ نفسه — **لا سجلٌّ مزيّف بجواره**
   ctx.__consumers = consumers;
   vm.runInContext("Object.assign(IDLE_CONSUMERS, __consumers)", ctx);
   return {
-    ctx, log,
+    ctx, log, listeners,
+    fire: (type, ev = {}) => { for (const fn of listeners[type] || []) fn(ev); },
     run: (expr) => vm.runInContext(expr, ctx),
     get: (name) => vm.runInContext(name, ctx),
     timers: () => clock.q.length,
@@ -234,14 +243,79 @@ console.log("\n[6] ⭐ الامتناع: سياسةٌ لكل مستهلك، لا
   w.run("refreshIdleConsumers()");
   check("[6] ورفع الامتناع يعيده إلى حالة المحرّك", log.join() === "host:idle,ours:idle", log);
 
-  // ومستهلكٌ مُطفأ لا يُبلَّغ أصلاً
+  // ⚠️ **ومستهلكٌ مُطفأ يُعرض كالنشط، لا «لا يُبلَّغ»** — كان يُتخطّى صامتاً،
+  // **فيبقى إخفاؤه عالقاً بعد إطفاء مفتاحه**: يُطفئ المستخدم الميزة فلا يعود
+  // شريطه. حالةٌ تُترك على آخر ما كانت عليه **حالةٌ لا يملك أحدٌ إخراجها**.
   const log2 = [];
   const w2 = makeWorld({ consumers: {
     on: mkConsumer(log2, "on"),
     off: mkConsumer(log2, "off", { enabled: false })
   } });
   w2.run("refreshIdleConsumers()");
-  check("[6] ومستهلكٌ مفتاحه مطفأ لا يُبلَّغ", log2.join() === "on:idle", log2);
+  check("[6] ومستهلكٌ مفتاحه مطفأ يُستعاد لا يُتخطّى", log2.join() === "on:idle,off:active", log2);
+
+  // وإطفاء المحرّك كلّه يُخرج الجميع — ولو كانت مفاتيحهم مُشغَّلة
+  const log3 = [];
+  const w3 = makeWorld({ consumers: { a: mkConsumer(log3, "a") } });
+  w3.run("refreshIdleConsumers()");
+  w3.run("markIdleActivity()");
+  w3.advance(2100);
+  log3.length = 0;
+  w3.ctx.__gate = false;
+  w3.run("refreshIdleConsumers()");
+  check("[6] وإغلاق البوّابة يُخرج مستهلكاً كان مخفيّاً", log3.join() === "a:active", log3);
+}
+
+// ── [9] ⭐ الامتناع العالق — أربعة مخارج، **مُختبَرة لا مُدّعاة** ────────────
+console.log("\n[9] ⭐ الامتناع العالق: أربعة مخارج، وكلٌّ يُجرَّب");
+{
+  const EXITS = [
+    ["mouseup", {}],
+    ["pointercancel", {}],
+    ["blur", {}],
+    ["visibilitychange", {}]
+  ];
+  for (const [type, ev] of EXITS) {
+    const log = [];
+    const w = makeWorld({ consumers: {
+      a: { enabled: () => true, suspended: () => w.get("idlePointerHeld"),
+           onActive: () => log.push("a:active"), onIdle: () => log.push("a:idle") }
+    } });
+    w.run("refreshIdleConsumers()");
+    w.fire("mousedown", { isTrusted: true, type: "mousedown" });
+    check(`[9] «${type}»: الضغط يرفع الامتناع أولاً`, w.get("idlePointerHeld") === true);
+
+    // ⚠️ وسكونٌ كامل والامتناع قائم ⇒ **لا إخفاء** — وهي حال «سحبٌ بلا حركة»
+    log.length = 0;
+    w.run("markIdleActivity()");
+    w.advance(2100);
+    check(`[9]   وسكونٌ تامّ لا يُخفي شيئاً تحت اليد`, !log.includes("a:idle"), log);
+
+    if (type === "visibilitychange") w.ctx.document.hidden = true;
+    w.fire(type, ev);
+    check(`[9]   و«${type}» يُسقط الامتناع`, w.get("idlePointerHeld") === false);
+  }
+
+  // والمخارج الأربعة مسجَّلة فعلاً في المنتج، لا في العالم وحده
+  for (const t of ["mouseup", "pointercancel", "blur", "visibilitychange"]) {
+    check(`[9] ومستمع «${t}» مسجَّل في المنتج`,
+      new RegExp(`addEventListener\\("${t}"`).test(ENGINE));
+  }
+}
+
+// ── [10] الشرط الثاني: الهدف يحوي عنصر التركيز ─────────────────────────────
+console.log("\n[10] التركيز داخل الهدف — خرج من القياس لا من التصميم");
+{
+  const w = makeWorld();
+  check("[10] `focusInside` موجودة", typeof w.get("focusInside") === "function");
+  w.ctx.document.activeElement = null;
+  check("[10] بلا تركيز ⇒ لا امتناع", w.run(`focusInside(".x")`) === false);
+  w.ctx.document.activeElement = { closest: (s) => (s === ".x" ? {} : null) };
+  check("[10] وتركيزٌ داخل الهدف ⇒ امتناع", w.run(`focusInside(".x")`) === true);
+  w.ctx.document.activeElement = { closest: () => null };
+  check("[10] وتركيزٌ خارجه ⇒ لا امتناع", w.run(`focusInside(".x")`) === false);
+  w.ctx.document.activeElement = { closest: () => { throw new Error("shadow"); } };
+  check("[10] وعنصرٌ يرمي ⇒ لا امتناع لا انهيار", w.run(`focusInside(".x")`) === false);
 }
 
 // ── [7] بوّابة #64 والمهلة ─────────────────────────────────────────────────

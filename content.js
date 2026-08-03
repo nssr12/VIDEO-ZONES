@@ -1737,15 +1737,20 @@ function refreshIdleConsumers() {
     clearTimeout(idleTimer);
     idleTimer = null;
     idleState = "idle";
-    return;
   }
+  // ⚠️ **تُنادى في الحالين** — ومع `!idleWanted` تُخرج كل مستهلك إلى «نشط»،
+  // فلا يبقى إخفاءٌ عالقاً بعد إطفاء المفتاح أو إغلاق البوّابة.
   applyIdleState();
 }
 
+// ⚠️ **مُطفأ ⇒ يُعرض كالنشط، لا «لا يُبلَّغ».** كان يُتخطّى صامتاً، **فيبقى
+// إخفاؤه عالقاً بعد إطفاء مفتاحه** — والمستخدم يُطفئ الميزة فلا يعود شريطه.
+// وهي عين علّة «الامتناع العالق» التي حرسناها بأربعة مخارج: **حالةٌ تُترك على
+// آخر ما كانت عليه هي حالةٌ لا يملك أحدٌ إخراجها.** فالتعافي مبنيّ لا محروس.
 function applyIdleState() {
+  const forceActive = !idleWanted;   // المحرّك مطفأ ⇒ لا إخفاء على أحد
   for (const c of Object.values(IDLE_CONSUMERS)) {
-    if (!c.enabled()) continue;
-    if (c.suspended?.()) { c.onActive(); continue; }
+    if (forceActive || !c.enabled() || c.suspended?.()) { c.onActive(); continue; }
     if (idleState === "idle") c.onIdle(); else c.onActive();
   }
 }
@@ -1773,6 +1778,52 @@ function idleTick() {
     idleState = "idle";
     applyIdleState();
   }
+}
+
+// ── إشارتان بنيويّتان يستهلكهما شرط الامتناع — **بلا صنف مضيفٍ واحد** ───────
+// **حلّتا محلّ ثلاثة أصناف تموت** (`seeking-mode` · `ytp-probably-keyboard-focus`
+// · `ytp-settings-shown`) — وهو النمط الذي نلاحقه منذ #65.
+//
+// **(١) زرٌّ مضغوط بدأ داخل المشغّل.** ⚠️ **المقيس أن السحب يقع بلا حركة**:
+// الحالة 5 في `AUDIT.md` القسم الرابع عشر — `mousedown` واحد ثمّ صمتٌ تامّ،
+// و`seeking-mode` حاضر والشريط ظاهر. ⇒ **مقدّمة «السحب حركةٌ متّصلة فهو نشاطٌ
+// بالتعريف» تصحّ أثناء الجرّ وتسقط عند الوقفة** (سُحبت بقرار 21، 2026-08-02).
+// فبلا هذه الإشارة **يُخفى الشريط من تحت اليد التي تمسكه**.
+//
+// ⚠️ **والامتناع العالق أسوأ من إخفاءٍ مبكّر** — الميزة تصير معطّلة صامتة، وهو
+// «النجاح الكاذب» في #57 بثوبٍ آخر. و`mouseup` **قد لا يصل**: إفلاتٌ خارج
+// النافذة · تبديل تبويب · إلغاء المؤشّر · فقدان تركيز النافذة.
+// ⇒ **أربعة مخارج لا مخرج**، ولا يُترك واحدٌ منها للنيّة.
+let idlePointerHeld = false;
+
+function releaseIdlePointer() {
+  if (!idlePointerHeld) return;
+  idlePointerHeld = false;
+  refreshIdleConsumers();
+}
+
+window.addEventListener("mousedown", (e) => {
+  if (e.isTrusted === false) return;
+  if (!pointerInsidePlayer(e)) return;
+  idlePointerHeld = true;
+  refreshIdleConsumers();
+}, true);
+window.addEventListener("mouseup", releaseIdlePointer, true);
+window.addEventListener("pointercancel", releaseIdlePointer, true);
+window.addEventListener("blur", releaseIdlePointer);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) releaseIdlePointer();
+});
+
+// **(٢) الهدف يحوي عنصر التركيز.** ⚠️ **خرجت من القياس لا من التصميم**: الحالة 5
+// أظهرت `focus: "DIV.ytp-progress-bar"` — **داخل الحاوية التي ننوي إخفاءها**.
+// وإخفاءُ عنصرٍ يحمل `activeElement` **يكسر تنقّل لوحة المفاتيح لا العرض وحده**.
+// وهي تغطّي `ytp-probably-keyboard-focus` **بلا أن تسمّيه**.
+function focusInside(selector) {
+  try {
+    const a = document.activeElement;
+    return !!(a && a.closest && a.closest(selector));
+  } catch { return false; }
 }
 
 // المؤشّر داخل إطار المشغّل — بالمقيس القائم (`zoneRectForVideo` عبر
@@ -1803,6 +1854,63 @@ function noteIdleFromPointerEvent(e, moved) {
 // الدخول إلى ملء الشاشة والخروج منه **فعلٌ من المستخدم على المشغّل بتعريفه**،
 // والتخطيط يتبدّل كلّه — فيُعدّ نشاطاً بلا شرط موضع.
 document.addEventListener("fullscreenchange", markIdleActivity);
+
+// ── #70 — إخفاء شريط تقدّم يوتيوب بالسكون ───────────────────────────────────
+// **الهدف اختير بالقياس لا بالاسم** (`AUDIT.md` القسم الثالث عشر): أضيق مرشّح من
+// ثمانية يجمع الاثني عشر التابعة — التقدّم والتحميل والقائمة **والمِقبض وزرّه**
+// والحشو وتقدّم التحويم والعلامات **والخريطة الحرارية وفصلها** — **ولا يمسّ
+// الوقت ولا زرّاً واحداً**، ومطابقٌ في النافذة وملء الشاشة.
+//
+// **وطريقة الإخفاء من القياس كذلك: `opacity:0` كما يفعل المضيف** (مقيسٌ في
+// الحالتين 3 و8 مع `ytp-autohide`)، **لا `display:none`** — فلا إعادة تدفّق،
+// وسلوكٌ مطابقٌ لما يفعله المضيف نفسه. ومعها `pointer-events:none` **كي لا
+// يُسحَب شريطٌ غير مرئيّ**.
+//
+// ⚠️ **حدٌّ معروف مكتوب فلا يُضاف له حارسٌ لاحقاً بحسن نيّة (قرار المالك):**
+// **قائمة الإعدادات (`ytp-settings-shown`) لا تحتاج شرط امتناع** — قِيس أن
+// `.ytp-popup` **خارج** `.ytp-progress-bar-container`، فتبقى ظاهرة ولا يمسّها
+// إخفاؤنا. **حدٌّ معروف لا حارس.**
+const YT_PROGRESS_SELECTOR = ".ytp-progress-bar-container";
+const YT_PROGRESS_HIDE_CLASS = "vz-idle-hide-progress";
+let ytProgressStyleEl = null;
+
+function progressHideActive() {
+  if (!extensionActive()) return false;   // #64: الرئيسي ثم الحظر
+  return overlaySettings.hideProgressBar === true && isYouTubeFamilyHost();
+}
+
+// **ورقةٌ تُحقَن مرّة وصنفٌ يُقلَب** — لا حقن/نزع عند كل انتقال: الانتقالات هنا
+// كثيرة بطبعها، وكل حقنٍ يُعيد حساب الأنماط.
+function ensureYtProgressCss() {
+  if (ytProgressStyleEl?.isConnected) return;
+  ytProgressStyleEl = document.createElement("style");
+  ytProgressStyleEl.id = "vz_idle_progress_css";
+  ytProgressStyleEl.textContent =
+    `html.${YT_PROGRESS_HIDE_CLASS} ${YT_PROGRESS_SELECTOR}{` +
+    `opacity:0 !important;pointer-events:none !important;}`;
+  document.documentElement.appendChild(ytProgressStyleEl);
+}
+
+function setYtProgressHidden(on) {
+  if (on) ensureYtProgressCss();
+  document.documentElement.classList.toggle(YT_PROGRESS_HIDE_CLASS, !!on);
+}
+
+IDLE_CONSUMERS.progressBar = {
+  enabled: progressHideActive,
+  suspended: () =>
+    // ⚠️ **شرطٌ ثالثٌ خرج من كتابة الاختبار لا من التصميم:** المحرّك يبدأ
+    // **ساكناً** (المصيدة ٣) — وهو الصواب لزرّنا في #72 فلا يظهر بلا طلب،
+    // **وعكسُه هنا**: صفحةٌ تُفتح والمؤشّر فوق المشغّل ⇒ نُخفي شريط المضيف
+    // **فوراً وقبل أن تمضي مهلةٌ واحدة**. ⇒ **لا نلمس المضيف قبل أن نرى نشاطاً
+    // ولو مرّة** — وهي دلالة «الإطفاء لا يُرجِع حالةً للوراء» في بوّابة #64.
+    // **والمستهلكان يختلفان هنا بالضبط، وهذا ما بُني الحدّ المعماريّ لأجله.**
+    idleLastActivityAt === 0 ||
+    // والشرطان البنيويّان — ولا صنف مضيفٍ فيهما
+    idlePointerHeld || focusInside(YT_PROGRESS_SELECTOR),
+  onActive: () => setYtProgressHidden(false),
+  onIdle: () => setYtProgressHidden(true)
+};
 
 function getVideoFromPointerPosition() {
   if (typeof lastPointer.x !== "number" || typeof lastPointer.y !== "number") return null;
@@ -1943,7 +2051,9 @@ async function loadOverlaySettings(pre) {
     // **جديدة** افتراضها **مطفأ**، فـ`!!x` لا `!== false` (قرار المالك). و`!== false`
     // شكلُ المفتاح الرئيسي وحده — **والقسم [٤] من `tools/test-master-gate.js`
     // يشترطه هناك**، فخلطُ الشكلين يُطفئ إضافةَ من لم يفتح الإعدادات قط.
-    speedBadge: !!o.speedBadge
+    speedBadge: !!o.speedBadge,
+    // #70 — ميزةٌ جديدة، افتراضها مطفأ بالشكل نفسه
+    hideProgressBar: !!o.hideProgressBar
   };
 
   if (!overlaySettings.enabled) hideOverlayNow();
