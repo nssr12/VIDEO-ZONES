@@ -1738,8 +1738,23 @@ const IDLE_CONSUMERS = {};
 async function loadIdleSettings(pre) {
   const data = await settingsRead(pre);
   const ms = Number(data.settings?.idle?.ms);
-  idleMs = Number.isFinite(ms) && ms > 0 ? Math.max(IDLE_MIN_MS, ms) : IDLE_DEFAULT_MS;
+  const next = Number.isFinite(ms) && ms > 0 ? Math.max(IDLE_MIN_MS, ms) : IDLE_DEFAULT_MS;
+  const changed = next !== idleMs;
+  idleMs = next;
   refreshIdleConsumers();
+  // ── #90 — **مؤقّتٌ جارٍ يُعاد حسابه على القيمة الجديدة فوراً** ─────────────
+  // ⛔ **العطب مقيس:** ضُبطت المهلة 0.5s بعد ثانيتين من تسليحٍ على 6s، **فبقي
+  // الزرّ ظاهراً حتى الثانية السادسة** — أي أن المؤقّت أكمل على القيمة القديمة.
+  // **والنقرة نشاطٌ يُعيد التسليح**، فيُطبَّق الإعداد ⇒ **«لا يُطبَّق حتى أنقر».**
+  // ⇒ **وإعدادٌ يُطبَّق «من الدورة القادمة» يبدو معطّلاً لمن غيّره ونظر** — وهو
+  // العَرَض بعينه (قرار المالك).
+  // **و`idleTick` تحسب الباقي من `idleMs` الحاليّة**، فإلغاءُ المؤقّت ونداؤها
+  // يُعيد الحساب على الجديدة: **سالبٌ ⇒ سكونٌ الآن، وموجبٌ ⇒ تسليحٌ للباقي.**
+  if (changed && idleTimer != null) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+    idleTick();
+  }
 }
 
 // #64: الرئيسي ثمّ الحظر، ثمّ «هل لأحد المستهلكين مفتاحٌ مُشغَّل أصلاً؟»

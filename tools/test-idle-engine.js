@@ -406,6 +406,51 @@ console.log("\n[11] ⭐ كل مستهلكٍ يُعلن معنى إطفائه، �
     fd.length === 1 && !/onDisabled\s*:/.test(fd[0]), fd);
 }
 
+
+// ── [12] ⭐ #90 — مؤقّتٌ جارٍ يُعاد حسابه على المهلة الجديدة فوراً ──────────
+// ⛔ **العطب مقيس:** ضُبطت 0.5s بعد ثانيتين من تسليحٍ على 6s **فبقي ظاهراً حتى
+// الثانية السادسة**. **والنقرة نشاطٌ يُعيد التسليح** ⇒ «لا يُطبَّق حتى أنقر».
+// ⇒ **وإعدادٌ يُطبَّق من الدورة القادمة يبدو معطّلاً لمن غيّره ونظر.**
+console.log("\n[12] ⭐ تغيّرُ المهلة يُعيد حساب المؤقّت الجاري");
+{
+  const log = [];
+  // ⚠️ **`makeWorld` لا يأخذ `idleMs`** — تُضبط في العالم صراحةً بعد بنائه.
+  const w = makeWorld({ consumers: { a: mkConsumer(log, "a") } });
+  w.run("idleMs = 6000");
+  w.run("refreshIdleConsumers()");
+  w.run("markIdleActivity()");
+  w.advance(2000);
+  check("[12] بعد ثانيتين من ستّ: ما زال نشطاً", w.get("idleState") === "active", w.get("idleState"));
+  // تغيّرُ المهلة إلى 500 — **بلا أي نشاط**
+  w.ctx.__idleMsNext = 500;
+  w.run("idleMs = 500; if (idleTimer != null) { clearTimeout(idleTimer); idleTimer = null; idleTick(); }");
+  check("[12] ⭐ والقيمة الجديدة أقصر من المنقضي ⇒ سكونٌ الآن لا بعد أربع",
+    w.get("idleState") === "idle", w.get("idleState"));
+  // والعكس: قيمةٌ أطول ⇒ يبقى نشطاً ويُعاد تسليحه للباقي
+  const log2 = [];
+  const w2 = makeWorld({ consumers: { b: mkConsumer(log2, "b") } });
+  w2.run("idleMs = 1000");
+  w2.run("refreshIdleConsumers()");
+  w2.run("markIdleActivity()");
+  w2.advance(600);
+  w2.run("idleMs = 5000; if (idleTimer != null) { clearTimeout(idleTimer); idleTimer = null; idleTick(); }");
+  check("[12] وقيمةٌ أطول ⇒ يبقى نشطاً", w2.get("idleState") === "active", w2.get("idleState"));
+  w2.advance(4500);
+  check("[12] ثمّ يسكن عند اكتمال الجديدة لا القديمة", w2.get("idleState") === "idle", w2.get("idleState"));
+  // ⭐ **الشاهد الموجب (قرار 47): بلا إعادة الحساب يبقى نشطاً على القديمة**
+  const log3 = [];
+  const w3 = makeWorld({ consumers: { c: mkConsumer(log3, "c") } });
+  w3.run("idleMs = 6000");
+  w3.run("refreshIdleConsumers()"); w3.run("markIdleActivity()"); w3.advance(2000);
+  w3.run("idleMs = 500;");   // **بلا إعادة حساب** — كما كان الكود
+  check("[12] ⭐ وبلا إعادة الحساب يبقى نشطاً — فالحارس يرى الفرق",
+    w3.get("idleState") === "active", w3.get("idleState"));
+  // والكود المشحون يحمل إعادة الحساب
+  const fn = SRC.match(/async function loadIdleSettings[\s\S]*?\n}/);
+  check("[12] و`loadIdleSettings` تُعيد الحساب عند التغيّر",
+    !!fn && /changed && idleTimer != null/.test(fn[0]) && /idleTick\(\)/.test(fn[0]), fn && fn[0].slice(-160));
+}
+
   console.log(`\n✅ نجح ${pass} / فشل ${fail}\n`);
   process.exit(fail ? 1 : 0);
 })();
