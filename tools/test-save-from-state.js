@@ -44,8 +44,9 @@ console.log("\n=== #78 — الحفظ من الحالة لا من الـDOM ===\
 // ── [1] لا معالجَ يكتب أكثر من حقلٍ من ضوابط متعدّدة ──────────────────────
 console.log("[1] ضابطٌ واحد ⇒ حقلٌ واحد");
 {
-  // مرساة: الدالّة **مُعشَّشة** فتُقتطع عند إغلاقها بمسافتين لا عند العمود الأول
-  const persist = slice(OPTIONS, "async function persistTiming(id)", "\n  }");
+  // مرساة: الدالّة **صارت عُلوية** (#82) فتُقتطع عند إغلاقها في العمود الأول.
+  // ⚠️ **أُصلحت المرساة لا التأكيد** (قرار 33): الكود انتقل، والتغطية باقية.
+  const persist = slice(OPTIONS, "async function persistTiming(id)", "\n}");
   check("[1] `persistTiming` موجود ويأخذ مُعرّف الضابط", !!persist);
   // ⚠️ العَرَض بعينه: الدالّة القديمة كانت تقرأ ثمانية `$(...)` في جسمها
   const reads = persist ? (persist.match(/\$\("[A-Za-z]+"\)/g) || []).length : -1;
@@ -83,8 +84,9 @@ console.log("[1] ضابطٌ واحد ⇒ حقلٌ واحد");
 // ── [2] ⭐ الحارس: ضابطٌ لم يُرسَم لا يُكتب منه ────────────────────────────
 console.log("\n[2] ⭐ الختم شرطُ الكتابة — ويرثه مُولِّد #77");
 {
-  // مرساة: الدالّة **مُعشَّشة** فتُقتطع عند إغلاقها بمسافتين لا عند العمود الأول
-  const persist = slice(OPTIONS, "async function persistTiming(id)", "\n  }");
+  // مرساة: الدالّة **صارت عُلوية** (#82) فتُقتطع عند إغلاقها في العمود الأول.
+  // ⚠️ **أُصلحت المرساة لا التأكيد** (قرار 33): الكود انتقل، والتغطية باقية.
+  const persist = slice(OPTIONS, "async function persistTiming(id)", "\n}");
   check("[2] الكتابة تشترط الختم", !!persist && /dataset\[VZ_RENDERED\] !== "1"/.test(persist), persist);
   check("[2] والرفض قبل أي قراءة تخزين",
     !!persist && persist.indexOf("VZ_RENDERED") < persist.indexOf("await getSettings()"), persist);

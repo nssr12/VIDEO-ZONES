@@ -58,6 +58,22 @@ export async function connect(url) {
 export const HARNESS_LANG = "ar-EG";   // بيئة المنتج — تُعلَن ولا تُورَث (انظر أدناه)
 export async function launch(port, { withExtension = true, extra = [], extPath = ROOT,
                                      lang = HARNESS_LANG } = {}) {
+  // ⛔ **فحصٌ قَبْليّ: أيجيب أحدٌ على المنفذ قبل أن نُشغّل؟** (2026-08-03)
+  // **الموعد بيننا وبين كروم هو المنفذ**، فكروم متسرّبٌ من تشغيلةٍ سابقة **يردّ
+  // على النداء** فنتّصل به — **ونقيس البناء الذي حُمِّل فيه لا بناءنا**.
+  // ⚠️ **وقد وقع فعلاً وكاد يُنشر:** طُبع أن لوحة الأخطاء تحمل
+  // `persistTiming` و`__vzDeliberatelyMissing` **بعد** إصلاحٍ نجح، والرسالتان من
+  // ملفّ تعريفٍ قديم. ⇒ **رِكازٌ يقيس الماضي ويطبعه حاضراً**، وهو أخطر من عطبٍ
+  // لأنه يُكذّب إصلاحاً صحيحاً. **فيُرفض بصوتٍ عالٍ ولا يُتخطّى صامتاً.**
+  try {
+    const stale = await fetch(`http://127.0.0.1:${port}/json/version`);
+    if (stale.ok) {
+      throw new Error(`المنفذ ${port} مشغولٌ بكروم من تشغيلةٍ سابقة — ` +
+        `**سيُقاس بناءٌ قديم**. أغلقه: pkill -f "remote-debugging-port=${port}"`);
+    }
+  } catch (e) {
+    if (String(e?.message || "").startsWith("المنفذ")) throw e;   // رفضُنا لا فشل الاتصال
+  }
   const proc = spawn(CHROME, [
     "--headless=new", "--disable-gpu", "--no-first-run", "--mute-audio",
     "--no-default-browser-check", "--autoplay-policy=no-user-gesture-required",
@@ -92,7 +108,16 @@ export async function launch(port, { withExtension = true, extra = [], extPath =
     }
     await sleep(1200); // كي يبدأ الـ service worker وتُسجَّل سكربتات المحتوى
   }
-  return { proc, browser, extensionId, chrome: version.Browser };
+  // ⛔ **`kill()` على الكائن نفسه — والعلّة أن غيابها كان يُبتلع صامتاً:**
+  // `bench-options-page` كانت تنادي `chrome.kill()` في `finally { ... } catch {}`،
+  // **و`kill` ليست على الكائن** ⇒ `TypeError` يُبتلع ⇒ **كروم لا يموت أبداً**،
+  // فتُخلّف كلُّ تشغيلةٍ نسخةً، **وما بعدها يتّصل بها فيقيس بناءً قديماً** (قرار 44).
+  // ⇒ **العلاج بموضعٍ واحد يجعل الخطأ مستحيلاً** (قرار 16ج) لا بتصحيح تسعة مُنادين.
+  const kill = () => {
+    try { browser?.ws?.close(); } catch {}
+    try { proc.kill(); } catch {}
+  };
+  return { proc, browser, extensionId, chrome: version.Browser, kill };
 }
 
 // ── ضبط تخزين الإضافة قبل القياس ────────────────────────────────────────────

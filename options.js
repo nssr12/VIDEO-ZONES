@@ -1119,30 +1119,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderGridAppearance(s.gridAppearance);
   });
 
-  // #78 — **ضابطٌ واحد ⇒ حقلٌ واحد**، على نمط `popup.js` حرفياً.
-  async function persistTiming(id) {
-    const el = $(id);
-    const apply = TIMING_CONTROLS[id];
-    // ⚠️ **ضابطٌ غائب أو لم يُرسَم لا يُكتب منه** — وهو العطب بعينه: كنّا نكتب
-    // ثمانية حقول من ثمانية ضوابط عند لمس أيٍّ منها، فيُحفَظ ما لم يقرأه أحد.
-    // **ولا صمت**: رفضٌ صامت يترك المستخدم يظنّ أنه حفظ (درس #57 و#69).
-    if (!el || !apply || el.dataset[VZ_RENDERED] !== "1") {
-      showToast("bad", "لم يُحفظ: الضابط لم يُرسَم بعد. أعد فتح الصفحة وحاول.");
-      console.debug("[VIDEO-ZONES] #78: رُفضت كتابة ضابطٍ غير مرسوم:", id);
-      return;
-    }
-    const s = await getSettings();
-    s.overlay ||= {};
-    apply(s, el);
-    // **مشتقٌّ من المخزَّن بعد التطبيق، لا من الـDOM**: قيمةُ حقلٍ آخر تُقرأ من
-    // مصدرها لا من ضابطٍ قد لا يكون مرسوماً.
-    s.overlay.enabled = Number(s.overlay.autoHideMs) > 0 || Number(s.overlay.volumeAutoHideMs) > 0;
-    if (!(await saveSettings(s))) return;
-    const tabs = await chrome.tabs.query({});
-    for (const t of tabs) {
-      if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_OVERLAY_SETTINGS" }).catch(() => {});
-    }
-  }
 
   // #77 — ربطُ ضوابط التوقيت صار في المُولِّد نفسه (settings-ui.js):
 
@@ -1480,5 +1456,35 @@ function setupBackupUI() {
       fileInput.value = "";
       importAllSettings(file);
     });
+  }
+}
+
+
+// ⛔ **كانت هذه الدالّة داخل `DOMContentLoaded` (دالّة سهمية) و`buildTimingList`
+// العُليا تناديها ⇒ `ReferenceError` عند أوّل لمسةٍ لضابط توقيت، فلا حقلَ توقيتٍ
+// يُحفَظ (ثمانية من ثمانية). **رُفعت إلى المستوى الأعلى — البند #82.**
+// ⚠️ **ولا تُعاد إلى نطاقٍ أضيق:** `tools/test-scope-reach.js` يُحمّر عليها.
+// #78 — **ضابطٌ واحد ⇒ حقلٌ واحد**، على نمط `popup.js` حرفياً.
+async function persistTiming(id) {
+  const el = $(id);
+  const apply = TIMING_CONTROLS[id];
+  // ⚠️ **ضابطٌ غائب أو لم يُرسَم لا يُكتب منه** — وهو العطب بعينه: كنّا نكتب
+  // ثمانية حقول من ثمانية ضوابط عند لمس أيٍّ منها، فيُحفَظ ما لم يقرأه أحد.
+  // **ولا صمت**: رفضٌ صامت يترك المستخدم يظنّ أنه حفظ (درس #57 و#69).
+  if (!el || !apply || el.dataset[VZ_RENDERED] !== "1") {
+    showToast("bad", "لم يُحفظ: الضابط لم يُرسَم بعد. أعد فتح الصفحة وحاول.");
+    console.debug("[VIDEO-ZONES] #78: رُفضت كتابة ضابطٍ غير مرسوم:", id);
+    return;
+  }
+  const s = await getSettings();
+  s.overlay ||= {};
+  apply(s, el);
+  // **مشتقٌّ من المخزَّن بعد التطبيق، لا من الـDOM**: قيمةُ حقلٍ آخر تُقرأ من
+  // مصدرها لا من ضابطٍ قد لا يكون مرسوماً.
+  s.overlay.enabled = Number(s.overlay.autoHideMs) > 0 || Number(s.overlay.volumeAutoHideMs) > 0;
+  if (!(await saveSettings(s))) return;
+  const tabs = await chrome.tabs.query({});
+  for (const t of tabs) {
+    if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_OVERLAY_SETTINGS" }).catch(() => {});
   }
 }
