@@ -34,7 +34,7 @@ import os from "node:os";
 import {
   ROOT, launch, configure, openPage, contentWorld, evalIn,
   serveTestPage, wheelProbe, ZONE_B1, ZONE_B2
-} from "./ext-harness.mjs";
+, killChrome } from "./ext-harness.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -85,7 +85,7 @@ async function measure({ extPath, url, port, label }) {
   } finally {
     try { page?.ws?.close(); } catch {}
     try { h?.browser?.ws?.close(); } catch {}
-    try { h?.proc?.kill(); } catch {}
+    killChrome(h);
   }
 }
 

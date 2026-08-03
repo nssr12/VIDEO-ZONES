@@ -262,7 +262,7 @@ async function arm(url, port, mode) {
     row.ok = true;
     return row;
   } catch (e) { row.note = "فشل: " + String(e?.message || e).slice(0, 70); return row; }
-  finally { try { ws?.close(); } catch {} try { proc?.kill(); } catch {} }
+  finally { try { ws?.close(); } catch {} killChrome(chrome); }
 }
 
 async function youtubeUrl(port) {
@@ -282,7 +282,7 @@ async function youtubeUrl(port) {
     }
     return null;
   } catch { return null; }
-  finally { try { ws?.close(); } catch {} try { proc?.kill(); } catch {} }
+  finally { try { ws?.close(); } catch {} killChrome(chrome); }
 }
 
 // ---- التشغيل ---------------------------------------------------------------

@@ -234,7 +234,7 @@ async function measureRestoreMap(url, port) {
     }
     return out;
   } catch (e) { return [{ error: String(e?.message || e).slice(0, 70) }]; }
-  finally { try { ws?.close(); } catch {} try { proc?.kill(); } catch {} }
+  finally { try { ws?.close(); } catch {} killChrome(chrome); }
 }
 
 // ---- قياس العلاجات ---------------------------------------------------------
@@ -377,7 +377,7 @@ async function measureRemedies(url, port) {
       row.note = "فشل: " + String(e?.message || e).slice(0, 60);
       rows.push(row);
     } finally {
-      try { ws?.close(); } catch {} try { proc?.kill(); } catch {}
+      try { ws?.close(); } catch {} killChrome(chrome);
     }
   }
   return rows;
@@ -452,7 +452,7 @@ async function measure(name, url, port) {
     return row;
   } finally {
     try { ws?.close(); } catch {}
-    try { proc?.kill(); } catch {}
+    killChrome(chrome);
   }
 }
 
@@ -475,7 +475,7 @@ async function youtubeUrl(port) {
     }
     return null;
   } catch { return null; }
-  finally { try { ws?.close(); } catch {} try { proc?.kill(); } catch {} }
+  finally { try { ws?.close(); } catch {} killChrome(chrome); }
 }
 
 // قناة كِك حيّة تُستخرج حيّاً: القنوات تتغيّر، ورابط مثبَّت يجعل القياس كاذباً.
@@ -500,7 +500,7 @@ async function kickUrl(port) {
     }
     return null;
   } catch { return null; }
-  finally { try { ws?.close(); } catch {} try { proc?.kill(); } catch {} }
+  finally { try { ws?.close(); } catch {} killChrome(chrome); }
 }
 
 // عدة مرشّحات لكل موقع: أول رابط يعطي مشغّلاً حقيقياً هو المقيس، وما عداه يُسجَّل

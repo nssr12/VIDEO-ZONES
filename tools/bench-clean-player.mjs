@@ -39,7 +39,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
-import { launch, openPage, evalIn, serveTestPage, connect, ROOT } from "./ext-harness.mjs";
+import { launch, openPage, evalIn, serveTestPage, connect, ROOT , killChrome } from "./ext-harness.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WITNESS_ONLY = process.argv.includes("--witness");
@@ -383,7 +383,7 @@ async function runOverlap() {
     }
     try { page.ws.close(); } catch {}
   } catch (e) { out.error = String(e?.message || e).slice(0, 120); }
-  finally { try { h.browser?.ws?.close(); } catch {} try { h.proc.kill(); } catch {} }
+  finally { try { h.browser?.ws?.close(); } catch {} killChrome(h); }
   return out;
 }
 
@@ -474,7 +474,7 @@ async function run() {
     }
   } finally {
     try { h.browser?.ws?.close(); } catch {}
-    try { h.proc.kill(); } catch {}
+    killChrome(h);
   }
   return report;
 }

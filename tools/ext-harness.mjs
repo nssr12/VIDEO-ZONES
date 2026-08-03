@@ -94,7 +94,7 @@ export async function launch(port, { withExtension = true, extra = [], extPath =
     try { version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; }
     catch { await sleep(250); }
   }
-  if (!version) { try { proc.kill(); } catch {} throw new Error("لم يستجب كروم"); }
+  if (!version) { try { proc.kill(); } catch (e) { console.log("⚠️ تعذّر إنهاء كروم بعد فشل الإقلاع: " + (e?.message || e)); } throw new Error("لم يستجب كروم"); }
 
   let extensionId = null, browser = null;
   if (withExtension) {
@@ -103,7 +103,7 @@ export async function launch(port, { withExtension = true, extra = [], extPath =
     const res = await browser.send("Extensions.loadUnpacked", { path: extPath });
     extensionId = res?.result?.id || null;
     if (!extensionId) {
-      try { browser.ws.close(); } catch {} try { proc.kill(); } catch {}
+      try { browser.ws.close(); } catch {} try { proc.kill(); } catch (e) { console.log("⚠️ تعذّر إنهاء كروم بعد فشل الإقلاع: " + (e?.message || e)); }
       throw new Error("Extensions.loadUnpacked لم يُرجع معرّفاً: " + JSON.stringify(res).slice(0, 200));
     }
     await sleep(1200); // كي يبدأ الـ service worker وتُسجَّل سكربتات المحتوى
@@ -113,10 +113,8 @@ export async function launch(port, { withExtension = true, extra = [], extPath =
   // **و`kill` ليست على الكائن** ⇒ `TypeError` يُبتلع ⇒ **كروم لا يموت أبداً**،
   // فتُخلّف كلُّ تشغيلةٍ نسخةً، **وما بعدها يتّصل بها فيقيس بناءً قديماً** (قرار 44).
   // ⇒ **العلاج بموضعٍ واحد يجعل الخطأ مستحيلاً** (قرار 16ج) لا بتصحيح تسعة مُنادين.
-  const kill = () => {
-    try { browser?.ws?.close(); } catch {}
-    try { proc.kill(); } catch {}
-  };
+  // **يُفوَّض إلى المُنهي الواحد** — فلا رسالتان لعلّةٍ واحدة (قرار 36).
+  const kill = () => killChrome({ proc, browser });
   return { proc, browser, extensionId, chrome: version.Browser, kill };
 }
 
@@ -143,6 +141,26 @@ export async function configure(port, extensionId, obj) {
     const readBack = r?.result?.result?.value;
     return { ok: !!readBack, readBack, error: r?.result?.exceptionDetails?.text };
   } finally { try { c.ws.close(); } catch {} }
+}
+
+// ── المُنهي الواحد — **يقول حين يفشل** (قرار 46 · البند #83) ────────────────
+// ⛔ **العلّة المقيسة:** `killChrome(chrome);` — و`kill` **ليست على
+// الكائن** ⇒ `TypeError` **يُبتلع** ⇒ كروم لا يموت، **فتُخلّف كلُّ تشغيلةٍ نسخةً
+// وما بعدها يتّصل بها فيقيس بناءً قديماً** (قرار 44). **وكاد يُرجع إصلاحاً صحيحاً.**
+// ⇒ **وعِلّتها واحدة فالعلاج واحد لا ستّةٌ وثلاثون**: مُنهٍ مشترك يقبل
+// «الكائن أو العملية»، **ويُعلن الفشل ولا يبتلعه**.
+// ⚠️ **والمعيار ليس نوع العملية بل أثرُ فشلها خارج موضعها:** «التفكيك آمنٌ
+// بطبعه» **خطأٌ مقيس** — الذي أفسد القياس كان تفكيكاً.
+export function killChrome(target, what = "كروم") {
+  try { target?.browser?.ws?.close?.(); } catch {}
+  const proc = target?.proc || target;
+  try {
+    if (typeof proc?.kill !== "function") throw new Error("لا `kill` على الهدف المُمرَّر");
+    proc.kill();
+  } catch (e) {
+    console.log(`⚠️ تعذّر إنهاء ${what}: ${e?.message || e} — ` +
+      `**قد تبقى عملية حيّة تسمّم التشغيلة التالية** (#83)`);
+  }
 }
 
 // ينتظر تحرّر المنفذ بعد القتل — **والانتظار صريحٌ لا `sleep` تخمينيّ**.
@@ -292,8 +310,7 @@ async function witness(label, withExtension, port, httpPort) {
     return out;
   } finally {
     try { page?.ws?.close(); } catch {}
-    try { h?.browser?.ws?.close(); } catch {}
-    try { h?.proc?.kill(); } catch {}
+    killChrome(h);
     try { server?.close(); } catch {}
   }
 }

@@ -37,7 +37,7 @@
 //   node tools/bench-options-page.mjs --witness   # الشاهدان: حيّة ⇒ خضراء · ميتة ⇒ حمراء
 import fs from "node:fs";
 import path from "node:path";
-import { launch, openPage, connect, ROOT } from "./ext-harness.mjs";
+import { launch, openPage, connect, ROOT , killChrome } from "./ext-harness.mjs";
 
 const PORT = 9754;
 const WITNESS = process.argv.includes("--witness");
@@ -190,7 +190,7 @@ async function run(label) {
 
     return { label, ok: true, errors, loadErrors, nav, sweep, drawn, panel, devMode };
   } finally {
-    try { chrome.kill(); } catch {}
+    killChrome(chrome);
     await sleep(400);
   }
 }

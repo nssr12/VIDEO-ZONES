@@ -20,7 +20,7 @@
 //  · **سالب:** بلا تركيب المِجَسّ ⇒ الكتابة تنجح ولا رفض — فالأداة تميّز.
 import fs from "node:fs";
 import path from "node:path";
-import { launch, evalIn, connect, ROOT } from "./ext-harness.mjs";
+import { launch, evalIn, connect, ROOT , killChrome } from "./ext-harness.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const PORT = 9951;
@@ -134,7 +134,7 @@ async function run() {
   } finally {
     try { page?.ws?.close(); } catch {}
     try { h?.browser?.ws?.close(); } catch {}
-    try { h?.proc?.kill(); } catch {}
+    killChrome(h);
   }
   return out;
 }

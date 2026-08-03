@@ -167,7 +167,7 @@ async function twitchChannel(port) {
     }
     return null;
   } catch { return null; }
-  finally { try { ws?.close(); } catch {} try { proc?.kill(); } catch {} }
+  finally { try { ws?.close(); } catch {} killChrome(chrome); }
 }
 
 async function edgeRun(url, port, overshoot = "v.currentTime + 30") {
@@ -204,7 +204,7 @@ async function edgeRun(url, port, overshoot = "v.currentTime + 30") {
     row.ok = true;
     return row;
   } catch (e) { row.note = "فشل: " + String(e?.message || e).slice(0, 70); return row; }
-  finally { try { ws?.close(); } catch {} try { proc?.kill(); } catch {} }
+  finally { try { ws?.close(); } catch {} killChrome(chrome); }
 }
 
 // ─────────────── القسم (ب): `seekable` أضيق من `duration` ────────────────────
@@ -318,7 +318,7 @@ async function localRun(port) {
     return rows;
   } catch (e) { return [{ label: "فشل", note: String(e?.message || e).slice(0, 70) }]; }
   finally {
-    try { ws?.close(); } catch {} try { proc?.kill(); } catch {} try { srv.close(); } catch {}
+    try { ws?.close(); } catch {} killChrome(chrome); try { srv.close(); } catch {}
   }
 }
 
@@ -399,7 +399,7 @@ if (!LOCAL_ONLY) {
         if (hs?.length) { live = hs.map((h) => h.split("&")[0]); break; }
         await sleep(1000);
       }
-    } catch {} finally { try { ws?.close(); } catch {} try { proc?.kill(); } catch {} }
+    } catch {} finally { try { ws?.close(); } catch {} killChrome(chrome); }
   }
   if (!live?.length) {
     console.log("   ⚠️ تعذّر استخراج بثّ مباشر — **لم يُقس، والفرق داخل/خارج لا يُدّعى**");

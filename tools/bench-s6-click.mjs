@@ -29,7 +29,7 @@
 //    يقع، والثاني يُثبت أن «تفاعل المضيف» أثرُ معالجٍ عنده لا أثرُ النقر نفسه.
 import fs from "node:fs";
 import path from "node:path";
-import { launch, openPage, evalIn, configure, serveTestPage, ROOT } from "./ext-harness.mjs";
+import { launch, openPage, evalIn, configure, serveTestPage, ROOT , killChrome } from "./ext-harness.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WITNESS_ONLY = process.argv.includes("--witness");
@@ -233,7 +233,7 @@ async function runCase(hostKey, c, port) {
   } finally {
     try { page?.ws?.close(); } catch {}
     try { h?.browser?.ws?.close(); } catch {}
-    try { h?.proc?.kill(); } catch {}
+    killChrome(h);
     try { srv?.close(); } catch {}
   }
   return out;

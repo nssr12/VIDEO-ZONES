@@ -25,7 +25,7 @@
 //    **`MAX_WRITE_OPERATIONS` فعلاً**. بلا الطرفين لا يُعرف أهو مفروض أصلاً.
 import fs from "node:fs";
 import path from "node:path";
-import { launch, evalIn, connect, ROOT } from "./ext-harness.mjs";
+import { launch, evalIn, connect, ROOT , killChrome } from "./ext-harness.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (m) => process.stdout.write(m + "\n");
@@ -355,7 +355,7 @@ async function run() {
     try { page?.ws?.close(); } catch {}
     try { sw?.ws?.close(); } catch {}
     try { h?.browser?.ws?.close(); } catch {}
-    try { h?.proc?.kill(); } catch {}
+    killChrome(h);
   }
   return out;
 }

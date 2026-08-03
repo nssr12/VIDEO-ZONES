@@ -23,7 +23,7 @@
 // المربّع 4 عليها.
 import {
   launch, configure, openPage, contentWorld, evalIn, serveTestPage
-} from "./ext-harness.mjs";
+, killChrome } from "./ext-harness.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -131,7 +131,7 @@ async function run({ withExtension, url, port }) {
   } finally {
     try { page?.ws?.close(); } catch {}
     try { h?.browser?.ws?.close(); } catch {}
-    try { h?.proc?.kill(); } catch {}
+    killChrome(h);
   }
 }
 
@@ -236,7 +236,7 @@ async function runHost({ withExtension, url, port, open, menu, player }) {
   } finally {
     try { page?.ws?.close(); } catch {}
     try { h?.browser?.ws?.close(); } catch {}
-    try { h?.proc?.kill(); } catch {}
+    killChrome(h);
   }
 }
 
@@ -287,7 +287,7 @@ async function runEdges({ url, port, open, menu, player }) {
   } finally {
     try { page?.ws?.close(); } catch {}
     try { h?.browser?.ws?.close(); } catch {}
-    try { h?.proc?.kill(); } catch {}
+    killChrome(h);
   }
 }
 
@@ -340,7 +340,7 @@ async function runCost({ url, port }) {
   } finally {
     try { page?.ws?.close(); } catch {}
     try { h?.browser?.ws?.close(); } catch {}
-    try { h?.proc?.kill(); } catch {}
+    killChrome(h);
   }
 }
 

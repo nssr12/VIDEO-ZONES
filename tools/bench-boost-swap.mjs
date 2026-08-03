@@ -339,7 +339,7 @@ async function runIdle(url, port) {
       sameElement: series.every((r) => r[2] === base.id)
     };
   } catch (e) { return { note: "فشل: " + String(e?.message || e).slice(0, 70) }; }
-  finally { try { s?.ws?.close(); } catch {} try { s?.proc?.kill(); } catch {} }
+  finally { try { s?.ws?.close(); } catch {} killChrome(s); }
 }
 
 // ── تشغيلة التبديل ───────────────────────────────────────────────────────────
@@ -388,7 +388,7 @@ async function runSwap(url, port, kind) {
     return { kind, own, vision, base, before, navSteps: nav.done, urlBefore, urlAfter,
              swapAt, newEl, events, scan, after, navigated: urlAfter !== urlBefore };
   } catch (e) { return { kind, note: "فشل: " + String(e?.message || e).slice(0, 70) }; }
-  finally { try { s?.ws?.close(); } catch {} try { s?.proc?.kill(); } catch {} }
+  finally { try { s?.ws?.close(); } catch {} killChrome(s); }
 }
 
 // رابط يوتيوب يُستخرج حيّاً: رابط مثبَّت في الملف يموت فيصير القياس كاذباً.
@@ -404,7 +404,7 @@ async function youtubeUrl(port) {
     }
     return null;
   } catch { return null; }
-  finally { try { s?.ws?.close(); } catch {} try { s?.proc?.kill(); } catch {} }
+  finally { try { s?.ws?.close(); } catch {} killChrome(s); }
 }
 
 // ---- الطباعة ---------------------------------------------------------------

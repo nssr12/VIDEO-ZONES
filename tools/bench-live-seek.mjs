@@ -221,7 +221,7 @@ async function measure(name, url, port) {
     return row;
   } finally {
     try { ws?.close(); } catch {}
-    try { proc?.kill(); } catch {}
+    killChrome(chrome);
   }
 }
 
@@ -244,7 +244,7 @@ async function pickFrom(port, listUrl, sel, count = 4) {
     }
     return [];
   } catch { return []; }
-  finally { try { ws?.close(); } catch {} try { proc?.kill(); } catch {} }
+  finally { try { ws?.close(); } catch {} killChrome(chrome); }
 }
 
 // ---- التشغيل ---------------------------------------------------------------

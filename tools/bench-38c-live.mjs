@@ -155,7 +155,7 @@ async function armAuto(url, port) {
   } catch (e) { row.note = "فشل: " + String(e?.message || e).slice(0, 90); return row; }
   finally {
     try { page?.ws?.close(); } catch {} try { h?.browser?.ws?.close(); } catch {}
-    try { h?.proc?.kill(); } catch {}
+    killChrome(h);
   }
 }
 
@@ -211,7 +211,7 @@ async function armManual(url, port) {
   } catch (e) { row.note = "فشل: " + String(e?.message || e).slice(0, 90); return row; }
   finally {
     try { sw?.ws?.close(); } catch {} try { page?.ws?.close(); } catch {}
-    try { h?.browser?.ws?.close(); } catch {} try { h?.proc?.kill(); } catch {}
+    try { h?.browser?.ws?.close(); } catch {} killChrome(h);
   }
 }
 
@@ -260,7 +260,7 @@ async function armBlocked(url, port) {
   } catch (e) { row.note = "فشل: " + String(e?.message || e).slice(0, 90); return row; }
   finally {
     try { sw?.ws?.close(); } catch {} try { page?.ws?.close(); } catch {}
-    try { h?.browser?.ws?.close(); } catch {} try { h?.proc?.kill(); } catch {}
+    try { h?.browser?.ws?.close(); } catch {} killChrome(h);
   }
 }
 
@@ -282,7 +282,7 @@ async function armNegative(port) {
   } catch (e) { row.note = "فشل: " + String(e?.message || e).slice(0, 90); return row; }
   finally {
     try { page?.ws?.close(); } catch {} try { h?.browser?.ws?.close(); } catch {}
-    try { h?.proc?.kill(); } catch {}
+    killChrome(h);
   }
 }
 
@@ -299,7 +299,7 @@ async function youtubeUrl(port) {
     }
     return null;
   } catch { return null; }
-  finally { try { page?.ws?.close(); } catch {} try { h?.proc?.kill(); } catch {} }
+  finally { try { page?.ws?.close(); } catch {} killChrome(h); }
 }
 
 // ---- التشغيل ---------------------------------------------------------------
