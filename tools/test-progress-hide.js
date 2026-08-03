@@ -41,15 +41,21 @@ const CODE = SRC.split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
 console.log("\n=== #70 — إخفاء شريط التقدّم بالسكون ===\n");
 
 // ── [1] الهدف — واحدٌ، ومقيس ────────────────────────────────────────────────
-console.log("[1] الهدف: `.ytp-progress-bar-container` وحده");
+// ⛔ **انقلب هذا القسم بقرار المالك 2026-08-03، والانقلاب مقصود ومكتوب:**
+// كان يشترط `.ytp-progress-bar-container` **ويُحرّم `.ytp-chrome-bottom` بوصفه
+// «أوسع من المطلوب قطعاً»** — **وذلك المعيار سُحب** (قرار 21): لم يكن معيار صاحب
+// المشروع. **والغرض بنصّه: «المفترض يختفي كل شيء، حتى الوقت والأزرار».**
+// ⚠️ **ولم يُعدَّل التأكيد ليمرّ** (قرار 33) — **بل انقلب الشرط لأن المطلوب انقلب**،
+// والفرق أن هذا يبقى تغطيةً: هدفٌ غيرُ المقصود اليوم **يُحمّر كما كان يُحمّر أمس**.
+console.log("[1] الهدف: `.ytp-chrome-bottom` وحده — الشريط السفلي بكامله");
 {
   check("[1] الثابت مسمّى لا نصٌّ مبعثر",
-    /const YT_PROGRESS_SELECTOR = "\.ytp-progress-bar-container";/.test(SRC));
-  const n = (CODE.match(/\.ytp-progress-bar-container/g) || []).length;
+    /const YT_PROGRESS_SELECTOR = "\.ytp-chrome-bottom";/.test(SRC));
+  const n = (CODE.match(/\.ytp-chrome-bottom/g) || []).length;
   check("[1] وموضع واحد في الكود", n === 1, `العدد ${n}`);
-  // وما يجب ألّا يُستهدَف — قِيس أن إخفاءه يجرّ الوقت والأزرار
-  check("[1] ولا يستهدف `.ytp-chrome-bottom` (أوسع من المطلوب قطعاً)",
-    !/YT_PROGRESS_SELECTOR = "\.ytp-chrome-bottom"/.test(SRC));
+  // وما يجب ألّا يُستهدَف اليوم: الهدف الضيّق المسحوب — فالعودة إليه انحدارٌ
+  check("[1] ولا يعود إلى `.ytp-progress-bar-container` (المعيار المسحوب)",
+    !/YT_PROGRESS_SELECTOR = "\.ytp-progress-bar-container";/.test(SRC));
 }
 
 // ── [2] طريقة الإخفاء — مطابقةٌ للمضيف، مقيسة ──────────────────────────────
@@ -176,7 +182,8 @@ console.log("\n[5] ⭐ السلوك: يُخفي بالسكون، ويمتنع ت
 
     // ⭐ التركيز داخل الهدف
     vm.runInContext("markIdleActivity()", ctx);
-    ctx.document.activeElement = { closest: (s) => (s === ".ytp-progress-bar-container" ? {} : null) };
+    // المرساة تتبع الهدف — وقد انقلب بقرار المالك. **إصلاح المرساة لا التأكيد** (قرار 33).
+    ctx.document.activeElement = { closest: (s) => (s === ".ytp-chrome-bottom" ? {} : null) };
     advance(3000);
     check("[5] ⭐ والتركيز داخل الهدف ⇒ لا إخفاء (تنقّل لوحة المفاتيح لا ينكسر)",
       hidden() === false);
