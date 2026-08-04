@@ -157,6 +157,11 @@
               لو الفيديو ما عنده الجودة المختارة، تشتغل أعلى جودة متاحة تلقائيًا.<br/>
               مثال: اخترت 4K لكن الفيديو أعلى جودة عنده 1080p — يشتغل 1080p.
             </div>
+            <div class="hint embedNote" data-vz-embed="quality">
+              ⚠️ <b>صفحة المشاهدة على يوتيوب وحدها.</b>
+              ولا تُطبَّق داخل <b>مشغّل يوتيوب المضمَّن</b> في موقعٍ آخر —
+              مقيس 2026-08-04: بقيت 480p ستّين ثانية والمشغّل يعرض 720p في قائمته.
+            </div>
           </div>
         </section>
 
@@ -184,6 +189,11 @@
               <span>تفعيل Clean Player</span>
             </label>
             <p id="cleanPlayerCaptionNote" class="hint" hidden>ℹ️ زرّا «Subtitles button» و«Settings button» لا يُخفيان الآن لأن أتمتة لغة الترجمة مفعّلة، وهي تضغطهما لاختيار اللغة. أوقف اللغة الافتراضية في قسم الترجمة ليُخفيا.</p>
+            <p class="hint embedNote" data-vz-embed="cleanPlayer">
+              ⚠️ <b>صفحة المشاهدة على يوتيوب وحدها.</b>
+              ولا يُخفي شيئاً داخل <b>مشغّل يوتيوب المضمَّن</b> في موقعٍ آخر —
+              مقيس: ذلك المشغّل هجر عائلة الأصناف التي تستهدفها هذه القائمة.
+            </p>
             <div class="cleanPlayerList" id="cleanPlayerList"></div>
           </div>
         </section>
@@ -202,6 +212,11 @@
               <span>تفعيل تنسيق الترجمة المخصص</span>
             </label>
             <div class="hint" style="margin:-6px 0 0">عند تفعيله يتجاوز التنسيق المخصص «لون النافذة» في إعدادات ترجمة يوتيوب ويجعلها شفافة، فيصير «لون الخلفية» هنا هو المصدر الوحيد للخلفية. إطفاؤه يعيد لون النافذة كما ضبطته في يوتيوب.</div>
+            <div class="hint embedNote" data-vz-embed="subtitles">
+              ⚠️ يُطبَّق على HTML5 و<b>يوتيوب (صفحة المشاهدة)</b> ونتفلكس و JW Player.
+              ولا يُطبَّق داخل <b>مشغّل يوتيوب المضمَّن</b> في موقعٍ آخر —
+              مقيس: صفر عنصرِ ترجمةٍ يطابقه هناك.
+            </div>
 
             <label class="toggle" style="text-transform:none;letter-spacing:0">
               <input id="subHidePreviews" type="checkbox" />
@@ -213,9 +228,14 @@
               <input id="subLang" type="text" placeholder="ar" style="text-transform:lowercase" />
             </label>
             <div class="hint" style="margin:-6px 0 0">
-              ✅ <b>YouTube</b>: الإضافة تفتح قائمة الإعدادات تلقائياً وتنقّل: <i>Subtitles → Auto-translate → اللغة</i>. تجربتها أول مرة قد ترى القائمة تومض لجزء من الثانية.<br/>
+              ✅ <b>YouTube (صفحة المشاهدة)</b>: الإضافة تفتح قائمة الإعدادات تلقائياً وتنقّل: <i>Subtitles → Auto-translate → اللغة</i>. تجربتها أول مرة قد ترى القائمة تومض لجزء من الثانية.<br/>
               ⚠️ <b>Netflix</b> وغيرها: التنسيق (لون/حجم/خط/خلفية/موقع) يطبَّق، لكن اختيار اللغة من إعدادات المشغّل نفسه.<br/>
               ℹ️ أكواد شائعة: <code>ar</code> (عربي) — <code>en</code> (إنجليزي) — <code>es</code> (إسباني) — <code>fr</code> (فرنسي) — <code>tr</code> (تركي) — <code>ja</code> (ياباني) — <code>ko</code> (كوري).
+            </div>
+            <div class="hint embedNote" data-vz-embed="subLang">
+              ⚠️ <b>الأتمتة على صفحة المشاهدة وحدها.</b>
+              ولا تعمل داخل <b>مشغّل يوتيوب المضمَّن</b> في موقعٍ آخر —
+              مقيس: زرّا الترجمة والإعدادات اللذان تنقرهما غير موجودَين هناك.
             </div>
 
             <label>حجم الخط

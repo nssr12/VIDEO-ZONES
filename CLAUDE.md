@@ -395,7 +395,38 @@ Guards in `zoneRectForVideo`: wrapper lookups (including negative results) are c
 
 CSS-only, same pattern as subtitles: one injected `<style id="vz_clean_player_css">` with `html`-prefixed selectors + `display:none !important`. The item registry is `CLEAN_PLAYER_ITEMS` in `content.js` (key → selector list); the options-page list is generated from `CLEAN_PLAYER_OPTIONS` in `options.js` — **keys must stay in sync between the two, and `tools/test-clean-player-keys.js` enforces it** (a key in `content.js` alone is a feature the user cannot switch on; a key in `options.js` alone is a checkbox that promises what nothing implements — that was #66). The CSS is injected on `youtube.com` and `youtube-nocookie.com`, respects `blockedHosts`. Gated by `cleanPlayer.enabled` + per-item flags in `cleanPlayer.items` (only checked keys stored). Selectors were verified against the live 2026 player and open-source hide lists (ImprovedTube, yt-neuter, Control Panel for YouTube) — includes both classic and 2025 "Delhi" player variants.
 
-**Every selector here targets the `ytp-*` player, i.e. the watch page. On the 2026 embedded player it hides nothing** — audit #68, measured 2026-08-02 with `tools/bench-clean-player.mjs`: the `player_embed.vflset` build carries **10 `ytp-*` elements, all `ytp-unmute*`, against 63 `ytm*`/`ytw*` ones**, identically on `youtube.com` and `youtube-nocookie.com`, playing and paused, across three parameter combinations. The CSS is still injected inside the iframe; it simply matches nothing. **Covering the embed is a new feature, not a fix** (#68ب): it needs its own measured sweep of the `ytm/ytw` family with an over-match check, because that family is also used outside the player.
+**Every selector here targets the `ytp-*` player, i.e. the watch page. On the 2026 embedded player it hides nothing** — audit #68, measured 2026-08-02 with `tools/bench-clean-player.mjs`:
+See **Four features that are dead in the embed** below — Clean Player is one of four, not a special case. the `player_embed.vflset` build carries **10 `ytp-*` elements, all `ytp-unmute*`, against 63 `ytm*`/`ytw*` ones**, identically on `youtube.com` and `youtube-nocookie.com`, playing and paused, across three parameter combinations. The CSS is still injected inside the iframe; it simply matches nothing. **Covering the embed is a new feature, not a fix** (#68ب): it needs its own measured sweep of the `ytm/ytw` family with an over-match check, because that family is also used outside the player.
+
+### Four features that are dead in the YouTube embed — and the labels say so (2026-08-04)
+
+Measured with `tools/bench-s10-embed.mjs` on **both** `youtube-nocookie.com/embed`
+and `youtube.com/embed`, inside the frame, with the extension proven live there
+(isolated world + non-zero video rect):
+
+| Feature | What was measured in the embed |
+|---|---|
+| **Subtitle styling** | our `<style>` **is** injected, and matches **zero** caption elements |
+| **Caption-language automation** | `.ytp-subtitles-button` and `.ytp-settings-button` — **both zero**; the flow clicks buttons that are not there |
+| **Clean Player** | sheet injected, `.ytp-title` and `.ytp-large-play-button` **zero** (#68) |
+| **Default quality** | `videoHeight` **480 ⇒ 480 across 60s** while the player's own list offers `hd720` and reports `large` |
+
+**Two independent causes, and both had to be measured separately** (owner decision,
+2026-08-04): on `youtube-nocookie.com` the gate `isYouTubeHost()` returns false
+**and** `yt_quality_main.js` is absent from the frame (`__vzQB` false — the manifest
+matches `*://*.youtube.com/*` with no `all_frames`). On `youtube.com/embed` the gate
+**passes** and quality still does not move — which is what proves the second cause
+stands alone. **A case where two causes coincide is not measured alone; find a case
+that isolates one of them**, or you fix the gate and nothing changes.
+
+⛔ **Covering the embed is NOT on the table** — #68ب stays deferred (owner decision).
+**What changed is the promise, not the code**: each of the four now carries a label
+saying it is the watch page only. Those labels are **structural, not prose**:
+`data-vz-embed="<key>"` in `options.html` (`quality` · `cleanPlayer` · `subtitles` ·
+`subLang`) and `popup.html` (`popupSubtitles`), and **`tools/test-embed-promise.js`
+fails if a key goes missing, loses its wording, or if this table stops listing all
+four**. A label that promises what nothing delivers is exactly what #66 and #67 were
+spent removing.
 
 ### Subtitles
 
