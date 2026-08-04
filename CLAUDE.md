@@ -577,7 +577,35 @@ Two maps are built in `content.js`:
 | Add a new host volume adapter | `hostAdapters.set(...)` in `content.js` **and** a measured host model in `tools/volume-contract.js` — the suite counts them |
 | Add a new migration part | the object `migrateAll()` returns in `storage.js` **and** `MIGRATION_PART_TEXT` in `options.js` — the guard reads the parts from `migrateAll`'s own structure, so a part with no message turns the suite red |
 | Add a new test file | nothing — `tools/run-tests.js` discovers it. Give it a first-line `//` description; `--list` prints it and fails without it |
-| Bump version | `manifest.json` `version` field (semver-ish: feature bump = minor, fix = patch) |
+| Bump version | ⛔ **First run the 23 on-demand rigs and attribute every red** (owner decision 2026-08-04) — see below — then `manifest.json` `version` field (semver-ish: feature bump = minor, fix = patch) |
+
+## Releasing a version — **the gate is measurement, not intent**
+
+**Seven checks run before every commit** (owner decision 2026-08-04, was four):
+`run-tests` · `audit-status` · `bench-options-page` · `bench-overlay-layer` ·
+`bench-eval-contract` · `bench-s69-guards` · `repro-58-fullscreen`.
+The last three were promoted because they are **local, deterministic, and guard
+contracts our work touched** — that is the criterion, not "most important".
+
+⛔ **Everything else — 23 rigs — is "run on demand", and the written reason is:
+they need a live host.** Running them per-commit would put the network and host
+blocking inside the commit gate, and their red would become noise that teaches
+people to skip it (#97's warning).
+
+⚠️ **But that is a reason to defer them from the commit, NOT a licence to never
+run them.** #103 — a user-visible defect — **slept for weeks** inside
+`bench-s69-guards`, which was written in #69's own commit as its acceptance
+witness and went red at #78. Nobody ran it.
+
+⇒ **THE RULE: no version is bumped until all 23 on-demand rigs have been run and
+every red attributed** (pre-existing / ours / host variance / declared limit).
+**Why the version bump is the trigger:** "at the end of each wave" no longer
+happens — we are not in waves. **A version bump is the moment when what was not
+measured becomes a public claim.**
+
+⇒ ⭐ **And a witness that is not run is a witness that does not exist.** The rig
+was standing there saying it, the defect was in front of the user, and nobody
+was listening.
 
 ## Useful one-liners
 
