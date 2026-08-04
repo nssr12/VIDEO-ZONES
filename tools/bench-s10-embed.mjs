@@ -24,11 +24,21 @@ const AS_JSON = process.argv.includes("--json");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const VIDEO_ID = "aqz-KE-bpKQ";
 
+// ── أصلُ التضمين مُعلَنٌ لا مضمَر (2026-08-04) ───────────────────────────────
+// ⚠️ **عيّنةٌ من أصلٍ واحد لا تفصل علّتين.** على `youtube-nocookie.com` تسقط
+// الجودةُ عند **بوّابتنا** (`isYouTubeHost()` لا يُطابق النطاق) **وعند ناقلنا**
+// (`yt_quality_main.js` مُعلَنٌ لِـ`*.youtube.com` **وبلا `all_frames`**) معاً —
+// **فيُقرأ سببٌ واحد، ويُصلَح، ولا شيء يتغيّر** (قرار 42: عَرَضٌ واحد لا يدلّ
+// على سببٍ واحد). ⇒ **و`--origin youtube` يُسقط الأولى ويُبقي الثانية وحدها**،
+// فتُقاس مستقلّةً بدل أن تُستنتج من قراءة مانيفست.
+const ORIGIN = (process.argv.find((a, i) => process.argv[i - 1] === "--origin") || "nocookie");
+const EMBED_HOST = ORIGIN === "youtube" ? "www.youtube.com" : "www.youtube-nocookie.com";
+
 // صفحةٌ حاضنة من **أصلٍ محليّ** فيها تضمينُ يوتيوب — كما نصّ الشكّ
 const HOST_PAGE = `<!doctype html><meta charset="utf-8"><body style="margin:0;background:#111">
 <h1 style="color:#888;font:14px system-ui">صفحةُ أصلٍ آخر — والتضمين تحتها</h1>
 <iframe id="emb" width="800" height="450" style="border:0"
-  src="https://www.youtube-nocookie.com/embed/${VIDEO_ID}?autoplay=1&mute=1&cc_load_policy=1"
+  src="https://${EMBED_HOST}/embed/${VIDEO_ID}?autoplay=1&mute=1&cc_load_policy=1"
   allow="autoplay; encrypted-media" allowfullscreen></iframe>
 </body>`;
 
@@ -89,15 +99,49 @@ const PROBE = `(() => {
     // (٥) **عائلةُ الأصناف** — عدُّ #68 نفسه، في التضمين
     ytpCount: count("[class*=ytp-]"),
     ytmCount: count("[class*=ytm]") + count("[class*=ytw]"),
-    ourOverlay: count(".vzWrap"), ourGrid: count(".vzGrid")
+    ourOverlay: count(".vzWrap"), ourGrid: count(".vzGrid"),
+    // (٦) **الجودة — سببُنا لا أثرُه** (قرار 48): بدالّتَينا نحن، لا بمحدِّدٍ
+    // يُكتب هنا. ⚠️ ولا يُقرأ ytAutoQuality نفسه: **let في أعلى سكربت المحتوى
+    // غير مقروء من Runtime.evaluate** (حدٌّ مقيس في tools/KNOWN-DEFECTS.md) —
+    // **والدوالّ تُقرأ والمتغيّرات لا**.
+    isYtHostByOurFn: (typeof isYouTubeHost === "function") ? isYouTubeHost() : "لا دالّة",
+    qualityGapByOurFn: (typeof ytQualityGap === "function")
+      ? JSON.stringify(ytQualityGap()) : "لا دالّة"
   };
 })()`;
 
+// ── عيّنةُ الجودة وحدها — تُعاد بعد مدّة، ولا يُعاد القياس كلُّه ─────────────
+// ⚠️ **عيّنةٌ واحدة لا تفرّق «لم تُطبَّق» من «لم تبلغ بعد»** — و`videoHeight`
+// يتحرّك بـABR من تلقائه. ⇒ **عيّنتان متباعدتان**، ويُطبع الزمنُ مع الرقم.
+const SAMPLE = `(() => { const v = document.querySelector("video");
+  return v ? { h: v.videoHeight, w: v.videoWidth, t: Math.round(v.currentTime),
+               paused: v.paused, buffered: v.buffered.length } : null; })()`;
+
+// **سببُنا في العالم الرئيسيّ**: أحُقن ناقلُ الجودة في هذا الإطار أصلاً؟
+// `__vzQB` علمُ `yt_quality_main.js` — **يُرفع بعد تسجيل مستمعيه لا قبلهم** —
+// و`#movie_player` وواجهتُه هما ما يشترطه ذلك الملفّ حرفياً.
+const MAIN_CAUSE = `(() => {
+  const p = document.querySelector("#movie_player");
+  return { qbFlag: !!window.__vzQB,
+           moviePlayer: !!p,
+           hasQualityApi: !!(p && typeof p.getAvailableQualityLevels === "function"),
+           levels: (p && typeof p.getAvailableQualityLevels === "function")
+             ? (p.getAvailableQualityLevels() || []).slice(0, 12) : null,
+           current: (p && typeof p.getPlaybackQuality === "function") ? p.getPlaybackQuality() : null };
+})()`;
+
+// ⚠️ **التباعد مقصود ومُعلَن**: الأولى بعد استقرار التشغيل، والثانية بعد دقيقةٍ
+// كاملة — **وABR يرفع الجودة في أولى ثوانيه**، فقربُ العيّنتين يُنتج تطابقاً
+// يُقرأ ثباتاً وهو قِصَرُ المدى. **ويُقرأان بزمنهما المطبوع لا بترتيبهما.**
+const Q_SAMPLE_AT_S = [14, 75];
+
 const out = {};
+let t0 = Date.now();
 let h = null, page = null, server = null;
 try {
   const srv = await serveTestPage(HTTP, HOST_PAGE); server = srv.srv;
   out.hostUrl = srv.url;
+  t0 = Date.now();
   h = await launch(PORT, { extra: ["--window-size=1280,900"] });
   out.chrome = h.chrome;
   const cfg = await configure(PORT, h.extensionId, SETTINGS);
@@ -117,11 +161,26 @@ try {
     await sleep(1500);
     const w = await contentWorld(c);
     out.embedWorld = w ? w.name.slice(0, 24) : null;
+    // **سببُنا يُقرأ من العالم الرئيسيّ للإطار** — لا من عالم الإضافة ولا من
+    // الحاضنة: `yt_quality_main.js` يعيش هناك أو لا يعيش، والعلم يقول أيّهما.
+    out.mainCause = await evalIn(c, MAIN_CAUSE);
     // ⛔ **ولا مسارَ احتياطيّ يُقيَّم في عالم الصفحة** — أمسكه `test-probe-world.js`
     // في يومه على هذا الملفّ نفسه: **مِجَسٌّ هناك يقرأ `null` عن دوالِّنا فيُقرأ
     // «الميزة ميتة»**. ⇒ **لا عالَم ⇒ لا قياس، ويُعلَن.**
     if (w) out.inEmbed = await evalIn(c, PROBE, w.id);
     else out.noWorld = "لا عالمَ للإضافة في الإطار — لا يُقاس ولا يُنفى شيء";
+
+    // ── العيّنتان — والتباعد مُعلَنٌ بالثانية لا مضمَرٌ في `sleep` ────────────
+    // ⚠️ **ولا تُعلَن العيّنتان المتطابقتان عطباً ولا سلامة**: تطابقُهما يقول
+    // «لم يتحرّك بين اللحظتين» **ولا يقول لماذا** — والسببُ يُقرأ من `mainCause`.
+    out.qSamples = [];
+    for (const at of Q_SAMPLE_AT_S) {
+      const waitTo = at * 1000 - (Date.now() - t0);
+      if (waitTo > 0) await sleep(waitTo);
+      const s = await evalIn(c, SAMPLE);
+      out.qSamples.push({ atS: Math.round((Date.now() - t0) / 1000), ...(s || { h: null }) });
+    }
+    out.mainCauseLate = await evalIn(c, MAIN_CAUSE);
     try { c.ws.close(); } catch {}
   }
   const hostWorld = await contentWorld(page);
@@ -139,7 +198,7 @@ if (AS_JSON) { console.log(JSON.stringify(out, null, 2)); process.exit(0); }
 
 const yn = (b) => (b ? "نعم" : "لا");
 console.log("\n=== قياس S10 — ميزاتُنا داخل مشغّل التضمين ===");
-console.log(`   كروم: ${out.chrome || "—"} · الحاضنة: ${out.hostUrl || "—"}`);
+console.log(`   كروم: ${out.chrome || "—"} · الحاضنة: ${out.hostUrl || "—"} · **أصلُ التضمين: ${EMBED_HOST}**`);
 if (out.why) console.log(`   ⚠️ ${out.why}`);
 console.log(`   أهداف: ${(out.targets || []).map((t) => t.type).join(" · ")}` +
   ` · عالم الإضافة في التضمين: ${out.embedWorld || "لا شيء"}`);
@@ -163,6 +222,28 @@ if (e) {
     ` · zoneRect=${JSON.stringify(e.zoneRect)}`);
   console.log(`   (٥) العائلة   : عناصر ytp-=${e.ytpCount} · مقابل ytm/ytw=${e.ytmCount}`);
   console.log(`   وطبقتُنا      : vzWrap=${e.ourOverlay} · vzGrid=${e.ourGrid}`);
+
+  // ── (٦) الجودة — العيّنتان أولاً، ثمّ سببُنا، ولا حكمَ بينهما ──────────────
+  const S = out.qSamples || [];
+  console.log(`\n── (٦) الجودة المطلوبة \`${SETTINGS.settings.ytAutoQuality}\` — **عيّنتان متباعدتان**`);
+  for (const s of S) {
+    console.log(`   عند ${String(s.atS).padStart(3)}ث: videoHeight=${s.h} (${s.w}×${s.h})` +
+      ` · currentTime=${s.t}ث · متوقّف=${yn(s.paused)} · مقاطع=${s.buffered}`);
+  }
+  if (S.length >= 2) {
+    const same = S[0].h === S[S.length - 1].h;
+    console.log(`   ⇒ ${same
+      ? `**لم تتحرّك بين ${S[0].atS}ث و${S[S.length - 1].atS}ث** (${S[0].h} ⇒ ${S[S.length - 1].h})`
+      : `**تحرّكت**: ${S[0].h} ⇒ ${S[S.length - 1].h} — **فالقيمة غير مستقرّة، ولا يُحكم بلقطة**`}`);
+  }
+  const mc = out.mainCause || {}, ml = out.mainCauseLate || {};
+  console.log(`   وسببُنا (قرار 48): علم \`__vzQB\` في العالم الرئيسيّ=${yn(mc.qbFlag)}` +
+    ` · \`#movie_player\`=${yn(mc.moviePlayer)} · واجهةُ الجودة=${yn(mc.hasQualityApi)}`);
+  console.log(`   ومستوياتُ المشغّل نفسِه: ${JSON.stringify(ml.levels ?? mc.levels)}` +
+    ` · وما يُعلنه=${JSON.stringify(ml.current ?? mc.current)}`);
+  console.log(`   وبدالّتنا: \`isYouTubeHost()\`=${e.isYtHostByOurFn}` +
+    ` · \`ytQualityGap()\`=${e.qualityGapByOurFn}`);
+  console.log(`   ⚠️ **يُقرأ ما قِيس ولا يُعلَن عطبٌ ولا سلامة من عيّنتين** — القرار للمالك.`);
 }
 if (out.inHost) {
   console.log(`\n── وفي الحاضنة (للتمييز لا للحكم): فيديو=${out.inHost.video ? "نعم" : "لا"}` +
