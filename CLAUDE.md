@@ -515,9 +515,21 @@ string; do not collapse it into the master switch.
 ### Host volume adapters
 
 Some hosts re-assert their own volume model over whatever we write to
-`video.volume` — measured: YouTube snaps back to **56.2%**, Twitch to **50%**,
-while Vimeo does not interfere and `d.tube` keeps our value. A blanket fix would
-break the two that work in order to fix the two that don't, so the treatment is
+`video.volume` — ⛔ ~~measured: YouTube snaps back to **56.2%**~~ **corrected
+2026-08-04: YouTube restores its OWN model, and that model's value varies and is
+unexplained** — `AUDIT.md` has recorded the spread since 2026-07-30
+(56.2 · 56.3 · 56.9 · 64.9 · 83.6) **with the source of 56.2% explicitly marked
+unproven**, and a run returning to **100%** logged as an anomaly. **That anomaly
+recurred on 2026-08-04** (`bench-host-volume`: we wrote 54%, it held to 1602ms,
+then 3000ms → 100%). ⇒ ⭐ **The defect in this line was never the number — it was
+"snaps back to X", a summary that dropped its source's hedge.**
+Twitch restores to **50%**, while Vimeo does not interfere and `d.tube` keeps our
+value. ⚠️ **And this does not invalidate the adapter: the measurement was of the
+host's model with no extension loaded.** "The host wipes" is not "our adapter
+fails" — the latter is **still unmeasured past 3s** (`bench-adapter-live` and
+`bench-yt-adapter` wait 1500ms and 1000ms; **the wipe lands at 3000ms**).
+A blanket fix would break the two that work in order to fix the two that don't,
+so the treatment is
 **per-host adapters** in `content.js`:
 
 ```js
