@@ -40,6 +40,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { launch, openPage, connect, ROOT , killChrome, evalIn } from "./ext-harness.mjs";
+import { sweepVerdicts } from "./sweep-verdict.mjs";
 
 const PORT = 9754;
 const WITNESS = process.argv.includes("--witness");
@@ -281,22 +282,12 @@ console.log("\n[٢] التنقّل بين الأقسام يعمل");
 check("[٢] القسم يُفتح بالنقر", live.nav?.ok === true, live.nav);
 
 // ── [٣] الضوابط كلُّها — والفشل يُسمّى بمعرّفه لا بعدده ──────────────────────
+// ⛔ **والحكمُ ليس هنا بل في `sweep-verdict.mjs`** — دالّةٌ نقيّة يحرسها
+// `tools/test-sweep-verdict.js` في المجموعة **بلا متصفّح**: فالحكمُ يُحرَس قبل كل
+// كومِت، والتشغيلُ وحده هو ما يحتاج كروم. **ولا نسخةَ منه هنا** (داءُ #93).
 const sw = live.sweep || [];
-const threw = sw.filter((s) => s.threw > 0);
-const notSaved = sw.filter((s) => s.ok && !s.changed);
-const skipped = sw.filter((s) => s.skipped || s.why);
 console.log(`\n[٣] كلُّ ضابطٍ يُبدَّل ويُقرأ بعده — ${sw.length} ضابطاً`);
-check(`[٣] صفر استثناء عند التفاعل`, threw.length === 0,
-  threw.slice(0, 4).map((s) => `${s.id}: ${String(s.msg).split("\n")[0].slice(0, 60)}`));
-check(`[٣] وكلُّ تبديلٍ يصل التخزين`, notSaved.length === 0,
-  notSaved.map((s) => s.id).slice(0, 12));
-// ⭐ **#89: المعروض يطابق المطلوب** — وإلا فالواجهة تكذب على التخزين
-const snapped = sw.filter((s) => s.ok && s.wanted != null && s.shown != null && s.wanted !== s.shown);
-check(`[٣] ⭐ والمعروض يطابق المطلوب (لا يقفز الضابط بعد ضبطه)`, snapped.length === 0,
-  snapped.map((s) => s.id + ": طُلب " + s.wanted + " فعُرض " + s.shown).slice(0, 6));
-// ⚠️ **والوسمُ يذكر السببَ الثالث بعد أن صار ممكناً**: وسمٌ أوسعُ من شرطه هو
-// عينُ ما نطارده — و«رمى تعبيرُه» لم تكن تقع أصلاً حين كانت الرميةُ تُبتلع.
-if (skipped.length) console.log(`  · مُتخطّى (معطَّل أو غير مرسوم أو رمى تعبيرُه): ${skipped.map((s) => s.id).join(", ")}`);
+for (const v of sweepVerdicts(sw, live.drawn)) check(v.name, v.ok, v.extra);
 
 // ── [٧] #84 — الظهور مُشتقّ: مدخلان مستقلّان، ولا مفتاح حالة ────────────────
 const d = live.derived || {};
