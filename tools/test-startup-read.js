@@ -1,4 +1,6 @@
 // Audit #13: startup did eleven separate chrome.storage.sync.get calls, nine of
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل تبدأ الإضافة على الصفحة بلا أن تُبطئ فتحها؟»*
 // them fetching the same `settings` key, in EVERY frame at document_start.
 // Startup now does one read and hands the result to every loader.
 //

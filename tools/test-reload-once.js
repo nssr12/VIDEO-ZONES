@@ -1,4 +1,6 @@
 // Audit #14: every save reached each frame TWICE — once as an explicit RELOAD_*
+//
+// ⛔ **عصيٌّ على صياغة المستخدم (#99):** ⭐ **مرشَّحٌ لأنه يقيس جاراً**: سؤالُ المستخدم «أتُطبَّق إعداداتي؟» **وهو يعدّ الرسائل** — والعملُ المضاعف لا يراه أحد.
 // message and once as storage.onChanged — and both reloaded the same slices, each
 // loader doing its own storage read. Measured in Chrome on a working frame: 13 reads
 // per save, in every arrival order.

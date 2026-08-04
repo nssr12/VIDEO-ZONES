@@ -1,4 +1,6 @@
 // Audit #18: Clean Player hid .ytp-subtitles-button and .ytp-settings-button with
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«إن فعّلتُ أتمتة الترجمة، أيبقى زرّا الترجمة والإعدادات ظاهرَين كي تعمل؟»*
 // display:none, while the caption-language automation drives YouTube's menu by
 // CLICKING them and findVisibleYTMenuItem demands a non-zero rect — so ticking
 // those two boxes silently killed the language feature.

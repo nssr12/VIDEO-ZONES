@@ -1,4 +1,6 @@
 // Audit #52: YouTube exposes TWO caption colour settings — "background colour" (the
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل يختفي مربّعُ يوتيوب الأسود خلف ترجمتي بدل أن يظهر تحت صندوقي؟»*
 // text box) and "window colour" (the slab behind the whole caption window). This
 // extension only ever styled the first. A user with a window colour set therefore saw
 // OUR box sitting inside THEIR window: a wide slab in a colour the extension never

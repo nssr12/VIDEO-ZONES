@@ -1,5 +1,7 @@
 // Audit #46: after a fullscreen round-trip the overlay was never moved back.
 //
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل تعود الشبكة إلى مكانها بعد الخروج من ملء الشاشة؟»*
+//
 // attachOverlayToHost guarded with host.contains(vzOverlay). Once the overlay
 // had been parked inside ANY element under <body> — which is what a fullscreen
 // enter does — document.body.contains() answered "already here" on the way out,

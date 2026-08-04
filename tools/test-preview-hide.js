@@ -1,4 +1,6 @@
 // Audit #51: a setting to hide captions entirely on YouTube's homepage/search hover
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل تختفي الترجمة عن معاينات الصفحة الرئيسية كما طلبتُ؟»*
 // previews, ON by default.
 //
 // Two properties this test exists to protect:

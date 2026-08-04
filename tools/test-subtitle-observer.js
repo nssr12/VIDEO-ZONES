@@ -1,4 +1,6 @@
 // Audit #21 (what remained after #13b): the subtitle track observer was created
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل تبقى ترجمتي مُنسَّقة بعد أن يبدّل الموقعُ مسارَها؟»*
 // UNCONDITIONALLY with its guard inside the callback — so the browser collected and
 // delivered mutations even to someone who had turned subtitles off entirely — and it
 // was never disconnected.

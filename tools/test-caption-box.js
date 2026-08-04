@@ -1,5 +1,7 @@
 // Audit #53: the caption box was painted on THREE nested elements at once.
 //
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل تخرج خلفيةُ الترجمة بالتعتيم الذي ضبطتُه، لا أغمقَ منه؟»*
+//
 // Our selectors `html .ytp-caption-window-container span`, `html .caption-visual-line *`
 // and `html .captions-text *` all match, and .captions-text > .caption-visual-line >
 // .ytp-caption-segment are nested. Measured in Chrome on the real chain: every one of

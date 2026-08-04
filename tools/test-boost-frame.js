@@ -1,4 +1,6 @@
 // Audit #24: `chrome.tabs.sendMessage` without a frameId broadcasts to every frame —
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل يرفع مُنزلقُ المعزّز صوتَ الفيديو الذي أشاهده وحده؟»*
 // each one builds its own AudioContext, and GET_VOLUME_BOOST is answered by whichever
 // frame replies first.
 //

@@ -1,4 +1,6 @@
 // Audit #20: the Shorts → /watch redirect consulted only its own setting and the
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل يتوقّف تحويلُ Shorts حين أُطفئ الإضافة أو أحظر الموقع؟»*
 // blocked list, so switching the whole extension off from the popup did not stop
 // it. Owner decision 4: it is bound to the global enable, no exception.
 //

@@ -1,4 +1,6 @@
 // Audit #54: the four opacity sliders were labelled «شفافية» (transparency) while
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل يقول وسمُ المُنزلق ما يفعله فعلاً حين أحرّكه؟»*
 // every one of them measures OPACITY — 0% is fully transparent and 100% fully opaque.
 //
 // This is a naming defect, not a functional one: the caption slider and the three

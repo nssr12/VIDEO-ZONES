@@ -1,4 +1,6 @@
 // Audit #17: findNativeFullscreenButton fell back to a document-wide search when
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل يُكبَّر مشغّلي أنا لا مشغّلٌ آخر في الصفحة؟»*
 // the video was not inside a KNOWN_PLAYER_WRAPPER_SELECTOR, so on a page with two
 // players it clicked whichever matching button came first in document order —
 // the neighbour's. This test must FAIL on the pre-fix content.js.

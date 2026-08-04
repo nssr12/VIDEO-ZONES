@@ -1,5 +1,7 @@
 // Audit #13b: skip the whole startup in frames that hold no video.
 //
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل تعمل الإضافة في إطارٍ ظهر فيه الفيديو متأخّراً؟»*
+//
 // Measured with CDP on real pages: 121 of 122 execution contexts on aljazeera.net and
 // 62 of 63 on cnn.com contain no video at all. Every one of them used to do a storage
 // read, eight loaders, a stylesheet and a MutationObserver for nothing.

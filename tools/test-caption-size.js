@@ -1,4 +1,6 @@
 // Audit #49: caption font-size was absolute px, so the number that reads well on a
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل يبقى حجمُ الترجمة مقروءاً في المعاينة الصغيرة وفي ملء الشاشة معاً؟»*
 // 1280px watch player buried YouTube's 300px homepage hover preview in text.
 //
 // The preview uses the SAME #movie_player / .html5-video-player element as the watch

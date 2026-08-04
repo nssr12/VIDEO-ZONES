@@ -1,5 +1,7 @@
 // Verification harness for migrateSiteProfiles() with a fake chrome.storage.sync.
 //
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل تنتقل إعداداتي القديمة سليمةً بعد تحديث الإضافة؟»*
+//
 // ⚠️ **المسار افتراضيّ عمداً — ولا يُعاد اشتراطه.** كان هذا الملف **وحده** في
 // المجموعة يشترط معاملاً (`node tools/test-migration.js storage.js`)، فأي مشغّل
 // يمرّ على `tools/test-*.js` بأمر واحد **يسقط عنده** بـ`ERR_INVALID_ARG_TYPE` —

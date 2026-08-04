@@ -1,4 +1,6 @@
 // Extracts validateBackup from options.js and exercises it against malformed files.
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«إن استوردتُ ملفاً تالفاً، أيُرفض بوضوح بدل أن يُفسد إعداداتي؟»*
 const fs = require("fs"), vm = require("vm");
 const opt = fs.readFileSync("options.js", "utf8");
 const store = fs.readFileSync("storage.js", "utf8");

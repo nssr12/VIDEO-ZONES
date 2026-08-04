@@ -1,4 +1,6 @@
 // Audit #19 follow-up: a requested YouTube quality the video cannot offer used to
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«إن طلبتُ 4K على فيديو أقصاه أقلّ، أأُخبَر بالرقمين؟»*
 // fail silently — 4K asked for, 480p delivered, nothing said. The popup now shows a
 // line for it, under two rules the owner set:
 //

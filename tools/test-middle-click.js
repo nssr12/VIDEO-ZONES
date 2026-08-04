@@ -1,4 +1,6 @@
 // Audit #12: middle-clicking a zone ran the command AND opened Chrome's
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل ينفّذ الزرّ الأوسط أمري بلا أن يفتح كروم مؤشّر التمرير؟»*
 // autoscroll cursor. The default is armed on mousedown, but the zone path only
 // listened on auxclick, so nothing ever suppressed it — unlike the generic remap
 // path, which preventDefaults on mousedown.

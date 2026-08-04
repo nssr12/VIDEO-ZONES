@@ -1,5 +1,7 @@
 // Audit #56 — a REGRESSION introduced by #13b, not an old defect.
 //
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل تقول النافذةُ المنبثقة حقيقةَ الصفحة، أم «متوقفة» والإضافة تعمل؟»*
+//
 // #13b made a frame with no video skip startup. The onMessage listener sits at top
 // level, outside that gate, so a sleeping frame kept answering GVZ_STATUS from its
 // untouched defaults: blockedHosts [], siteRules.enabled false. Measured with the real

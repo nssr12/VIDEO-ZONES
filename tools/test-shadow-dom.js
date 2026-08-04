@@ -1,4 +1,6 @@
 // Audit #16 + #22: find a <video> behind a shadow boundary, and recognise typing
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل تعمل الإضافة على مشغّلٍ داخل Shadow DOM، ولا تسرق حرفاً وأنا أكتب؟»*
 // inside a Web Component — both bounded so no page shape can turn either into a
 // runaway tree walk.
 const fs = require("fs");

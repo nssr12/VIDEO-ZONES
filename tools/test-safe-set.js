@@ -1,4 +1,6 @@
 // Audit #10: a write that fails must never be reported as saved.
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«إن امتلأ التخزين، أأرى أن الحفظ فشل أم أظنّه نجح؟»*
 // Drives safeSyncSet()/syncErrorText() from storage.js against a fake sync store.
 const fs = require("fs");
 const vm = require("vm");

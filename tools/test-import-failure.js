@@ -1,4 +1,6 @@
 // Audit #10 on the most dangerous path: a failed import must SAY it failed and
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«إن فشل استيراد الإعدادات، أأُخبَر أم أظنّها استُوردت؟»*
 // must leave storage exactly as it was. Drives the real importAllSettings from
 // options.js against a fake sync store whose set() can be made to reject.
 const fs = require("fs");

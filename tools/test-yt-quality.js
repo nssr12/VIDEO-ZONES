@@ -1,4 +1,6 @@
 // Audit #19: applyQ polled 25 x 400ms and fired on EVERY loadedmetadata of EVERY
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل تُضبط جودةُ يوتيوب على ما اخترتُه بلا أن تُطبَّق على الإعلان؟»*
 // <video>, ads included, with no de-duplication — so polls stacked and raced, and one
 // could outlive a navigation and then set the previous video's quality on the new one.
 //

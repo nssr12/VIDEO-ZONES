@@ -1,4 +1,6 @@
 // Audit #7: the Grid Appearance panel must actually reach the in-video overlay,
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«هل تظهر ألوانُ الشبكة التي اخترتُها داخل الفيديو؟»*
 // and an unset field must fall back to the value the overlay was hardcoded with
 // — never to a new one, or every existing user sees an unrequested visual change.
 const fs = require("fs");

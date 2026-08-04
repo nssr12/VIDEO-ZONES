@@ -1,4 +1,6 @@
 // Audit #48: the most specific layer must win — zone binding > site rule >
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«إن ربطتُ مربّعاً بأمر، أينفَّذ وحده أم ينفَّذ معه أمرُ القاعدة العامّة؟»*
 // global rule — and when it wins the general rule must not run AT ALL.
 //
 // It used to run BOTH on one middle press: the generic path acts on mousedown

@@ -1,4 +1,6 @@
 // Audit #4 + #23: deleting a zone's actions must STICK.
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«إن حذفتُ أوامر مربّع، أيبقى محذوفاً بعد الحفظ؟»*
 // Extracts ensureZonesDefaults (content.js) and ensureZoneActions (options.js)
 // and drives them against a fake chrome.storage.sync that records every write.
 const fs = require("fs");

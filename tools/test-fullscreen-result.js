@@ -1,4 +1,6 @@
 // Audit #9 + #33: toggleFullscreen must report the TRUTH synchronously.
+//
+// ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«إن رفض المتصفّح ملء الشاشة، أيُقال لي ذلك أم يبدو كأنه نجح؟»*
 //   false → the request was impossible, so runAction must not preventDefault
 //   true  → a request went out; a later rejection is reported, never swallowed
 // Extracts the real toggleFullscreen from content.js and stubs only its deps.
