@@ -271,6 +271,17 @@ console.log("\n[7] ⭐ #106 — الرقم واحد، ومعه حدُّه");
   check("[7] ⭐ وسندُه مذكورٌ بتناقضه (دليلٌ تقريبيّ لا رقمٌ دقيق)",
     /تقريبيّ/.test(head) && /59/.test(head), head.slice(-200));
   check("[7] ⭐ وحكمُه ميدانُ المالك", /ميدانُ المالك/.test(head), head.slice(-200));
+  // ⭐ **والقصُّ يحمل قيدَه معه — فلا يُزال بحسبانه كوداً ميتاً** (طلب المالك
+  // 2026-08-05، بعد قياسه: أسفلُ الشريط على أسفل المشغّل `0px`). **الفرعُ لا يقع
+  // على يوتيوب أبداً، ويقع على مضيفٍ يعلو شريطُه حافّةَ مشغّله** — **وحذفُه
+  // يكسر ذاك المضيفَ صامتاً**، فالقيدُ في الكود شرطٌ لا زينة.
+  const clampFn = SRC.match(/function playerRectForTarget\(el\)[\s\S]*?\n}/);
+  check("[7] ⭐ والقصُّ قائم", !!clampFn && /closest\?\.\(KNOWN_PLAYER_WRAPPER_SELECTOR\)/.test(clampFn[0]));
+  const clampNote = SRC.slice(SRC.indexOf("let top = r.top - padY") - 1500, SRC.indexOf("let top = r.top - padY") + 1500);
+  check("[7] ⭐ ومعه «صفرٌ هنا بقياس يوتيوب، ولا يُحذف»",
+    /صفرٌ هنا بقياس يوتيوب، ولا يُحذف/.test(clampNote));
+  check("[7] ⭐ وسببُ بقائه مكتوبٌ (مضيفٌ يعلو شريطُه حافّتَه)",
+    /فوق حافّة مشغّله/.test(clampNote));
   // **والمستهلك وحده يُعلنه** — لا المحرّك
   const cons = SRC.match(/IDLE_CONSUMERS\.progressBar = \{[\s\S]*?\n\};/);
   check("[7] والمستهلك يُعلنه (لا المحرّك)", !!cons && /nearPad: \(\) => IDLE_NEAR_PAD_PX/.test(cons[0]));
