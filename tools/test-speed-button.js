@@ -249,8 +249,14 @@ console.log("\n[8] ⭐ المؤشّر فوق الزرّ ⇒ امتناع، لا 
   check("[8] ⭐ ولا شرطَ خاصٌّ بالزرّ بقي", !/pointerInsideSpeedBtn\s*[,(]/.test(SRC));
   const apply = SRC.match(/function applyIdleState\(\)[\s\S]*?\n}/);
   check("[8] والمحرّك يسأل عن الهدف — لا يعرفه",
-    !!apply && /pointerInsideEl\(c\.target\?\.\(\)\)/.test(apply[0]), apply && apply[0].slice(0,240));
-  const fn = SRC.match(/function pointerInsideEl\(el\)[\s\S]*?\n}/);
+    !!apply && /pointerInsideEl\(c\.target\?\.\(\), c\.nearPad\?\.\(\) \?\? 0\)/.test(apply[0]), apply && apply[0].slice(0,240));
+  // ⭐ **#106 — والزرّ لم يرث هامش جاره، وهذا يُحرَس لا يُذكَر.** هدفُ #70 شريطٌ
+  // **يُقصد بالمؤشّر**، وهدفُ الزرّ **يُلاحقه المؤشّر**؛ وهامشُ 40 عمودياً على
+  // زرٍّ ~40×40 **يُثلّث ارتفاع منطقته** ⇒ تغييرُ سلوكٍ قائمٍ لم يُطلب.
+  // **فمن أعطاه هامشاً غداً يجد الأحمر هنا قبل أن يجده المستخدم في مشغّله.**
+  check("[8] ⭐ ولا هامشَ لهذا المستهلك (#106 لم يُعمَّم)",
+    !!decl && !/nearPad\s*:/.test(decl[0]), decl && decl[0].slice(0, 200));
+  const fn = SRC.match(/function pointerInsideEl\(el, padY = 0\)[\s\S]*?\n}/);
   check("[8] وشرطُه من lastPointer القائمة", !!fn && /lastPointer\.x/.test(fn[0]));
   check("[8] ولا مستمع جديد لأجله", !!fn && !/addEventListener/.test(fn[0]));
   check("[8] ⭐ وحارس المستطيل الصفريّ (قرار 22)", !!fn && /r\.width > 0 && r\.height > 0/.test(fn[0]), fn && fn[0]);

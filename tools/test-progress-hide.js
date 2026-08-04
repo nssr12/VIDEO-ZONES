@@ -150,7 +150,15 @@ console.log("\n[5] ⭐ السلوك: يُخفي بالسكون، ويمتنع ت
       __gate: true
     };
     vm.createContext(ctx);
-    vm.runInContext(ENGINE + "\n" + FEATURE + "\n};", ctx);
+    // ⚠️ **#106 — والمحدِّد يُؤخذ بنصّه من المنتَج، ولا يُكتب هنا نظيرٌ له:**
+    // `KNOWN_PLAYER_WRAPPER_SELECTOR` خارج الشريحة، **و`const` في `vm` لا يصير
+    // خاصّيةً في السياق** (`test-vm-scope.js`) ⇒ **فيُضمّ إلى السكربت نفسِه.**
+    // ⛔ **وقد وقع العطبُ فعلاً في أوّل تشغيلة**: الاسمُ غيرُ مُحلّ ⇒ `catch`
+    // في `playerRectForTarget` **يبتلع** ⇒ **القصُّ يسقط صامتاً ويبدو أن الهامش
+    // بلا حدّ** — **والحارسُ هو من أمسكه، لا القراءة.**
+    const WRAP = (SRC.match(/const KNOWN_PLAYER_WRAPPER_SELECTOR =[\s\S]*?;\n/) || [""])[0];
+    check("[5] مرساة المحدِّد المشترك قائمة", WRAP.length > 0);
+    vm.runInContext(WRAP + ENGINE + "\n" + FEATURE + "\n};", ctx);
     const hidden = () => htmlClasses.has("vz-idle-hide-progress");
     const fire = (t, ev = {}) => { for (const fn of listeners[t] || []) fn(ev); };
     const advance = (ms) => {
@@ -202,7 +210,73 @@ console.log("\n[5] ⭐ السلوك: يُخفي بالسكون، ويمتنع ت
     ctx.overlaySettings.hideProgressBar = false;
     vm.runInContext("refreshIdleConsumers()", ctx);
     check("[5] ⭐ وإطفاء المفتاح يُعيد الشريط — لا إخفاء عالق", hidden() === false);
+
+    // ── [6] ⭐ #106 — منطقةُ الامتناع أوسعُ من الهدف، ومحدودةٌ بالمشغّل ────────
+    // **السؤال بلغة المستخدم:** *«هل يكفي أن أقترب من الشريط ليبقى، أم يلزمني أن
+    // أُصيب تسعةً وخمسين بكسلاً؟»*
+    // ⚠️ **والمقاسات من القياس لا من الخيال:** الشريط **59px** (القسم الرابع
+    // عشر: `chrome.h = 59`)، **وأسفلُه على أسفل المشغّل** — وهي الشكل الذي يجعل
+    // القصَّ مؤثّراً. **والهامش 40 قرارُ تصميم**، فالحدّ المقيس هنا **سلوكُ
+    // المنطقة لا صوابُ الرقم**.
+    console.log("\n[6] ⭐ #106 — الهامش العموديّ: يقع فوق، ويُقصّ عند حدّ المشغّل");
+    const BAR = { left: 0, top: 100, right: 700, bottom: 159, width: 700, height: 59 };
+    const PLAYER = { left: 0, top: 0, right: 700, bottom: 159, width: 700, height: 159 };
+    ctx.document.querySelector = () => ({
+      isConnected: true,
+      getBoundingClientRect: () => BAR,
+      closest: () => ({ getBoundingClientRect: () => PLAYER })
+    });
+    ctx.overlaySettings.hideProgressBar = true;
+    // ⚠️ **المفتاح أُطفئ في السطر أعلاه فالمحرّك مطفأ** — وبلا هذا السطر
+    // **يخرج القسم كلُّه أخضرَ عن عمى**: `markIdleActivity` لا تفعل شيئاً،
+    // فتبقى الحالُ على آخر ما كانت عليه **فتُقرأ «لم يُخفَ» امتناعاً**.
+    // ⇒ **وهو الصفر الكاذب بعينه، وقد وقع في أوّل تشغيلة لهذا القسم.**
+    vm.runInContext("refreshIdleConsumers()", ctx);
+    const rest = (x, y) => {
+      ctx.lastPointer.x = x; ctx.lastPointer.y = y;
+      vm.runInContext("markIdleActivity()", ctx);
+      advance(3000);
+      return hidden();
+    };
+    // **الشاهد الموجب**: داخل الهدف نفسِه — لو احمرّ فالمِجَسّ لا يرى أصلاً
+    check("[6] المؤشّر داخل الشريط ⇒ لا إخفاء (الشاهد الموجب)", rest(350, 130) === false);
+    // ⭐ **وهو الحدّ الذي وُلد له البند**: 30px فوق أعلى الشريط — كان يُخفى قبله
+    check("[6] ⭐ و30px فوق أعلى الشريط ⇒ لا إخفاء (وهو ما كان يُخفى)", rest(350, 70) === false);
+    // **الشاهد السالب**: خارج الهامش ⇒ يُخفى — فالمنطقة محدودة لا مفتوحة
+    check("[6] ⭐ و50px فوقه ⇒ يُخفى (الهامش محدود لا مفتوح)", rest(350, 50) === true);
+    // ⭐ **والقصّ عند حدّ المشغّل**: 20px **تحت** الشريط تقع خارج المشغّل هنا،
+    // **فلا يمتدّ الهامش إليها** — وهي حالُ «الخروج من إطار المشغّل» ولها حكمُها.
+    check("[6] ⭐ و20px تحت الشريط خارج المشغّل ⇒ يُخفى (الهامش مقصوصٌ بالمشغّل)",
+      rest(350, 179) === true);
+    // **ولا يُحيي الهامشُ هدفاً مخفيّاً** (حارس المستطيل الصفريّ يسبقه)
+    ctx.document.querySelector = () => ({
+      isConnected: true,
+      getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
+      closest: () => ({ getBoundingClientRect: () => PLAYER })
+    });
+    check("[6] ⭐ وهدفٌ `0×0` لا يُحييه الهامش (قرار 22 يسبقه)", rest(350, 130) === true);
   }
+}
+
+// ── [7] ⭐ #106 — الرقم في موضعٍ واحد، وحدُّه مكتوبٌ معه ─────────────────────
+// ⚠️ **يُحرَس النصُّ هنا لأن الحدّ نفسَه هو المنتَج:** رقمٌ بلا «اختيارٌ لا قياس»
+// **يُقرأ بعد سنة قياساً**، فيُبحث له عن سندٍ لا وجود له أو يُظنّ مقدّساً.
+// **وهو قرار 96 مطبَّقاً على سطرٍ في الكود لا على تقرير.**
+console.log("\n[7] ⭐ #106 — الرقم واحد، ومعه حدُّه");
+{
+  const decl = SRC.match(/const IDLE_NEAR_PAD_PX = (\d+);/);
+  check("[7] الرقم معرَّفٌ مرّةً واحدة", !!decl && SRC.split("IDLE_NEAR_PAD_PX =").length === 2, decl && decl[1]);
+  const head = SRC.slice(Math.max(0, SRC.indexOf("const IDLE_NEAR_PAD_PX") - 2400), SRC.indexOf("const IDLE_NEAR_PAD_PX"));
+  check("[7] ⭐ ومعه أنه **اختيارٌ لا قياس**", /اختيارٌ لا قياس/.test(head), head.slice(-200));
+  check("[7] ⭐ وسندُه مذكورٌ بتناقضه (دليلٌ تقريبيّ لا رقمٌ دقيق)",
+    /تقريبيّ/.test(head) && /59/.test(head), head.slice(-200));
+  check("[7] ⭐ وحكمُه ميدانُ المالك", /ميدانُ المالك/.test(head), head.slice(-200));
+  // **والمستهلك وحده يُعلنه** — لا المحرّك
+  const cons = SRC.match(/IDLE_CONSUMERS\.progressBar = \{[\s\S]*?\n\};/);
+  check("[7] والمستهلك يُعلنه (لا المحرّك)", !!cons && /nearPad: \(\) => IDLE_NEAR_PAD_PX/.test(cons[0]));
+  // ⭐ **شاهد قرار 47: يُحمّر على كودٍ بلا حدّ** — لا على شبيهٍ يُفتعل
+  check("[7] ⭐ والحارس يرى رقماً بلا حدّ فلا يُصدَّق خضاره",
+    !/اختيارٌ لا قياس/.test("const IDLE_NEAR_PAD_PX = 40;"));
 }
 
 console.log(`\n✅ نجح ${pass} / فشل ${fail}\n`);
