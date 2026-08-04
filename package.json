@@ -1,0 +1,12 @@
+{
+  "name": "video-zones-dev",
+  "private": true,
+  "description": "أدوات تطوير فقط — لا يُشحن منها شيء (انظر Packaging في CLAUDE.md)",
+  "scripts": {
+    "lint": "eslint --no-config-lookup -c eslint.config.mjs \"*.js\" \"tools/**/*.js\" \"tools/**/*.mjs\""
+  },
+  "devDependencies": {
+    "eslint": "^9",
+    "globals": "^15"
+  }
+}

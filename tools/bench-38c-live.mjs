@@ -26,7 +26,7 @@
 //  · **والمِجَسّ يُركَّب قبل الضغط**: مستمعان في عالم الصفحة يلتقطان
 //    `__vz_setq__` (ما يرسله `content.js`) و`__vz_setq_done__` (ما يردّ به
 //    سكربت العالم الرئيسي) — فيُفصل «لم يُرسَل» عن «أُرسل ولم يُردّ عليه».
-import { launch, connect, openPage, configure, contentWorld, evalIn, EXT_NAME }
+import { launch, connect, openPage, configure, contentWorld, evalIn, EXT_NAME, killChrome }
   from "./ext-harness.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -20,6 +20,11 @@
 // مزيدة **بإبلاغ الفرع الذي سلكته** وحده. لا تُعدَّل هنا وحدها: القياس على منطق
 // مغاير لا يقيس شيئاً.
 import { spawn } from "node:child_process";
+// ⛔ **#100 — كان يُنادى بلا استيراد** (2026-08-04): `killChrome` أُدخلت في
+// `f6e8a33` (المُنهي الواحد، #83) **ولم تُحدَّث الملفّات التي تناديها** —
+// **21 نداءً في ستّة، كلُّها في `finally`** ⇒ **رميةٌ حتميّة وكرومُ لا يُقتل**،
+// **فالتسرّبُ الذي بُني #83 لإنهائه بقي حيّاً فيها.**
+import { killChrome } from "./ext-harness.mjs";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
@@ -221,7 +226,7 @@ async function measure(name, url, port) {
     return row;
   } finally {
     try { ws?.close(); } catch {}
-    killChrome(chrome);
+    killChrome(proc);
   }
 }
 
@@ -244,7 +249,7 @@ async function pickFrom(port, listUrl, sel, count = 4) {
     }
     return [];
   } catch { return []; }
-  finally { try { ws?.close(); } catch {} killChrome(chrome); }
+  finally { try { ws?.close(); } catch {} killChrome(proc); }
 }
 
 // ---- التشغيل ---------------------------------------------------------------

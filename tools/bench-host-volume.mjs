@@ -24,6 +24,11 @@
 //
 // كروم يُشغَّل بـ --mute-audio: القياس على `video.volume` كخاصية، ولا صوت يخرج.
 import { spawn } from "node:child_process";
+// ⛔ **#100 — كان يُنادى بلا استيراد** (2026-08-04): `killChrome` أُدخلت في
+// `f6e8a33` (المُنهي الواحد، #83) **ولم تُحدَّث الملفّات التي تناديها** —
+// **21 نداءً في ستّة، كلُّها في `finally`** ⇒ **رميةٌ حتميّة وكرومُ لا يُقتل**،
+// **فالتسرّبُ الذي بُني #83 لإنهائه بقي حيّاً فيها.**
+import { killChrome } from "./ext-harness.mjs";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
@@ -234,7 +239,7 @@ async function measureRestoreMap(url, port) {
     }
     return out;
   } catch (e) { return [{ error: String(e?.message || e).slice(0, 70) }]; }
-  finally { try { ws?.close(); } catch {} killChrome(chrome); }
+  finally { try { ws?.close(); } catch {} killChrome(proc); }
 }
 
 // ---- قياس العلاجات ---------------------------------------------------------
@@ -377,7 +382,7 @@ async function measureRemedies(url, port) {
       row.note = "فشل: " + String(e?.message || e).slice(0, 60);
       rows.push(row);
     } finally {
-      try { ws?.close(); } catch {} killChrome(chrome);
+      try { ws?.close(); } catch {} killChrome(proc);
     }
   }
   return rows;
@@ -452,7 +457,7 @@ async function measure(name, url, port) {
     return row;
   } finally {
     try { ws?.close(); } catch {}
-    killChrome(chrome);
+    killChrome(proc);
   }
 }
 
@@ -475,7 +480,7 @@ async function youtubeUrl(port) {
     }
     return null;
   } catch { return null; }
-  finally { try { ws?.close(); } catch {} killChrome(chrome); }
+  finally { try { ws?.close(); } catch {} killChrome(proc); }
 }
 
 // قناة كِك حيّة تُستخرج حيّاً: القنوات تتغيّر، ورابط مثبَّت يجعل القياس كاذباً.
@@ -500,7 +505,7 @@ async function kickUrl(port) {
     }
     return null;
   } catch { return null; }
-  finally { try { ws?.close(); } catch {} killChrome(chrome); }
+  finally { try { ws?.close(); } catch {} killChrome(proc); }
 }
 
 // عدة مرشّحات لكل موقع: أول رابط يعطي مشغّلاً حقيقياً هو المقيس، وما عداه يُسجَّل

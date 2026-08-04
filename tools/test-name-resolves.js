@@ -1,8 +1,22 @@
-// يحرس ألّا يُنادى اسمٌ لا يُحلّ في ملفّه — لا محذوفاً ولا غيرَ مستورَد (#101).
+// يحرس ألّا يُنادى اسمٌ غيرُ موجودٍ في ملفّه — **المُنادى وحده، لا كلُّ مرجع**.
+//
+// ⛔ **العنوانُ ضُيّق 2026-08-04 بأمر المالك، وسببُ التضييق عطبٌ مرّ من تحته:**
+// كان يقول «ألّا يُنادى اسمٌ **لا يُحلّ**» — **وهو أوسعُ ممّا يفعل**. فمرّ
+// `killChrome(chrome)` و`chrome` **غيرُ موجودٍ في الملفّ إطلاقاً**، لأنه
+// **مُمرَّرٌ لا مُنادى**. ⇒ ⭐ **واسمٌ يَعِد بما لا يفعل في حارسٍ أخطرُ منه في
+// مربّع إعدادات: المربّعُ يخذل مستخدماً، والحارسُ يخذل كلَّ ما بعده.**
 //
 // ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«حين تُفتح صفحةُ الإعدادات فلا تعمل،
-// أو يُرفض حفظُ إعدادي بلا سبب — أهو عطبٌ في الميزة، أم اسمٌ نادى عليه كودُنا
+// أو يُرفض حفظُ إعدادي بلا سبب — أهو عطبٌ في الميزة، أم اسمٌ **نادى عليه** كودُنا
 // وليس موجوداً أصلاً فمات كلُّ ما بعده؟»*
+//
+// ── حدوده الثلاثة، مُعلَنةً ولا تُوسَّع ─────────────────────────────────────
+// **(١) المُنادى وحده** — `f()` نعم، و`g(f)` **لا**. **(٢) والوجودُ في الملفّ
+// أو صفحته** — لا النطاقُ داخله (تلك أخوه `tools/test-scope-reach.js`).
+// **(٣) وتحليلُه نصّيّ لا شجرةُ نحو** — فقائمةُ العوالم أدناه ثمنُ ذلك، **وتُقرأ
+// اعترافاً لا تزييناً**، وأربعةٌ منها سقطت في أوّل تشغيل.
+// ⚠️ **ومقيسٌ أن فحصاً قياسياً (`no-undef`) يمسك الثلاثة معاً وأخرج 13 عطباً
+// حيّاً حيث أخرج هذا صفراً** — فلا يُقرأ خضرةُ هذا الملفّ ضماناً.
 //
 // ── العلّة: عطبٌ واحد بثلاث وقائع (قرار المالك 2026-08-04، وحدُّ قرار 85) ────
 // **الاسمُ يُنادى حيث لا يُحلّ**، وثلاثتُها كلّفت جلسات:
@@ -164,6 +178,46 @@ const declOf = (rel) => {
   return declCache.get(rel);
 };
 
+// ⛔ **العوالمُ تُقسَّم ببيئتها — وبلا هذا مرّ `chrome` في ملفّ عُقدة** (2026-08-04):
+// كُشف بإصلاح #100 نفسِه — `killChrome(chrome)` و`chrome` **غيرُ معرَّفٍ في
+// الملفّ إطلاقاً**، **وحارسي أمرّه لأن `chrome` في قائمةٍ بلا نطاق**.
+// ⇒ ⭐ **قائمةٌ أوسع من بيئتها تُخفي عطباً — وهي «المطابقةُ أوسع من سؤالها» (#92).**
+const BROWSER_ONLY = new Set(["chrome","browser","document","window","navigator","location","history",
+  "alert","confirm","prompt","getComputedStyle","requestAnimationFrame","cancelAnimationFrame",
+  "matchMedia","screen","localStorage","sessionStorage","getSelection","copy","getEventListeners",
+  "inspect","monitorEvents","addEventListener","removeEventListener","dispatchEvent","scrollTo",
+  "scrollBy","postMessage","open","close","focus","blur","importScripts","MutationObserver",
+  "ResizeObserver","IntersectionObserver","CustomEvent","MouseEvent","KeyboardEvent","WheelEvent",
+  "FocusEvent","PointerEvent","FileReader","Image","AudioContext","webkitAudioContext","GainNode",
+  "MediaStream","XMLHttpRequest","HTMLElement","Node","Element","DOMParser","CSSStyleSheet","CSS",
+  "ShadowRoot","Selection","Range","atob","btoa"]);
+const NODE_ONLY = new Set(["process","Buffer","__dirname","__filename","module","exports","require",
+  "setImmediate","clearImmediate","global"]);
+// **ما يعيش في الصفحة**: منتَجُنا، ومِجَسّاتُ اللصق التي تُلصق في كونسول المضيف
+// ⭐ **ويُشتقّ التصنيف من رأس الملفّ لا من قائمةٍ بيدنا** (شرط المالك 2026-08-04):
+// **مِجَسّاتُ اللصق تُعلن عن نفسها في رأسها** («يُلصق في كونسول…»)، **ورِكازُ
+// العقدة لا يُعلن**. ⇒ **فقائمةٌ مكتوبةٌ بيد تتباعد، ورأسُ الملفّ لا يتباعد عنه.**
+// ⚠️ **والرأسُ أوّلُ 20 سطراً لا الملفُّ كلُّه** — فذِكرُ «كونسول» في شرحٍ أسفل
+// الملفّ كان سيُصنّف رِكازَ عقدةٍ صفحةً (**وقع في هذا الملفّ نفسِه**).
+const pageDecl = new Map();
+const isPage = (rel) => {
+  if (!rel.startsWith("tools/")) return true;
+  // ⛔ **و`test-*.js` رِكازُ عقدةٍ بالبناء** — `run-tests` يُشغّلها بـ`node`،
+  // **فلا يُصنَّف بالنصّ ما يُصنَّفه تشغيلُه**.
+  if (/^tools\/test-/.test(rel)) return false;
+  if (!pageDecl.has(rel)) {
+    // **كتلةُ الرأس كاملةً لا نافذةٌ بعدد** — أوّلُ صياغةٍ أخذت 20 سطراً
+    // **فأخطأت في الاتّجاهين**: مِجَسّ لصقٍ يُعلن أسفلَها فصُنّف عقدةً، ورِكازُ
+    // عقدةٍ يذكر «كونسول» في شرحه فصُنّف صفحة. ⇒ **يُقرأ ما أعلنه الملفّ عن
+    // نفسه في رأسه، والرأسُ يُشتقّ بحدّه لا بعدد.**
+    const L = fs.readFileSync(path.join(ROOT, rel), "utf8").split("\n");
+    let end = 0;
+    while (end < L.length && (/^\s*(\/\/|$)/.test(L[end]))) end++;
+    pageDecl.set(rel, /يُلصق|كونسول/.test(L.slice(0, end).join("\n")));
+  }
+  return pageDecl.get(rel);
+};
+
 const bad = [];
 for (const rel of FILES) {
   const code = strip(fs.readFileSync(path.join(ROOT, rel), "utf8"));
@@ -172,22 +226,27 @@ for (const rel of FILES) {
   const visible = new Set(declOf(rel));
   if (g) for (const sib of g.files) { try { for (const n of declOf(sib)) visible.add(n); } catch {} }
   for (const [name, line] of calls(code)) {
-    if (visible.has(name) || GLOBALS.has(name)) continue;
+    if (visible.has(name)) continue;
+    if (GLOBALS.has(name)) {
+      // العالميُّ يُقبل **في بيئته وحدها**
+      if (BROWSER_ONLY.has(name) && !isPage(rel)) { bad.push({ rel, name, line, why: "عالَمُ متصفّحٍ في ملفّ عُقدة" }); continue; }
+      if (NODE_ONLY.has(name) && isPage(rel)) { bad.push({ rel, name, line, why: "عالَمُ عُقدةٍ في ملفّ صفحة" }); continue; }
+      continue;
+    }
     bad.push({ rel, name, line });
   }
 }
 
 console.log(`\n[1] كلُّ اسمٍ يُنادى يُحلّ في ملفّه — ${FILES.length} ملفّاً`);
 {
-  // ⛔ **تثبيتُ عطبٍ مفتوح (قرار 20):** #100 لم يُصلَح بعد — ستّةُ رِكازات تنادي
-  // `killChrome` بلا استيراد. **فشلُ هذا التثبيت يعني أن #100 أُصلح، فحدّثه
-  // ولا تُصلح الاختبار.**
-  const known = bad.filter((b) => b.name === "killChrome");
-  const other = bad.filter((b) => b.name !== "killChrome");
-  check("لا اسمَ غيرَ محلولٍ خارج العطب المُثبَّت", other.length === 0,
-    "\n     " + other.map((b) => `${b.rel}:${b.line} ⇒ ${b.name}`).join("\n     "));
-  check("⛔ تثبيت #100: ستّةُ ملفّات تنادي `killChrome` بلا استيراد", known.length === 6,
-    known.map((b) => b.rel).join(" · ") + `  (وُجد ${known.length})`);
+  // ✅ **انقلب التثبيتُ إلى موجبٍ في كومِت #100 نفسِه** (شرط المالك 2026-08-04):
+  // ~~«ستّةُ ملفّات تنادي `killChrome` بلا استيراد»~~ **زال بإصلاح #100** —
+  // **ولو بقي التثبيتُ بعد الإصلاح لكان أحدُهما كاذباً.** ⇒ **فالشرطُ الآن صفر،
+  // ولا استثناءَ لاسمٍ بعينه**: أيُّ اسمٍ لا يُحلّ يُحمّر، وأوّلُهم `killChrome`.
+  check("لا اسمَ غيرَ محلولٍ في أيّ ملفّ", bad.length === 0,
+    "\n     " + bad.map((b) => `${b.rel}:${b.line} ⇒ ${b.name}`).join("\n     "));
+  check("⭐ و`killChrome` خاصّةً — وهو #100", !bad.some((b) => b.name === "killChrome"),
+    bad.filter((b) => b.name === "killChrome").map((b) => b.rel).join(" · "));
 }
 
 console.log("\n[2] شاهدا قرار 26 — على الحارس نفسه");

@@ -34,6 +34,11 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// ⛔ **#100 — كان يُنادى بلا استيراد** (2026-08-04): `killChrome` أُدخلت في
+// `f6e8a33` (المُنهي الواحد، #83) **ولم تُحدَّث الملفّات التي تناديها** —
+// **21 نداءً في ستّة، كلُّها في `finally`** ⇒ **رميةٌ حتميّة وكرومُ لا يُقتل**،
+// **فالتسرّبُ الذي بُني #83 لإنهائه بقي حيّاً فيها.**
+import { killChrome } from "./ext-harness.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const MAIN_SRC = fs.readFileSync(path.join(ROOT, "yt_quality_main.js"), "utf8");
@@ -262,7 +267,7 @@ async function arm(url, port, mode) {
     row.ok = true;
     return row;
   } catch (e) { row.note = "فشل: " + String(e?.message || e).slice(0, 70); return row; }
-  finally { try { ws?.close(); } catch {} killChrome(chrome); }
+  finally { try { ws?.close(); } catch {} killChrome(proc); }
 }
 
 async function youtubeUrl(port) {
@@ -282,7 +287,7 @@ async function youtubeUrl(port) {
     }
     return null;
   } catch { return null; }
-  finally { try { ws?.close(); } catch {} killChrome(chrome); }
+  finally { try { ws?.close(); } catch {} killChrome(proc); }
 }
 
 // ---- التشغيل ---------------------------------------------------------------

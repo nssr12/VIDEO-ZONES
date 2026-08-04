@@ -71,7 +71,40 @@ Regenerate the icons after editing the generator: `node tools/make-icons.js icon
 
 ## Tests
 
-Pure `node`, no dependencies, never shipped. **Run the whole suite before every
+⛔ ~~**Pure `node`, no dependencies, never shipped.**~~ — **the "no dependencies"
+half is REVOKED, deliberately, 2026-08-04 (owner decision).** Struck, not
+rewritten: rewording it ("the suite has no dependencies, the linters sit outside
+it") would keep the letter and drop the intent. **Its author's intent is plain:
+*our checking needs nothing installed.* If a checker enters the gate, then our
+checking does need an install — whatever file we happen to put it in.** That is
+the same move we spent this whole session refusing in labels: **editing the
+wording to survive breaking it.** We do not do it to an invariant just because
+the invariant is ours.
+
+**What it bought, and what it cost:**
+
+| | |
+|---|---|
+| **The cost of keeping it** | We were rebuilding a scope analyser out of text matching. `tools/test-name-resolves.js` shipped with **six defects on the day it was born** — file-local instead of call-site scope (19 sound names reported as broken) · `strip` swallowing template lines · no regex-literal handling (`/(^\|\.)youtube(-nocookie)?\.com$/` read as a call to `youtube`) · an unscoped globals list that let `chrome` pass **in a Node file** · a 20-line header window that misclassified in both directions · and `test-*.js` classified by prose instead of by how it is run. **Every one of them is text matching.** |
+| **What the standard check gives** | `no-undef` on the same tree: **78 findings, 78, 78 — identical across three runs — in under a second.** It catches **all three** of our slices except one, including **13 live `chrome` defects our guards scored zero on.** |
+| **What stays ours** | `tools/test-vm-scope.js` — `const` inside a `vm` script not becoming a context property is a **runtime semantic**, not scope analysis. Measured: `no-undef` reports **zero** on it. |
+
+⇒ ⭐ **The general lesson, which outlives this decision: before building a tool,
+ask whether the problem is a general one with a proven solution. What is specific
+to this project is what we build; what is general we borrow.** We spent sessions
+on three guards that returned zero on a class a decade-old tool returns thirteen
+on in 0.8 seconds.
+
+**Two properties preserved by condition, and they are not optional:**
+1. **`node tools/run-tests.js` stays dependency-free.** A bare clone runs the
+   whole suite with no install. **The lost property is confined to the gate, not
+   the suite.**
+2. **A missing dependency announces itself.** Anyone running the gate without
+   installing sees one line telling them to install — **not an obscure failure**.
+   A new session on a bare clone hits this first, and **an obscure failure inside
+   the commit gate reads as a defect in the product.**
+
+**Run the whole suite before every
 commit, not after** — a commit that precedes verification makes the revert point
 a lie.
 
