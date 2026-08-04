@@ -39,7 +39,7 @@
 //   node tools/bench-options-page.mjs --witness   # الشاهدان: حيّة ⇒ خضراء · ميتة ⇒ حمراء
 import fs from "node:fs";
 import path from "node:path";
-import { launch, openPage, connect, ROOT , killChrome } from "./ext-harness.mjs";
+import { launch, openPage, connect, ROOT , killChrome, evalIn } from "./ext-harness.mjs";
 
 const PORT = 9754;
 const WITNESS = process.argv.includes("--witness");
@@ -93,25 +93,22 @@ async function run(label) {
     });
     await sleep(2500);
 
-    const evalIn0 = async (expr) => {
-      const r = await c.send("Runtime.evaluate", { expression: expr, returnByValue: true });
-      return r?.result?.result?.value;
-    };
     // ⭐ **شاهدٌ موجب قبل أي رقم (قرار 26): أهذي صفحتُنا أصلاً؟**
-    const here = await evalIn0("[location.href, document.readyState].join(\"|\")");
+    // ⚠️ **ورميتُه تُطوى في مخرجه المُعلَن هو، لا تُترك تصعد**: وظيفةُ هذا السطر
+    // أن **يقول «ليست صفحتنا»**، فرميةٌ تتخطّى ذلك المخرج تُسكته في الحال الوحيدة
+    // التي كُتب لها. ⛔ **وهذا وحده مُستثنى** — وباقي المِجَسّات تصعد رميتُها
+    // بنصّها: **بلاغٌ يُسمّي التعبيرَ الذي رمى أصدقُ من ثمانية شروطٍ تُحمَّر
+    // بدليلٍ `{}`** (وهو ما كانت تفعله النسخةُ المحلّية: عطبُ الأداة يُقرأ عطبَ منتَج).
+    let here;
+    try { here = await evalIn(c, "[location.href, document.readyState].join(\"|\")"); }
+    catch (e) { if (!e?.vzEvalThrew) throw e; here = "رمى الشاهدُ الموجب: " + e.message; }
     if (!String(here).startsWith(`chrome-extension://${id}/options.html`)) {
       try { c.ws.close(); } catch {}
       return { label, ok: false, why: "لم تُحمَّل صفحتنا: " + here };
     }
 
-    const evalIn = async (expr) => {
-      const r = await c.send("Runtime.evaluate",
-        { expression: expr, awaitPromise: true, returnByValue: true });
-      return r?.result?.result?.value;
-    };
-
     // (٢) التنقّل بين الأقسام
-    const nav = await evalIn(`(() => {
+    const nav = await evalIn(c, `(() => {
       const btns = [...document.querySelectorAll(".navItem")];
       if (btns.length < 2) return { ok: false, why: "لا أزرار أقسام" };
       const target = btns.find((b) => b.dataset.section === "timingSection") || btns[1];
@@ -131,14 +128,30 @@ async function run(label) {
     // ضوابط التوقيت كلُّها ترمي. **فالعيّنة من واحدٍ تُعمّم نجاحَ ما عُويِن.**
     // وهو الشكل نفسه الذي أُمسك في عدّ المجموعات وفي الخطوة 32 — **والآن في
     // حارسٍ يُشحن.** ⇒ **يُبدَّل كلُّ ضابط، ويُقرأ الخطأ والتخزين بعد كلٍّ.**
-    const ids = await evalIn(`(() => ({
+    const ids = await evalIn(c, `(() => ({
       clean: [...document.querySelectorAll("#cleanPlayerList input")].map((e) => e.id),
       timing: [...document.querySelectorAll("#timingList input")].map((e) => e.id)
     }))()`);
     const sweep = [];
     for (const cid of [...(ids?.clean || []), ...(ids?.timing || [])]) {
       const errBefore = errors.length;
-      const r = await evalIn(`(async () => {
+      // ⚠️ **تحمُّلٌ مُعلَنٌ بنصّه، لا `catch` فارغ** — و`ext-harness` تشترط ذلك
+      // صراحةً: **من احتاج تحمُّلَ رميةٍ يقول ماذا تعني عنده.** ومعناها هنا:
+      // **رميةُ ضابطٍ واحد هي عينُ ما يقيسه شرطُ «صفر استثناء عند التفاعل»** —
+      // فتُنسب إلى معرّفه وتُعدّ حمراءَ باسمه، **ولا تُسقط الاجتياحَ على أوّل من
+      // يرمي فتُخفي الخمسة والأربعين بعده**. ⛔ **وما ليس رميةَ تعبيرٍ يُرفع كما
+      // هو** (`vzEvalThrew`): عطبُ الرِكاز نفسِه لا يُقيَّد في عمود المنتَج.
+      //
+      // ⛔ **والرميةُ التي أخفاها الابتلاعُ كانت في `return` أدناه**: قرأت `a` —
+      // **اسمٌ لا وجود له في صفحة الإعدادات** — فرمى التعبير، **فأعاد CDP `{}`
+      // صادقةً**، فغابت الحقول كلُّها، **وغيابُها قُرئ «لا عيب»**.
+      // ⇒ ⭐ **والعلاجُ ليس تصحيحَ الاسم إلى قراءةٍ رابعة للتخزين، بل استعمالَ ما
+      // قاسته الحلقةُ أصلاً بعد كل دفعة**: قراءةٌ رابعة **تستطيع أن تخالف الثلاثَ
+      // قبلها**، والحلقةُ تُمسك تغيّراً وقع ثمّ عاد — وهي تقيس ما يُسأل عنه:
+      // **أوصلَ تبديلٌ ما إلى التخزين؟** لا: **أهي مختلفةٌ في اللحظة الأخيرة؟**
+      let r = null, thrown = null;
+      try {
+        r = await evalIn(c, `(async () => {
         const el = document.getElementById(${JSON.stringify(cid)});
         if (!el) return { why: "غير مرسوم" };
         if (el.disabled) return { skipped: true };
@@ -167,19 +180,22 @@ async function run(label) {
         // إعادة الرسم التي يُطلقها تغيّر التخزين.
         // ⭐ **والقيمة المعروضة تُقارن بالمخزَّنة** — فالعرض قد يكذب على التخزين
         // (#89: التخزين 100 والمُنزلق 500). **«وصل التخزين» لا يكفي.**
-        return { ok: true, changed: JSON.stringify(a.settings || {}) !== before,
-                 shown: el.value };
+        return { ok: true, changed, shown: el.value };
       })()`);
+      } catch (e) {
+        if (!e?.vzEvalThrew) throw e;
+        thrown = String(e.message);
+      }
       await sleep(90);
-      sweep.push({ id: cid, ...(r || { why: "لا جواب" }),
-                   threw: errors.length - errBefore,
-                   msg: errors.slice(errBefore)[0] });
+      sweep.push({ id: cid, ...(r || { why: thrown ? "رمى تعبيرُه" : "لا جواب" }),
+                   threw: (errors.length - errBefore) + (thrown ? 1 : 0),
+                   msg: thrown || errors.slice(errBefore)[0] });
     }
 
     // ── (٧) **#84: الظهور يُشتقّ ولا يُخزَّن** — المدخلان والمخرجان وEsc ─────
     // ⚠️ **مفتاحُ حالةٍ واحد يقلبه أربعة مداخل يُنتج مدخلاً يُلغي أثر آخر** —
     // وهو ما وقع: `Tab` يفتح و`Enter` بعده يُغلق. **والاشتقاق يجعله مستحيلاً.**
-    const derived = await evalIn(`(() => {
+    const derived = await evalIn(c, `(() => {
       const b = document.querySelector("#timingList .vzHelp");
       const body = document.getElementById(b.getAttribute("aria-controls"));
       const st = () => !body.hidden;
@@ -204,7 +220,7 @@ async function run(label) {
     })()`);
 
     // وعددُ ما رُسم — فسقوطُ ضابطٍ يُرى بالعدّ
-    const drawn = await evalIn(`(() => ({
+    const drawn = await evalIn(c, `(() => ({
       clean: document.querySelectorAll("#cleanPlayerList input[type=checkbox]").length,
       timing: document.querySelectorAll("#timingList input").length,
       help: document.querySelectorAll(".vzHelp").length
@@ -269,7 +285,9 @@ check(`[٣] وكلُّ تبديلٍ يصل التخزين`, notSaved.length === 
 const snapped = sw.filter((s) => s.ok && s.wanted != null && s.shown != null && s.wanted !== s.shown);
 check(`[٣] ⭐ والمعروض يطابق المطلوب (لا يقفز الضابط بعد ضبطه)`, snapped.length === 0,
   snapped.map((s) => s.id + ": طُلب " + s.wanted + " فعُرض " + s.shown).slice(0, 6));
-if (skipped.length) console.log(`  · مُتخطّى (معطَّل أو غير مرسوم): ${skipped.map((s) => s.id).join(", ")}`);
+// ⚠️ **والوسمُ يذكر السببَ الثالث بعد أن صار ممكناً**: وسمٌ أوسعُ من شرطه هو
+// عينُ ما نطارده — و«رمى تعبيرُه» لم تكن تقع أصلاً حين كانت الرميةُ تُبتلع.
+if (skipped.length) console.log(`  · مُتخطّى (معطَّل أو غير مرسوم أو رمى تعبيرُه): ${skipped.map((s) => s.id).join(", ")}`);
 
 // ── [٧] #84 — الظهور مُشتقّ: مدخلان مستقلّان، ولا مفتاح حالة ────────────────
 const d = live.derived || {};
