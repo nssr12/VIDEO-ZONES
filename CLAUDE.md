@@ -626,9 +626,9 @@ Two maps are built in `content.js`:
 
 ## Releasing a version — **the gate is measurement, not intent**
 
-**Seven checks run before every commit** (owner decision 2026-08-04, was four):
+**Eight checks run before every commit** (owner decision 2026-08-04, was four):
 `run-tests` · `audit-status` · `bench-options-page` · `bench-overlay-layer` ·
-`bench-eval-contract` · `bench-s69-guards` · `repro-58-fullscreen`.
+`bench-eval-contract` · `bench-s69-guards` · `repro-58-fullscreen` · `lint-names`.
 The last three were promoted because they are **local, deterministic, and guard
 contracts our work touched** — that is the criterion, not "most important".
 

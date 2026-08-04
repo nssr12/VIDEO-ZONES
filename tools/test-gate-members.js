@@ -1,4 +1,7 @@
-// يحرس أن بوّابة الكومِت سبعةٌ مُعلَنة، وأن كلَّ فحصٍ فيها يقول ما يحرسه.
+// يحرس أن أعضاء بوّابة الكومِت مُعلَنون بعددهم، وأن كلَّ فحصٍ فيها يقول ما يحرسه.
+//
+// ⚠️ **واسمُه `members` لا `seven`** — كان `test-gate-seven` فصارت البوّابةُ ثمانيةً
+// في اليوم نفسِه: **اسمٌ يحمل عدداً يكذب عند أوّل تغيير**، وهو ما نطارده في الوسوم.
 //
 // ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«حين يقال لي «كلُّ الفحوص خضراء
 // فالنسخة جاهزة» — أهي فحوصٌ تغطّي ما أستعمله، أم فحصان يحرسان بنداً واحداً
@@ -32,24 +35,25 @@ const check = (name, cond, extra) => cond
   ? (pass++, console.log("  ✅ " + name))
   : (fail++, console.log("  ❌ " + name, extra ?? ""));
 
-// **الموضع الواحد لأسماء السبعة** — ومنه يُشتقّ كلُّ عدٍّ أدناه
+// **الموضع الواحد لأسماء الثمانية** — ومنه يُشتقّ كلُّ عدٍّ أدناه
 const GATE = [
   "run-tests.js", "audit-status.js", "bench-options-page.mjs", "bench-overlay-layer.mjs",
-  "bench-eval-contract.mjs", "bench-s69-guards.mjs", "repro-58-fullscreen.mjs"
+  "bench-eval-contract.mjs", "bench-s69-guards.mjs", "repro-58-fullscreen.mjs",
+  "lint-names.mjs"
 ];
-const MARK = "⛔ **من السبعة — يُشغَّل قبل كل كومِت.** ويحرس:";
+const MARK = "⛔ **من الثمانية — يُشغَّل قبل كل كومِت.** ويحرس:";
 
-console.log(`\n[1] البوّابة سبعةٌ — والعدد يُشتقّ ولا يُكتب`);
+console.log(`\n[1] البوّابة ثمانيةٌ — والعدد يُشتقّ ولا يُكتب`);
 {
-  check("السجلّ يحمل سبعة", GATE.length === 7, String(GATE.length));
+  check("السجلّ يحمل ثمانية", GATE.length === 8, String(GATE.length));
   // ⚠️ **الكتلةُ في `HANDOFF` هي ما يمشي عليه القارئ** — فتُطابق السجلّ
   const m = HANDOFF.match(/### وقبل أي عمل[\s\S]*?```bash\n([\s\S]*?)```/);
   check("كتلةُ `HANDOFF` موجودة", !!m);
   const block = m ? m[1] : "";
   const missing = GATE.filter((g) => !block.includes(g));
-  check("وكلُّ السبعة فيها", missing.length === 0, missing.join(" · "));
+  check("وكلُّ الثمانية فيها", missing.length === 0, missing.join(" · "));
   const lines = block.split("\n").filter((l) => l.trim().startsWith("node "));
-  check("ولا ثامنَ غيرَ مُعلَن", lines.length === 7, `وُجد ${lines.length}`);
+  check("ولا تاسعَ غيرَ مُعلَن", lines.length === 8, `وُجد ${lines.length}`);
 }
 
 console.log("\n[2] وكلُّ رِكازٍ منها يقول ما يحرسه (قرار 99 على البوّابة)");
@@ -81,7 +85,7 @@ console.log("\n[4] شاهدا قرار 26 — على الحارس نفسه");
   check("سالب: ورأسٌ بلا الوسم يُرفض", !hasMark("// فحصٌ ما\n// بلا وسم"));
   check("وثالث: ووسمٌ بلا بندٍ يُرفض", !hasMark(`// ${MARK} شيءٌ مهمّ`));
   // ورابع: قائمةٌ بستّة تُحمَّر — فالعدد يُقاس لا يُفترض
-  check("ورابع: ستّةٌ تُحمَّر", ["a", "b", "c", "d", "e", "f"].length !== 7);
+  check("ورابع: سبعةٌ تُحمَّر", ["a","b","c","d","e","f","g"].length !== 8);
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);
