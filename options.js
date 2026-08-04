@@ -531,6 +531,44 @@ let cleanPlayerSaving = 0; // guards the storage.onChanged re-render against rev
 // ليكتب واحداً** — وضابطٌ لم يُبنَ يُقرأ «غير مؤشَّر» **فيسقط مفتاحٌ مخزَّن**.
 // ⇒ **صار كلُّ تغييرٍ يكتب مفتاحه وحده**، ويُحافظ على «المؤشَّر وحده يُخزَّن»
 // (#66 وحصّة 8KB): المؤشَّر يُضاف، وغيرُه **يُحذف** لا يُكتب `false`.
+// ── #103 — **مخرجٌ واحد يمرّ به الطريقان، لا نداءٌ يُضاف في موضعين** ────────
+// ⛔ **العلّة المقيسة:** كان لِـClean Player طريقان يرفعان الحارس نفسَه —
+// `persistCleanPlayer` (المفتاح الرئيسي) و`persistCleanPlayerItem` (المربّع،
+// أدخلها #78) — **وأولاهما تنادي `flushPendingRevert()` في `finally` والأخرى
+// لا**. ⇒ **فيبقى الإرجاع المؤجَّل معلَّقاً إلى الأبد**، والمربّع يبقى مؤشَّراً
+// والتخزين لا يحمله: **«الضابط يكذب»، وهو عَرَض #69 عائداً من بابٍ آخر**.
+// **ومقيسٌ حيّاً:** بعد الفشل `pendingRevertSeq = 2` و`cleanPlayerSaving = 0`
+// **ولا مُنادي**؛ ونداءٌ واحد لـ`flushPendingRevert()` أوقع الإرجاع.
+// ⇒ **العلّة نداءٌ مفقود لا منطقٌ مكسور، و#69 سليمٌ حيث طُبِّق.**
+//
+// ⭐ **ولماذا مخرجٌ واحد لا نداءٌ يُضاف** (قرار المالك): إضافةُ النداء تُصلح
+// الثانية **ولا تمنع الثالثة**. **والمخرجُ الواحد يجعل الحالة السيّئة مستحيلة
+// بالبناء** — وهو شكل #78 و#94 نفسه: **موضعٌ واحد يستهلكه الطريقان**.
+// **ونطاقُه قِيس قبل أن يُقرَّر: موضعان يرفعان الحارس، وواحدٌ يُفرّغ الإرجاع**
+// ⇒ **التوحيدُ أضيق من العلاج لا أوسع** (قرار 16).
+//
+// ⚠️ **وفرقٌ ثالث بينهما يُسمّى ولا يُبتلع:** `persistCleanPlayer` كانت **تُبلّغ
+// التبويبات حتى عند فشل الحفظ**، و`persistCleanPlayerItem` لا تُبلّغ —
+// **والمُوحَّد لا يُبلّغ**. **وأثرُ ما زال صفر بالبناء:** الرسالة تجعل
+// `content.js` **يُعيد قراءة التخزين**، والتخزين **لم يتغيّر عند الفشل**،
+// فتُحقن الورقةُ نفسُها. **يُقال لأنه تغيّرٌ في المسار، لا لأنه يُرى.**
+async function withCleanPlayerSave(mutate) {
+  cleanPlayerSaving++;                 // **الموضع الواحد للرفع**
+  try {
+    const s = await getSettings();
+    mutate(s);                         // الفرق بين الطريقين كلُّه هنا
+    if (!(await saveSettings(s))) return false;
+    const tabs = await chrome.tabs.query({});
+    for (const t of tabs) {
+      if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_CLEAN_PLAYER" }).catch(() => {});
+    }
+    return true;
+  } finally {
+    cleanPlayerSaving--;               // **والموضع الواحد للإسقاط**
+    flushPendingRevert();   // #69: الحارس سقط — يُنفَّذ الإرجاع المؤجَّل إن بقي
+  }
+}
+
 async function persistCleanPlayerItem(key) {
   const el = $(`cp_${key}`);
   if (!el) {
@@ -538,37 +576,18 @@ async function persistCleanPlayerItem(key) {
     console.debug("[VIDEO-ZONES] #78: رُفضت كتابة مربّع غير مبنيّ:", key);
     return;
   }
-  cleanPlayerSaving++;
-  try {
-    const s = await getSettings();
+  await withCleanPlayerSave((s) => {
     const items = { ...(s.cleanPlayer?.items || {}) };
     if (el.checked) items[key] = true; else delete items[key];
     s.cleanPlayer = { ...(s.cleanPlayer || {}), items };
-    if (!(await saveSettings(s))) return;
-    const tabs = await chrome.tabs.query({});
-    for (const t of tabs) {
-      if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_CLEAN_PLAYER" }).catch(() => {});
-    }
-  } finally {
-    cleanPlayerSaving--;
-  }
+  });
 }
 
 async function persistCleanPlayer() {
-  cleanPlayerSaving++;
-  try {
-    const s = await getSettings();
-    // المفتاح الرئيسي وحده — والمربّعات لكلٍّ مسارُه (`persistCleanPlayerItem`)
+  // المفتاح الرئيسي وحده — والمربّعات لكلٍّ مسارُه (`persistCleanPlayerItem`)
+  await withCleanPlayerSave((s) => {
     s.cleanPlayer = { ...(s.cleanPlayer || {}), enabled: $("cleanPlayerEnabled").checked };
-    await saveSettings(s);
-    const tabs = await chrome.tabs.query({});
-    for (const t of tabs) {
-      if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_CLEAN_PLAYER" }).catch(() => {});
-    }
-  } finally {
-    cleanPlayerSaving--;
-    flushPendingRevert();   // #69: الحارس سقط — يُنفَّذ الإرجاع المؤجَّل إن بقي
-  }
+  });
 }
 
 // #77 — **يُبنى من المُولِّد الواحد** (`settings-ui.js`) لا بيد هنا.
