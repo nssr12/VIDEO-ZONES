@@ -3227,11 +3227,11 @@ function buildOverlayElement() {
     <div class="vzVolume vzHidden">100</div>
     <div class="vzSpeed vzHidden">1x</div>
     <div class="vzBtn vzFilterBtn vzHidden" role="button" tabindex="0" aria-label="فلاتر الصورة" data-vz-owns="wheel click">
-      <!-- #108 — أيقونةٌ من سجلّ المالك، منقولةٌ لا مرسومة. ⚠️ طُلبت «filter-h»
-           **ولا وجودَ لها في tools/icons.js ولا في أصله tools/icons.html**،
-           فاستُعملت «enhance» — أقربُ الموجود معنىً — وتُبدَّل بسطرٍ واحد متى
-           سمّى المالك غيرَها. ⛔ ولا علامةَ اقتباسٍ خلفية هنا: قالبٌ نصّيّ. -->
-      <svg class="vzFilterIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="2.5" y="4.6" width="19" height="14.8" rx="2.2"/> <path d="M10 7.4l1.4 3.5 3.5 1.4-3.5 1.4-1.4 3.5-1.4-3.5-3.5-1.4 3.5-1.4Z"/> <path d="M16.9 12.4l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8Z"/></svg></div>
+      <!-- #108 — «filter-h» من سجلّ المالك، **منقولةٌ بحروفها لا مرسومة**.
+           ⛔ **وكانت «enhance» مؤقّتاً** لأن المطلوبةَ لم تكن في السجلّ ولا في
+           أصله — **ثمّ نُقلت من ملفّ المالك (icons (1).html) مع أختها
+           «filter-v»** (2026-08-06). ⛔ ولا علامةَ اقتباسٍ خلفية هنا: قالبٌ نصّيّ. -->
+      <svg class="vzFilterIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 5H9.65"/> <path d="M17.35 5H20.5"/> <path d="M3.5 12H5.55"/> <path d="M13.25 12H20.5"/> <path d="M3.5 19H11.45"/> <path d="M19.15 19H20.5"/> <circle cx="13.5" cy="5" r="2.2" fill="currentColor" stroke="none"/> <circle cx="9.4" cy="12" r="2.2" fill="currentColor" stroke="none"/> <circle cx="15.3" cy="19" r="2.2" fill="currentColor" stroke="none"/></svg></div>
     <div class="vzBtn vzSpeedBtn vzHidden" role="button" tabindex="-1" data-vz-owns="wheel click">
       <!-- #89 — **أيقونة \`speed\` من سجلّ المالك \`tools/icons.js\`، منقولةٌ لا مرسومة.**
            ومسارُنا المرسوم في #88 **حُذف** فلا موضعان لأيقونةٍ واحدة. -->
