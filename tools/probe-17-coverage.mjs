@@ -12,6 +12,9 @@
 // **والخلط يُنتج «أخضر» عن شيءٍ لم يُحكم فيه.**
 import { launch, openPage, configure, serveTestPage, evalIn, waitPortFree, killChrome } from "./ext-harness.mjs";
 
+// **السجلّ يُحمَّل كما يُحمّله `test-settings-ui.js` و`bench-options-page.mjs`.**
+const uiReg = (await import("node:module")).createRequire(import.meta.url)(
+  new URL("../settings-ui.js", import.meta.url).pathname);
 const PORT = 9771, HTTP = 8871;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const IDLE = 1000;
@@ -77,12 +80,23 @@ async function optionsPart(h) {
     sliders: [...document.querySelectorAll("#timingList input[type=checkbox]")]
       .filter(e => getComputedStyle(e).appearance === "none").length
   }))()`);
-  rec("25", "القسمان مرسومان ولكلٍّ زرّ (!)", drawn.timing === 8 && drawn.clean === 38 && drawn.help >= 46 ? "أخضر" : "أحمر",
+  // ⛔ **والعددان يُشتقّان من سجلّ المُولِّد** (قرار 34): كانا مكتوبَين بيدٍ
+  // **في موضعين** — هنا وفي `bench-options-page` — **فسقطا معاً بانتقال ضابطٍ
+  // واحد، وأُصلح أحدُهما ولم يُسأل: أله موضعٌ ثانٍ؟** ⇒ **والسحبُ هو ما أمسكه.**
+  const WANT_TIMING = (uiReg.VZ_UI_TIMING || []).length;
+  const WANT_CLEAN = Object.keys(uiReg.VZ_UI_CLEAN || {}).length;
+  rec("25", "القسمان مرسومان ولكلٍّ زرّ (!)",
+    drawn.timing === WANT_TIMING && drawn.clean === WANT_CLEAN && drawn.help >= WANT_TIMING + WANT_CLEAN ? "أخضر" : "أحمر",
       `توقيت=${drawn.timing} · تنظيف=${drawn.clean} · تلميح=${drawn.help} · منزلقة=${drawn.sliders}`);
 
   // 26 — الحالتان بلا لون: نمط الحدّ وموضع المِقبض
+  // ⚠️ **بُدِّل الضابطُ لا الخطوة (#107، 2026-08-05):** انتقل `hideProgressBar`
+  // إلى الـpopup بوضعٍ ثلاثيّ، **فمات المِجَسّ رميةً** (`Cannot set properties of
+  // null`) — **والمقيسُ هنا شكلُ المربّع لا اسمُه**، فأيُّ مربّعٍ في القسم يفي.
+  // ⛔ **والتعليقُ خارج القالب النصّيّ لا داخله**: علامةُ الاقتباس الخلفية فيه
+  // **تقطع القالب** — وقد وقع ذلك في أوّل محاولة، وأمسكه `node --check`.
   const two = await evalIn(c, `(() => {
-    const el = document.getElementById("hideProgressBar");
+    const el = document.getElementById("zoneHintEnabled");
     const read = () => { const cs = getComputedStyle(el), af = getComputedStyle(el, "::after");
       return { border: cs.borderTopStyle, knob: af.insetInlineStart || af.left }; };
     el.checked = false; const off = read();
