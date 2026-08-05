@@ -47,17 +47,19 @@ const main = async () => {
 // **وكانت هنا نسخةٌ ثانية** — وهو داءُ #93 بعينه، في الحارس هذه المرّة.
 const { GATE, onDemand, allRigs } = await import("./rig-list.mjs");
 
-console.log(`\n[1] البوّابة ثمانيةٌ — والعدد يُشتقّ ولا يُكتب`);
+console.log(`\n[1] البوّابة ${GATE.length} — والعدد يُشتقّ ولا يُكتب`);
 {
-  check("السجلّ يحمل ثمانية", GATE.length === 8, String(GATE.length));
+  // ⚠️ **العدد يُشتقّ من السجلّ ولا يُثبَّت هنا** (قرار 34 · ودرسُ #100: رقمٌ
+  // بيدٍ في موضعين). **صارت تسعةً بـ#110** — **والحارسُ على التطابق لا على الرقم.**
+  check(`السجلّ غيرُ فارغ (${GATE.length})`, GATE.length >= 8, String(GATE.length));
   // ⚠️ **الكتلةُ في `HANDOFF` هي ما يمشي عليه القارئ** — فتُطابق السجلّ
   const m = HANDOFF.match(/### وقبل أي عمل[\s\S]*?```bash\n([\s\S]*?)```/);
   check("كتلةُ `HANDOFF` موجودة", !!m);
   const block = m ? m[1] : "";
   const missing = GATE.filter((g) => !block.includes(g));
-  check("وكلُّ الثمانية فيها", missing.length === 0, missing.join(" · "));
+  check("وكلُّها في كتلة `HANDOFF`", missing.length === 0, missing.join(" · "));
   const lines = block.split("\n").filter((l) => l.trim().startsWith("node "));
-  check("ولا تاسعَ غيرَ مُعلَن", lines.length === 8, `وُجد ${lines.length}`);
+  check("ولا سطرَ زائدٍ غيرِ مُعلَن", lines.length === GATE.length, `وُجد ${lines.length} · السجلّ ${GATE.length}`);
 }
 
 console.log("\n[2] وكلُّ رِكازٍ منها يقول ما يحرسه (البند #99 على البوّابة)");

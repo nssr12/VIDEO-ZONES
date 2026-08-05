@@ -25,7 +25,14 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 export const GATE = [
   "run-tests.js", "audit-status.js", "bench-options-page.mjs", "bench-overlay-layer.mjs",
   "bench-eval-contract.mjs", "bench-s69-guards.mjs", "repro-58-fullscreen.mjs",
-  "lint-names.mjs"
+  "lint-names.mjs",
+  // ⭐ **التاسع، أُضيف 2026-08-05 بعطبٍ حيّ لا بحدس (#110):** إضافةٌ ترمي
+  // `RangeError` عشرات المرّات على كل صفحة **مرّت من الثمانية كلِّها** — ولم يكن
+  // لسكربت المحتوى فحصُ «صفر خطأ» أصلاً. **ويستوفي المعايير الخمسة:** صفحةٌ
+  // محليّة بلا شبكة · حتميّ · ~30 ثانية · **وله حكمٌ يُحمّر** (مُثبَتٌ على
+  // `85ac3cf`) · **ويُحمّر على ما لا يُحمّر عليه غيرُه** (قرار 92).
+  // ⛔ **وتركُه «عند الطلب» هو #103 بنصّه: شاهدٌ لا يُشغَّل شاهدٌ لا وجود له.**
+  "bench-content-errors.mjs"
 ];
 
 // ⚠️ **«رِكاز» يُعرَّف بالشكل لا بالنيّة**: ملفٌّ في `tools/` يبدأ اسمُه بـ
