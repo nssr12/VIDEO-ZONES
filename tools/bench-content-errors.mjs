@@ -84,8 +84,16 @@ try {
   const SETTINGS = {
     settings: {
       enabled: true,
-      idle: { ms: 300 },
-      overlay: { autoHideMs: 900, volumeAutoHideMs: 900, enabled: true, hintEnabled: true },
+      // ⚠️ **مهلةٌ واسعة عمداً**: هذا الرِكاز يقيس **الحضور** لا **توقيت السكون**
+      // — **وأوّلُ قياسٍ خرج أحمرَ لأن السكون مضى قبل أن أقرأ**، وذاك عطبُ سندٍ
+      // لا عطبُ منتج (**الحالُ لم تُنتَج**، الشاهد الثاني في قرار 26).
+      idle: { ms: 5000 },
+      // ⭐ **والميزاتُ تُشغَّل هنا لا تُترك على افتراضها** (#111): **ميزةٌ لا
+      // تُشغَّل لا تُقاس** — **وهو ما جعل #108 يمرّ**. **وكلُّ ميزةٍ جديدة تُضاف
+      // إلى هذا السطر يومَ تُشحن، وإلا فحصنا الإطفاء لا الميزة** (قرار 102).
+      overlay: { autoHideMs: 900, volumeAutoHideMs: 900, enabled: true, hintEnabled: true,
+        speedBadge: true, speedButton: true, speedButtonPreset: 2,
+        progressBarMode: "idle", filterButton: true },
       zones: { enabled: true, fullscreenOnly: false,
         wheel: { map: { "5": { up: ["ACTION:SPEED:+0.25"], down: ["ACTION:SPEED:-0.25"] } } } }
     },
@@ -100,17 +108,29 @@ try {
   // **الأحداث تُقرأ من `c.events` — واجهةُ السند القائمة**، ولا واجهةَ ثانية تُخترع.
   await c.send("Runtime.enable");
   await c.send("Log.enable");
+  // ⭐⭐ **ويُسمَع تحذيرُنا كما تُسمَع رميتُنا** (شرط المالك 2026-08-06):
+  // **حارسٌ يتكلّم ولا أحدَ يسمعه شاهدٌ لا يُشغَّل** — وقد صرفنا في هذا جرداً كاملاً
+  // (#103). **والحارسُ في محرّك السكون يقول «عطبٌ في مستهلك» ⇒ فالصفرُ المطلوب
+  // صفرُ تحذيرٍ لا صفرُ رميةٍ وحدها.**
+  // ⚠️ **وتحذيرُنا يُميَّز من ضجيج المضيف بالبادئة `[VZ]`** — **وعدُّ تحذيرات
+  // يوتيوب كلِّها يُنتج ضجيجاً يُقرأ إذناً بالتخطّي** (تحذير #97).
+  const OURS = "[VZ]";
+  const argText = (p) => (p?.args || []).map((a) => String(a?.value ?? a?.description ?? "")).join(" ");
   const readEvents = () => {
-    const thrown = [], logged = [];
+    const thrown = [], logged = [], warned = [];
     for (const m of c.events) {
       if (m.method === "Runtime.exceptionThrown") {
         const d = m.params?.exceptionDetails || {};
         thrown.push(String(d.exception?.description || d.text || "").split("\n")[0]);
       } else if (m.method === "Log.entryAdded" && m.params?.entry?.level === "error") {
         logged.push(String(m.params.entry.text || "").slice(0, 200));
+      } else if (m.method === "Runtime.consoleAPICalled" &&
+                 (m.params?.type === "warning" || m.params?.type === "error")) {
+        const t = argText(m.params);
+        if (t.includes(OURS)) warned.push(t.slice(0, 200));
       }
     }
-    return { thrown, logged };
+    return { thrown, logged, warned };
   };
   await sleep(1500);
 
@@ -131,27 +151,119 @@ try {
   // **مُطلِقٌ حقيقيّ لا مُفتعَل**: كتابةٌ في التخزين ⇒ `storage.onChanged` ⇒
   // `flushReload` ⇒ `refreshIdleConsumers` — وهو المسار الذي تظهر فيه الدورة.
   const cfg = await configure(PORT, h.extensionId,
-    { settings: { ...SETTINGS.settings, idle: { ms: 400 } } });
+    { settings: { ...SETTINGS.settings, idle: { ms: 5000 } } });
   check("[3أ] وكتابةُ الإعدادات وصلت (فالمُطلِق وقع)", cfg.ok !== false, cfg);
   await sleep(1200);
   await c.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 320, y: 320 });
   await c.send("Input.dispatchMouseEvent", { type: "mousePressed", x: 320, y: 320, button: "left", clickCount: 1 });
   await c.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: 320, y: 320, button: "left", clickCount: 1 });
+  // **ولمسُ الميزة نفسِها**: زرُّ الفلاتر يُفتح ويُغلق — فالمسارُ يُنتج الحال
+  const touched = await evalIn(c, `(() => {
+    const b = document.querySelector(".vzFilterBtn");
+    if (!b) return "لا زرّ";
+    b.click();
+    const open = !!document.querySelector(".vzFilterPanel:not(.vzHidden)");
+    const r = document.querySelector(".vzFilterPanel input[type=range]");
+    if (r) { r.value = String(Number(r.value) + Number(r.step || 0.05));
+             r.dispatchEvent(new Event("input", { bubbles: true })); }
+    const filtered = !!(document.querySelector("video") || {}).style?.filter;
+    b.click();
+    return { open, filtered, filter: (document.querySelector("video")||{}).style?.filter || "" };
+  })()`);
+  check("[3ب] ⭐ ولوحةُ الفلاتر تُفتح ويُلمس منزلقُها", touched && touched.open === true, touched);
   await sleep(1500);
 
-  const { thrown, logged } = readEvents();
-  const all = [...thrown, ...logged];
+  const { thrown, logged, warned } = readEvents();
+  const all = [...thrown, ...logged, ...warned];
   const stack = all.filter((t) => /Maximum call stack|RangeError/.test(t));
-  console.log(`\n  رميات: ${thrown.length} · أخطاء كونسول: ${logged.length}`);
+  console.log(`\n  رميات: ${thrown.length} · أخطاء كونسول: ${logged.length} · تحذيراتُنا: ${warned.length}`);
   for (const t of all.slice(0, 5)) console.log(`     · ${t.slice(0, 150)}`);
 
   check("[3] ⭐ صفرُ رميةٍ غير ملتقَطة", thrown.length === 0, thrown.slice(0, 3));
   check("[3] وصفرُ خطأ كونسول", logged.length === 0, logged.slice(0, 3));
   check("[4] ⭐ ولا دورةَ بلا قاع (`Maximum call stack`)", stack.length === 0, stack.slice(0, 2));
+  // ⭐ **وصفرُ تحذيرٍ من عندنا** — **فالحارسُ الذي يتكلّم يجب أن يُسمَع**:
+  // تحذيرُ محرّك السكون يعني **عطباً في مستهلك** وإن لم تقع رمية.
+  check("[5] ⭐⭐ وصفرُ تحذيرٍ من عندنا (`[VZ]`) — لا صفرُ رميةٍ وحدها",
+    warned.length === 0, warned.slice(0, 3));
+
+  // ── [6] ⭐⭐ تأكيدُ حضور — **فحصُ الأخطاء ليس فحصَ الحضور، وهما سؤالان** ────
+  // **الواقعة (2026-08-06):** زرُّ الفلاتر **لم يظهر عند المالك إطلاقاً**، **ولا
+  // رميةَ ولا تحذير** ⇒ **مرّ من [3] و[4] و[5] كلِّها**. ⭐ **وغيابٌ صامت أخبثُ
+  // ما نلقاه: كلُّ ما بنيناه يفحص ما يُقال لا ما يُرى.**
+  // ⇒ **والقاعدة مُعمَّمة لا خاصّة بالفلاتر (شرط المالك): كلُّ ميزةٍ تُظهر شيئاً
+  // يلزمها تأكيدُ حضور، وإلا كانت خضرتُنا عن «لم يرمِ» لا عن «يعمل».**
+  // ⚠️ **وحدُّه مُعلَن ويُقرأ قبل خضرته:** يقيس **الحضور على صفحةٍ محليّة** —
+  // **والسقوطُ إلى طبقتنا حضورٌ كذلك**. ⛔ **فهو لا يُميّز «في شريط المضيف» من
+  // «في طبقتنا»، ولا يبلغ حالَ المضيف الحقيقيّ أصلاً** — **وذاك ما لم يمسكه في
+  // واقعة #108، ويُقال ولا يُدّعى عنه غيرُه.**
+  const PRESENT = [
+    { key: "زرّ الفلاتر (#108)", sel: ".vzFilterBtn" },
+    { key: "زرّ السرعة (#72)", sel: ".vzSpeedBtn" }
+  ];
+  await c.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 340, y: 300 });
+  await c.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 360, y: 320 });
+  await sleep(400);   // دون المهلة بكثير — فالنافذة مفتوحةٌ حين نقرأ
+  // ⭐⭐ **والعتبةُ نسبةٌ إلى الجار لا صفرٌ مطلق** (قرار 107): زرٌّ عرضُه `12`
+  // بجوار جارٍ عرضُه `56` **مستطيلُه غيرُ صفريّ وهو لا يُرى** — **وتلك بعينها
+  // الحالُ التي مرّت من «موجودٌ وله مستطيل».**
+  const NEIGHBOUR_MIN = 0.6;
+  const verdict = (r, n) => ({
+    موجود: !!r,
+    مرئيّ: !!r && r.مخفيّ === false && r.w > 0 && r.h > 0 &&
+      (!n || !(n.w > 0) || r.w >= n.w * NEIGHBOUR_MIN)
+  });
+  // ⭐ **شاهدٌ على الحكم نفسِه قبل أن يُحكم به** (قرار 26 · 47): أرقامُ المالك
+  // بنصّها **يجب أن تُقرأ «غيرَ مرئيّ»**، وأرقامٌ سويّة «مرئيّاً».
+  check("[6] ⭐ والحكمُ يرى الضمور: 12 بجوار 56 ⇒ غيرُ مرئيّ",
+    verdict({ مخفيّ: false, w: 12, h: 40 }, { w: 56, h: 40 }).مرئيّ === false);
+  check("[6] ويمرّ على السويّ: 44 بجوار 56 ⇒ مرئيّ",
+    verdict({ مخفيّ: false, w: 44, h: 40 }, { w: 56, h: 40 }).مرئيّ === true);
+
+  const rects = {};
+  for (const f of PRESENT) {
+    rects[f.sel] = await evalIn(c, `(() => { const el = document.querySelector(${JSON.stringify(f.sel)});
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { مخفيّ: el.classList.contains("vzHidden"),
+               w: Math.round(r.width), h: Math.round(r.height),
+               أب: (el.parentElement?.className || "").slice(0, 24) }; })()`);
+  }
+  // ── [7] ⭐⭐ تأكيدُ **أثر** — السؤالُ الثالث (قرار 109) ────────────────────
+  // **أرمى؟ · أموجود؟ · أوقع الأثر؟** — **ومَلَكنا الأوّلَين وحدَهما حتى اليوم.**
+  // ⛔ **الواقعة:** لوحةٌ حيّةٌ **تُحرَّك ولا يقع شيء** — تكتب على عنصرٍ ميّت،
+  // **بلا رميةٍ ولا تحذير، وعنصرُها موجودٌ ومرئيّ** ⇒ **مرّت من [3] و[5] و[6].**
+  // ⇒ **فكلُّ شرطٍ ينتهي بأثرٍ يراه المستخدم لا بوجودِ عنصر** (شكل #93).
+  {
+    const eff = await evalIn(c, `(() => {
+      const b = document.querySelector(".vzFilterBtn"); if (!b) return { err: "لا زرّ" };
+      if (document.querySelector(".vzFilterPanel.vzHidden")) b.click();
+      const r = document.querySelector('.vzFilterPanel input[type=range][data-vz-key="brightness"]');
+      if (!r) return { err: "لا منزلق" };
+      const v = document.querySelector("video");
+      const قبل = v.style.filter || "";
+      r.value = "1.4"; r.dispatchEvent(new Event("input", { bubbles: true }));
+      const بعد = v.style.filter || "";
+      const عرض = document.querySelector('.vzFpRow[data-vz-key="brightness"] .vzFpVal');
+      return { قبل, بعد, معروض: عرض ? عرض.textContent : null };
+    })()`);
+    check("[7] ⭐⭐ تحريكُ منزلقٍ يُغيّر `filter` على الفيديو الحيّ",
+      !eff?.err && eff.بعد !== eff.قبل && /brightness\(1\.4\)/.test(eff.بعد || ""), eff);
+    // **والقيمةُ تُعرض بوحدتها** (قرار 110): نسبةٌ للمضروب لا رقمٌ خام
+    check("[7] وتُعرض بوحدتها (نسبةً لا رقماً خامّاً)", eff?.معروض === "140%", eff?.معروض);
+  }
+
+  for (const f of PRESENT) {
+    const mine = rects[f.sel];
+    const other = Object.entries(rects).find(([k]) => k !== f.sel)?.[1] || null;
+    const v = verdict(mine, other);
+    check(`[6] ⭐ «${f.key}» مُشغَّلٌ ⇒ موجودٌ ومرئيٌّ (مقارَناً بجاره)`,
+      v.موجود && v.مرئيّ, { mine, other });
+  }
 
   if (WITNESS) {
     // **في وضع الشاهد ينقلب الحكم**: الأحمرُ هو النجاح، وخضرتُه تعني أن المِجَسّ أعمى
-    const sees = stack.length > 0;
+    const sees = stack.length > 0 || warned.length > 0;
     console.log(`\n  ⇒ **حكم الشاهد:** ${sees
       ? "✅ الرِكاز رأى العطب الحيّ بنصّه — فأخضرُه يُصدَّق"
       : "❌ **لم يرَ العطب المعلوم — فلا يُصدَّق أخضرُه ولا يُبنى عليه**"}`);

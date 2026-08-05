@@ -94,7 +94,12 @@ console.log("\n[3] ⭐ الملكية بسمةٍ على العنصر، وتُح�
   check("[3] والشارتان لا تحملانها",
     !/class="vzVolume[^"]*"[^>]*data-vz-owns/.test(SRC) && !/class="vzSpeed vzHidden"[^>]*data-vz-owns/.test(SRC));
   const n = (SRC.match(/data-vz-owns/g) || []).length;
-  check("[3] وعنصرٌ واحد يحملها اليوم", n === 1, `العدد ${n}`);
+  // ⚠️ **العدد يُحدَّث بوعي ولا يُرفع ليمرّ:** صار ثلاثةً بـ#108 —
+  // الزرّ (#72) · وزرّ الفلاتر · ولوحتُها. **ورابعٌ يُحمّر فيُسأل عنه.**
+  check("[3] وثلاثةُ عناصرَ تحملها اليوم (#72 · #108 زرّاً ولوحةً)", n === 3, `العدد ${n}`);
+  check("[3] ⭐ وزرُّ الفلاتر يحملها", /class="vzBtn vzFilterBtn[^"]*"[^>]*data-vz-owns/.test(SRC));
+  check("[3] ⭐ ولوحتُه كذلك — فالعجلةُ فوقها تُحرّك منزلقَها لا تُنفّذ أمرَ مربّع",
+    /vzFilterPanel[\s\S]{0,400}setAttribute\("data-vz-owns"/.test(SRC));
 }
 
 // ── [7] ⭐ #76 — المستهلك يضمن عنصره بنفسه، ولا يرث بناءً من جارٍ ──────────
@@ -117,7 +122,9 @@ console.log("\n[7] ⭐ #76: يضمن عنصره بنفسه، ولا يرث بن�
 
   // ومواضع بناء الـoverlay صارت سبعة، وواحدها في مسار السكون
   const n = (CODE.match(/ensureVideoOverlay\(/g) || []).length;
-  check("[7] ومواضع النداء سبعة (ستّةٌ قديمة + مسار السكون)", n === 7, `العدد ${n}`);
+  // ⚠️ **صارت ثمانيةً بـ#108** (`setFilterBtnShown` تضمن عنصرَها كما يفعل جارُها،
+  // فلا يرث مستهلكٌ بناءً من مسارٍ قد لا يمرّ — #76). **والعدد يُحدَّث بوعي.**
+  check("[7] ومواضع النداء ثمانية (سبعةٌ + زرّ الفلاتر)", n === 8, `العدد ${n}`);
 }
 
 // ── [4] المؤشّر فوق زرّنا = نشاط ──────────────────────────────────────────
@@ -128,7 +135,7 @@ console.log("\n[4] التحويم فوق الزرّ نشاطٌ — وإلا اخ
   // **وعلامةُ الملكية تُرجع `null` فوقه بالتصميم** ⇒ **فبلا ذكره صراحةً يُقرأ
   // التحويم عليه سكوناً** — انحدارُ 12ب من بابٍ جديد.
   check("[4] `pointerInsidePlayer` تعدّ طبقتنا **والزرّ أينما كان** من المشغّل",
-    !!fn && /closest\?\.\(".vzWrap, .vzSpeedBtn"\)/.test(fn), fn);
+    !!fn && /closest\?\.\(".vzWrap, .vzSpeedBtn, .vzFilterBtn, .vzFilterPanel"\)/.test(fn), fn);
   check("[4] وتسبق `getVideoUnderPointer` (التي تُرجع null فوق الزرّ بالتصميم)",
     !!fn && fn.indexOf("vzWrap") < fn.indexOf("getVideoUnderPointer"), fn);
 }
@@ -247,7 +254,7 @@ console.log("\n[8] ⭐ المؤشّر فوق الزرّ ⇒ امتناع، لا 
   const decl = SRC.match(/IDLE_CONSUMERS\.speedButton = \{[\s\S]*?\n\};/);
   check("[8] المستهلك يُعلن هدفه (`target`)", !!decl && /target:\s*\(\)\s*=>\s*vzSpeedBtn/.test(decl[0]), decl && decl[0].slice(0,140));
   check("[8] ⭐ ولا شرطَ خاصٌّ بالزرّ بقي", !/pointerInsideSpeedBtn\s*[,(]/.test(SRC));
-  const apply = SRC.match(/function applyIdleState\(\)[\s\S]*?\n}/);
+  const apply = SRC.match(/function applyIdleStateOnce\(\)[\s\S]*?\n}/);
   check("[8] والمحرّك يسأل عن الهدف — لا يعرفه",
     !!apply && /pointerInsideEl\(c\.target\?\.\(\), c\.nearPad\?\.\(\) \?\? 0\)/.test(apply[0]), apply && apply[0].slice(0,240));
   // ⭐ **#107 — وهذا المستهلك يُهمل سببَ النشاط عمداً**: `onActive` بلا وسيط

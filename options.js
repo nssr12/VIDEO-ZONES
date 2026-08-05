@@ -671,6 +671,7 @@ const TIMING_CONTROLS = {
   zoneHintEnabled:    (s, el) => { s.overlay.hintEnabled = el.checked; },
   speedBadgeEnabled:  (s, el) => { s.overlay.speedBadge = el.checked; },
   speedButtonEnabled: (s, el) => { s.overlay.speedButton = el.checked; },
+  filterButtonEnabled:(s, el) => { s.overlay.filterButton = el.checked; },
   speedButtonPreset:  (s, el) => { s.overlay.speedButtonPreset = Number(el.value); }
 };
 
@@ -693,6 +694,7 @@ function timingValueOf(s, id) {
   if (id === "zoneHintEnabled") return o.hintEnabled !== false;
   if (id === "speedBadgeEnabled") return o.speedBadge === true;
   if (id === "speedButtonEnabled") return o.speedButton === true;
+  if (id === "filterButtonEnabled") return o.filterButton === true;
   if (id === "speedButtonPreset") return Number(o.speedButtonPreset) > 0 ? Number(o.speedButtonPreset) : 2;
   return null;
 }

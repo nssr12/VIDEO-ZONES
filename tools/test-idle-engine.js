@@ -390,16 +390,62 @@ console.log("\n[8] «صفر» لا تعني «مطفأ»، والحدّ الأد
 // كان **يظهر بإطفاء مفتاحه** (مقيسٌ في `bench-overlay-layer`).
 // ⇒ **والإعلان شرطُ التسجيل لا عادةٌ حسنة** (قرار 16ج): مستهلكٌ بلا onDisabled
 // **يُحمّر المجموعة**، فمستهلكٌ ثالث يُضاف غداً لا يرث تأويلاً كُتب لجاره.
+// ── [12] ⛔⭐ عقدُ إعادة الدخول — من عطبٍ حيّ لا من تصميم (#108 · #110) ──────
+// **الواقعة:** مستهلكٌ نادى من `onDisabled` ما ينادي `refreshIdleConsumers()` ⇒
+// **`RangeError` عشرات المرّات عند المستخدم، وصفحةٌ تعلّق، وإضافةٌ تبدو معطّلة** —
+// **ويقع والمفتاحُ مطفأ** لأن `onDisabled` تُنادى لكلّ مستهلكٍ غيرِ مُفعَّل.
+// ⇒ **والحارس في المحرّك لا في مستهلك: مستهلكٌ ثالثٌ غداً يرثه بلا أن يعرف.**
+console.log("\n[12] ⛔⭐ نداءُ المستهلك لا يُعيد تشغيل المحرّك — رايةٌ لا دخول");
+{
+  const log = [];
+  const w = makeWorld({ consumers: {} });
+  // **مستهلكٌ يُعيد الدخول من `onDisabled`** — الشكلُ الذي كسر الإضافة بحرفه
+  w.ctx.__evil = {
+    enabled: () => false,
+    onActive: () => log.push("active"),
+    onIdle: () => log.push("idle"),
+    onDisabled: () => { log.push("disabled"); w.run("refreshIdleConsumers()"); }
+  };
+  w.run("Object.assign(IDLE_CONSUMERS, { evil: __evil })");
+  let threw = null;
+  try { w.run("refreshIdleConsumers()"); } catch (e) { threw = `${e.constructor.name}`; }
+
+  check("[12] ⭐ لا دورةَ بلا قاع (وهي التي كسرت الإضافة)", threw === null, threw);
+  // **ومحدودةٌ لا مفتوحة**: مرّةٌ أصلية + إعادةٌ واحدة = مرّتان، لا أكثر
+  check("[12] ⭐ ومرّتان لا أكثر (رايةٌ محدودة لا حلقة)",
+    log.filter((x) => x === "disabled").length === 2, log.length);
+  // ⭐ **الشاهد السالب: بلا مستهلكٍ يُعيد الدخول، مرّةٌ واحدة** — فالحدُّ ليس ثابتاً
+  const log2 = [];
+  const w2 = makeWorld({ consumers: { plain: mkConsumer(log2, "p", { enabled: false }) } });
+  w2.run("refreshIdleConsumers()");
+  check("[12] وبلا إعادةِ دخول: مرّةٌ واحدة",
+    log2.filter((x) => x === "p:disabled").length === 1, log2);
+  // **والحدُّ يُعلَن ولا يُبتلع** — «الصمتُ ليس نجاحاً» على حارسٍ يُخفي دوراناً
+  const guard = body("function applyIdleState()");
+  check("[12] ⭐ والحدُّ يُقال بصوتٍ عالٍ عند بلوغه",
+    !!guard && /console\.warn/.test(guard), guard && guard.slice(0, 200));
+  check("[12] ومرّةً واحدة لا في كل دورة", !!guard && /idleReentryWarned/.test(guard), guard);
+  check("[12] والرايةُ تُخفض في `finally` مهما وقع",
+    !!guard && /finally \{ idleApplying = false; \}/.test(guard), guard);
+  // **والعقدُ مكتوبٌ بجواره لا في سجلّ بند**
+  const head = SRC.slice(Math.max(0, SRC.indexOf("let idleApplying") - 1500), SRC.indexOf("let idleApplying"));
+  check("[12] ⭐ والعقد مكتوبٌ صريحاً: نداءُ المستهلك لا يُعيد تشغيل المحرّك",
+    /نداءُ المستهلك لا يُعيد تشغيل المحرّك/.test(head), head.slice(-120));
+}
+
 console.log("\n[11] ⭐ كل مستهلكٍ يُعلن معنى إطفائه، والمحرّك ينقل لا يقرّر");
 {
   const RE = /IDLE_CONSUMERS\.[A-Za-z0-9_$]+ = \{[\s\S]*?\n\};/g;
   const decl = SRC.match(RE) || [];
-  check("[11] مستهلكان مسجَّلان", decl.length === 2, "العدد " + decl.length);
+  // ⚠️ **العددُ يتبع السجلّ ولا يُثبَّت بيد** (قرار 34): صار ثلاثةً بـ#108، **وما
+  // يحرسه التأكيدُ ليس عددَهم بل أن لكلٍّ إعلانَه** — فالعددُ هنا حارسُ فراغٍ لا
+  // حارسُ رقم: صفرٌ يعني أن المرساة سقطت، لا أن مستهلكاً نقص.
+  check(`[11] المستهلكون مسجَّلون (${decl.length})`, decl.length >= 2, "العدد " + decl.length);
   for (const d of decl) {
     const name = (d.match(/IDLE_CONSUMERS\.([A-Za-z0-9_$]+)/) || [])[1];
     check("[11] " + name + " يُعلن onDisabled", /onDisabled\s*:/.test(d), d.slice(0, 90));
   }
-  const body = (SRC.match(/function applyIdleState\(\)[\s\S]*?\n}/) || [""])[0];
+  const body = (SRC.match(/function applyIdleStateOnce\(\)[\s\S]*?\n}/) || [""])[0];
   check("[11] والمحرّك ينادي onDisabled في فرع «لا يعمل»",
     /!c\.enabled\(\)\)\s*\{\s*c\.onDisabled\(\)/.test(body), body.slice(0, 240));
   // ⛔ **اتّسع الفرع بـ#95:** صار «ممتنع» **أو** «المؤشّر على هدفه» ⇒ كالنشط.
