@@ -151,9 +151,6 @@ console.log("\n[5] ⭐ السلوك: يُخفي بالسكون، ويمتنع ت
           appendChild: (el) => { el.isConnected = true; }
         }
       },
-      // #108 — المستهلك يسأل «ألوحةُ الفلاتر مفتوحة؟» وهي خارج الشريحة،
-      // **فتُقدَّم مغلقةً**: القسم يقيس السكون لا اللوحة.
-      vzFilterPanelOpen: () => false,
       lastPointer: { x: null, y: null },   // #95 — تقرؤها القاعدة العامّة
       __gate: true
     };

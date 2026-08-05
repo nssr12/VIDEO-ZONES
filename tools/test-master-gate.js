@@ -50,8 +50,6 @@ const ENTRIES = [
   ["شارة السرعة (#71)", "function speedBadgeActive()", false],
   ["إخفاء شريط التقدّم (#70)", "function progressHideActive()", false],
   ["زرّ السرعة (#72)", "function speedButtonActive()", false],
-  ["لوحة الفلاتر (#108)", "function filterButtonActive()", false],
-  ["مفتاح Esc للوحة (#108)", "function filterEscKeydown(e)", false],
   ["محرّك السكون (#70 · #72)", "function idleEngineActive()", false],
   ["جودة يوتيوب — الإرسال", "function triggerYtQuality()", false],
   ["جودة يوتيوب — التسجيل", "function startYtAutoQuality()", false]
