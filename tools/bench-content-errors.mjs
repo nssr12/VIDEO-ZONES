@@ -105,17 +105,29 @@ try {
   // **الأحداث تُقرأ من `c.events` — واجهةُ السند القائمة**، ولا واجهةَ ثانية تُخترع.
   await c.send("Runtime.enable");
   await c.send("Log.enable");
+  // ⭐⭐ **ويُسمَع تحذيرُنا كما تُسمَع رميتُنا** (شرط المالك 2026-08-06):
+  // **حارسٌ يتكلّم ولا أحدَ يسمعه شاهدٌ لا يُشغَّل** — وقد صرفنا في هذا جرداً كاملاً
+  // (#103). **والحارسُ في محرّك السكون يقول «عطبٌ في مستهلك» ⇒ فالصفرُ المطلوب
+  // صفرُ تحذيرٍ لا صفرُ رميةٍ وحدها.**
+  // ⚠️ **وتحذيرُنا يُميَّز من ضجيج المضيف بالبادئة `[VZ]`** — **وعدُّ تحذيرات
+  // يوتيوب كلِّها يُنتج ضجيجاً يُقرأ إذناً بالتخطّي** (تحذير #97).
+  const OURS = "[VZ]";
+  const argText = (p) => (p?.args || []).map((a) => String(a?.value ?? a?.description ?? "")).join(" ");
   const readEvents = () => {
-    const thrown = [], logged = [];
+    const thrown = [], logged = [], warned = [];
     for (const m of c.events) {
       if (m.method === "Runtime.exceptionThrown") {
         const d = m.params?.exceptionDetails || {};
         thrown.push(String(d.exception?.description || d.text || "").split("\n")[0]);
       } else if (m.method === "Log.entryAdded" && m.params?.entry?.level === "error") {
         logged.push(String(m.params.entry.text || "").slice(0, 200));
+      } else if (m.method === "Runtime.consoleAPICalled" &&
+                 (m.params?.type === "warning" || m.params?.type === "error")) {
+        const t = argText(m.params);
+        if (t.includes(OURS)) warned.push(t.slice(0, 200));
       }
     }
-    return { thrown, logged };
+    return { thrown, logged, warned };
   };
   await sleep(1500);
 
@@ -158,19 +170,23 @@ try {
   check("[3ب] ⭐ ولوحةُ الفلاتر تُفتح ويُلمس منزلقُها", touched && touched.open === true, touched);
   await sleep(1500);
 
-  const { thrown, logged } = readEvents();
-  const all = [...thrown, ...logged];
+  const { thrown, logged, warned } = readEvents();
+  const all = [...thrown, ...logged, ...warned];
   const stack = all.filter((t) => /Maximum call stack|RangeError/.test(t));
-  console.log(`\n  رميات: ${thrown.length} · أخطاء كونسول: ${logged.length}`);
+  console.log(`\n  رميات: ${thrown.length} · أخطاء كونسول: ${logged.length} · تحذيراتُنا: ${warned.length}`);
   for (const t of all.slice(0, 5)) console.log(`     · ${t.slice(0, 150)}`);
 
   check("[3] ⭐ صفرُ رميةٍ غير ملتقَطة", thrown.length === 0, thrown.slice(0, 3));
   check("[3] وصفرُ خطأ كونسول", logged.length === 0, logged.slice(0, 3));
   check("[4] ⭐ ولا دورةَ بلا قاع (`Maximum call stack`)", stack.length === 0, stack.slice(0, 2));
+  // ⭐ **وصفرُ تحذيرٍ من عندنا** — **فالحارسُ الذي يتكلّم يجب أن يُسمَع**:
+  // تحذيرُ محرّك السكون يعني **عطباً في مستهلك** وإن لم تقع رمية.
+  check("[5] ⭐⭐ وصفرُ تحذيرٍ من عندنا (`[VZ]`) — لا صفرُ رميةٍ وحدها",
+    warned.length === 0, warned.slice(0, 3));
 
   if (WITNESS) {
     // **في وضع الشاهد ينقلب الحكم**: الأحمرُ هو النجاح، وخضرتُه تعني أن المِجَسّ أعمى
-    const sees = stack.length > 0;
+    const sees = stack.length > 0 || warned.length > 0;
     console.log(`\n  ⇒ **حكم الشاهد:** ${sees
       ? "✅ الرِكاز رأى العطب الحيّ بنصّه — فأخضرُه يُصدَّق"
       : "❌ **لم يرَ العطب المعلوم — فلا يُصدَّق أخضرُه ولا يُبنى عليه**"}`);

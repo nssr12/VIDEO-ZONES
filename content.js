@@ -1993,6 +1993,18 @@ function reconcileIdlePointerHeld(e) {
 // يسري على `catch` فارغ** (شرط المالك).
 let idleApplying = false, idleReapply = false;
 
+// ⭐⭐ **والمخرجُ المعلَن للمستهلك: يطلب إعادةً ولا يُعيد الدخول** (#108).
+// **الحارسُ وحده لم يكن كافياً — ورسالتُه قالت ذلك بنصّها:** «عطبٌ في مستهلك».
+// ⇒ **فمن بدّل شرطَ امتناعٍ وهو داخل نداءٍ من المحرّك يُعلن الحاجة، والمحرّكُ
+// يستوفيها في إعادته المحدودة** — **ولا رميةَ ولا تحذير، ولا حالٌ بائتة.**
+// ⚠️ **والفرق عن `refreshIdleConsumers` مباشرةً هو الفرقُ كلُّه:** تلك **تُشغّل
+// المحرّك من داخل تشغيله**، وهذي **ترفع علماً يقرؤه المحرّك حين يفرغ.**
+function requestIdleReapply() {
+  if (idleApplying) { idleReapply = true; return "طُلبت"; }
+  refreshIdleConsumers();
+  return "نُفِّذت";
+}
+
 function applyIdleState() {
   if (idleApplying) { idleReapply = true; return; }
   idleApplying = true;
@@ -2680,13 +2692,25 @@ function setFilterValue(key, raw) {
   applyVideoFilter();
 }
 
+// ⛔⭐ **عيبان مقروءان أصلحهما تحقّقُ المالك 2026-08-06 — والحارسُ دلّ عليهما:**
+// **(١) كانت تعمل وإن لم يتغيّر شيء.** `setFilterBtnShown(false)` تناديها **في
+// كل مرّةٍ يختفي فيها الزرّ** — أي في كل دورةِ سكون — **فتُعيد تشغيل المحرّك
+// على لوحةٍ مغلقةٍ أصلاً**. ⇒ **والدالّةُ المُهيَّئة (idempotent) لا تعمل بلا
+// تغيّر**، وهذا وحدَه يقطع أكثر الدورة.
+// **(٢) وكانت تُعيد الدخول إلى المحرّك من داخل ندائه** — على **أحرّ مسار عندنا**
+// (`updatePointerFromEvent` ⇒ `noteIdleFromPointerEvent` ⇒ `markIdleActivity`).
+// ⇒ **فصارت تُعلن الحاجة ولا تدخل** (`requestIdleReapply`).
+// ⚠️ **والحارسُ في المحرّك يبقى** — **سببُه الأوّل قائم**: مستهلكٌ ثالثٌ غداً
+// **لا يعرف هذا العقد**، والحارسُ يمنع انهيارَه لا يستر عطبَه (وهو يُعلنه).
 function setFilterPanelOpen(on) {
   if (!vzFilterPanel) return;
-  vzFilterPanel.classList.toggle("vzHidden", !on);
+  const want = !!on;
+  if (want === vzFilterPanelOpen()) return;   // **لا عملَ بلا تغيّر**
+  vzFilterPanel.classList.toggle("vzHidden", !want);
   // **حالُ الامتناع تبدّلت ⇒ يُعاد عرضُها على المستهلكين** — وإلا بقي شريطُ
-  // المضيف يُخفى تحت لوحةٍ مفتوحة حتى أوّل نشاط.
-  refreshIdleConsumers();
-  if (on) startOverlayTracking();
+  // المضيف يُخفى تحت لوحةٍ مفتوحة حتى أوّل نشاط. **طلباً لا دخولاً.**
+  requestIdleReapply();
+  if (want) startOverlayTracking();
 }
 
 function filterPanelWheel(e) {
