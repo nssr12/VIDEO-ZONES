@@ -247,7 +247,7 @@ console.log("\n[8] ⭐ المؤشّر فوق الزرّ ⇒ امتناع، لا 
   const decl = SRC.match(/IDLE_CONSUMERS\.speedButton = \{[\s\S]*?\n\};/);
   check("[8] المستهلك يُعلن هدفه (`target`)", !!decl && /target:\s*\(\)\s*=>\s*vzSpeedBtn/.test(decl[0]), decl && decl[0].slice(0,140));
   check("[8] ⭐ ولا شرطَ خاصٌّ بالزرّ بقي", !/pointerInsideSpeedBtn\s*[,(]/.test(SRC));
-  const apply = SRC.match(/function applyIdleState\(\)[\s\S]*?\n}/);
+  const apply = SRC.match(/function applyIdleStateOnce\(\)[\s\S]*?\n}/);
   check("[8] والمحرّك يسأل عن الهدف — لا يعرفه",
     !!apply && /pointerInsideEl\(c\.target\?\.\(\), c\.nearPad\?\.\(\) \?\? 0\)/.test(apply[0]), apply && apply[0].slice(0,240));
   // ⭐ **#107 — وهذا المستهلك يُهمل سببَ النشاط عمداً**: `onActive` بلا وسيط
