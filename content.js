@@ -2461,32 +2461,44 @@ function setSpeedBtnShown(on) {
 // في أصله `tools/icons.html`** (التسعةَ عشرَ فيهما: `enhance` · `flip-h` · …).
 // ⇒ **فلم تُرسم جديدة ولم يُخترع اسم** (قرار 16): **استُعملت `enhance` — أقربُ
 // الموجود معنىً — وتُبدَّل بسطرٍ واحد متى سمّى المالك غيرَها.**
+// ⭐ **والعرضُ نِسَبٌ للمضروبة ووحدةٌ صريحة لغيرها** (قرار 110): النسبةُ **تقول
+// للمستخدم أين هو من الافتراض** و«1» لا تقول. ⛔ **ودرجةُ اللون درجاتٌ والضبابيةُ
+// بكسلات** — **وفرضُ نسبةٍ عليهما يقول ما ليس صحيحاً**، فالوحدةُ من طبيعة المقيس.
+// ⚠️ **والوسمُ يقول ما يفعله الضابط، والشرحُ ليس فيه** (#77): وسمٌ يحمل شرحَه
+// **يكسر صفَّ السطر الواحد بالبناء** — **وشرحُ الجاما في تلميح الميزة بصفحة
+// الإعدادات، حيث يوجد وصفُها أصلاً** (⇊ ولماذا لا قناةَ تلميحٍ هنا).
+const pct = (v) => `${Math.round(v * 100)}%`;
 const VZ_FILTER_ITEMS = [
   { key: "brightness", group: "basic", label: "الإضاءة", min: 0.2, max: 2, step: 0.05, def: 1,
-    css: (v) => `brightness(${v})` },
+    css: (v) => `brightness(${v})`, fmt: pct },
   { key: "contrast", group: "basic", label: "التباين", min: 0.2, max: 2, step: 0.05, def: 1,
-    css: (v) => `contrast(${v})` },
+    css: (v) => `contrast(${v})`, fmt: pct },
   { key: "saturate", group: "basic", label: "التشبّع", min: 0, max: 3, step: 0.05, def: 1,
-    css: (v) => `saturate(${v})` },
-  // **الوسمُ يقول الفرق** — وهو شرط المالك، لا شرحٌ اختياريّ
-  { key: "gamma", group: "basic", label: "الجاما — تُوضّح الظلال ولا تُبهت الأبيض",
-    min: 0.4, max: 2.2, step: 0.05, def: 1, svg: true },
+    css: (v) => `saturate(${v})`, fmt: pct },
+  { key: "gamma", group: "basic", label: "الجاما", min: 0.4, max: 2.2, step: 0.05, def: 1,
+    svg: true, fmt: pct },
   { key: "hue", group: "more", label: "درجة اللون", min: 0, max: 360, step: 1, def: 0,
-    css: (v) => `hue-rotate(${v}deg)`, unit: "°" },
+    css: (v) => `hue-rotate(${v}deg)`, fmt: (v) => `${v}°` },
   { key: "grayscale", group: "more", label: "أبيض وأسود", min: 0, max: 1, step: 0.05, def: 0,
-    css: (v) => `grayscale(${v})` },
+    css: (v) => `grayscale(${v})`, fmt: pct },
   { key: "sepia", group: "more", label: "سيبيا", min: 0, max: 1, step: 0.05, def: 0,
-    css: (v) => `sepia(${v})` },
+    css: (v) => `sepia(${v})`, fmt: pct },
   { key: "invert", group: "more", label: "قلب الألوان", min: 0, max: 1, step: 0.05, def: 0,
-    css: (v) => `invert(${v})` },
+    css: (v) => `invert(${v})`, fmt: pct },
   { key: "blur", group: "more", label: "ضبابية", min: 0, max: 12, step: 0.5, def: 0,
-    css: (v) => `blur(${v}px)`, unit: "px" }
+    css: (v) => `blur(${v}px)`, fmt: (v) => `${v}px` }
 ];
 const VZ_FILTER_GROUPS = [{ id: "basic", label: "الأساسية" }, { id: "more", label: "المزيد" }];
 const VZ_GAMMA_ID = "vz_gamma_filter";
 
 let vzFilterValues = null;      // تُبنى من السجلّ، وتزول مع كلّ فيديو
 let vzFilterOn = true;          // مفتاحُ اللوحة: يُوقف الفلتر كلَّه **ولا يُضيّع القيم**
+// ⛔⭐ **الفيديو الذي تحمله حالتُنا — لا العنصرُ الذي بُنيت عليه الطبقة** (#108).
+// **الجذرُ المقيس:** كانت الحالةُ مربوطةً بـ`vzOverlayVideo` **ولا شيءَ يُنبّهها
+// حين يتبدّل ما يُشاهده المستخدم** ⇒ **ثلاثةُ أعراض من جذرٍ واحد:** فلترٌ يبقى
+// عبر انتقال يوتيوب الداخليّ (**المصدرُ يتبدّل والعنصرُ باقٍ**) · وحالةٌ لا
+// تُصفَّر عند استبدال العنصر · **ولوحةٌ حيّةٌ عاطلة** تكتب على عنصرٍ ميّت.
+let vzFilteredVideo = null;
 
 function filterButtonActive() {
   if (!extensionActive()) return false;   // #64: الرئيسي ثمّ الحظر
@@ -2556,8 +2568,13 @@ function ensureGammaFilter(video, exponent) {
 // وشاراتُنا معها ولانزاح موضعُها**. ⚠️ **فمن نقله إلى الحاوية بعد سنةٍ «تبسيطاً»
 // يكسر شيئاً لا يربطه به أحد** (طلب المالك أن يُكتب هنا لا في سجلّ بند).
 function applyVideoFilter(video) {
-  const v = video || vzOverlayVideo;
+  // **الفيديو الجاري لا الذي بُنيت عليه الطبقة** — و`speedBtnVideo` هي النمط
+  // القائم (حارسُ `isConnected` ثمّ سقوطٌ إلى المؤشّر)، **ولا نمطَ ثانٍ يُكتب**.
+  const v = video || speedBtnVideo();
   if (!v || !v.isConnected) return "";
+  // **وتبدّلُ الهُويّة تصفيرٌ**: ما نحمله كان لفيديوٍ آخر (#108)
+  if (vzFilteredVideo && vzFilteredVideo !== v) { resetVideoFilter(vzFilteredVideo); return applyVideoFilter(v); }
+  vzFilteredVideo = v;
   if (!filterButtonActive() || !vzFilterOn) { v.style.filter = ""; return ""; }
   const { parts, gamma } = vzFilterChain();
   const chain = [];
@@ -2572,11 +2589,29 @@ function applyVideoFilter(video) {
 
 // **يزول مع كلّ فيديو** (شرط المالك) — فلا قيمةَ تُخزَّن ولا تُورَّث.
 function resetVideoFilter(video) {
-  try { if (video && video.isConnected) video.style.filter = ""; } catch {}
+  const old = video || vzFilteredVideo;
+  try { if (old) old.style.filter = ""; } catch {}   // **ولو خرج من الشجرة**
+  vzFilteredVideo = null;
   vzFilterValues = vzFilterDefaults();
   vzFilterOn = true;
   syncFilterPanel();
 }
+
+// ⭐ **ومُنبِّهُ «تبدّل ما يُشاهده»: حدثُ المنصّة لا اسمُ مضيف.** `loadstart`
+// يقع حين يبدأ العنصرُ تحميلَ مصدرٍ جديد — **وهو ما يفعله يوتيوب في انتقاله
+// الداخليّ: يُبقي العنصر ويُبدّل المصدر** (وهي العائلة التي لدغتنا في #38ج و`S5`).
+// ⛔ **ولا `yt-navigate-finish` هنا:** اسمُ مضيفٍ يموت كما مات غيرُه، **والحدثُ
+// المنصّيّ يسري على كل مشغّلٍ** — **وهو حكم #65 نفسُه: البنيةُ لا الاسم.**
+// ⚠️ **ومحصورٌ بالعنصر الذي نحمل فلترَه**: `loadstart` يقع كثيراً (إعلانات ·
+// معاينات) — **فغيرُ المفلتَر لا يعنينا.**
+function filterVideoLoadStart(e) {
+  const v = e.target;
+  if (!v || v.tagName !== "VIDEO" || v !== vzFilteredVideo) return;
+  resetVideoFilter(v);
+}
+// ⚠️ **والتسجيلُ أسفل مع بقيّة مستمعي دورة الحياة** — **سطرٌ ينفَّذ عند التحميل
+// داخل كتلةٍ يقتطعها سندٌ يرمي فيه** (`document is not defined`)، **وقد وقع
+// مرّتين اليوم**: مستمعُ `Esc` ثمّ هذا. **والسندُ يقتطع منتَجاً لا يخترعه.**
 
 IDLE_CONSUMERS.speedButton = {
   enabled: speedButtonActive,
@@ -2611,18 +2646,28 @@ function buildFilterPanel() {
 
   const head = document.createElement("div");
   head.className = "vzFpHead";
-  const title = document.createElement("span");
-  title.textContent = "فلاتر الصورة";
   const sw = document.createElement("label");
   sw.className = "vzFpSwitch";
+  sw.title = "يُوقف أثر الفلاتر ويُبقي القيم كما ضبطتَها";
   const swBox = document.createElement("input");
   swBox.type = "checkbox";
   swBox.className = "vzFpOn";
   swBox.checked = vzFilterOn;
+  const track = document.createElement("span");
+  track.className = "vzFpTrack";
   const swTxt = document.createElement("span");
-  swTxt.textContent = "مُفعَّل";
-  sw.append(swBox, swTxt);
-  head.append(title, sw);
+  // ⭐ **وسمُ كلٍّ يقول فعلَه، فلا يلتبس بالآخر** (شرط المالك): **المفتاحُ يُوقف
+  // الأثر ويُبقي القيم · والزرُّ يمحو القيم** — **وإلا كانا مفتاحين لشيءٍ واحد
+  // في العين.**
+  swTxt.textContent = "تشغيل الفلاتر";
+  sw.append(swBox, track, swTxt);
+  const resetAll = document.createElement("button");
+  resetAll.type = "button";
+  resetAll.className = "vzFpResetAll";
+  resetAll.dataset.vzResetAll = "1";
+  resetAll.title = "يمحو القيم كلَّها ويُعيدها إلى افتراضها";
+  resetAll.textContent = "إرجاع الكلّ";
+  head.append(sw, resetAll);
   p.appendChild(head);
 
   const body = document.createElement("div");
@@ -2638,11 +2683,10 @@ function buildFilterPanel() {
       row.dataset.vzKey = it.key;
       const name = document.createElement("div");
       name.className = "vzFpName";
-      const lab = document.createElement("span");
-      lab.textContent = it.label;
+      name.textContent = it.label;
+      name.title = it.label;
       const val = document.createElement("span");
       val.className = "vzFpVal";
-      name.append(lab, val);
       const range = document.createElement("input");
       range.type = "range";
       range.min = String(it.min); range.max = String(it.max); range.step = String(it.step);
@@ -2655,7 +2699,7 @@ function buildFilterPanel() {
       reset.dataset.vzReset = it.key;
       reset.title = "إرجاع";
       reset.textContent = "↺";
-      row.append(name, range, reset);
+      row.append(name, range, val, reset);
       body.appendChild(row);
     }
   }
@@ -2676,7 +2720,8 @@ function syncFilterPanel() {
     const range = row.querySelector("input[type=range]");
     const out = row.querySelector(".vzFpVal");
     if (range) range.value = String(v[it.key]);
-    if (out) out.textContent = `${v[it.key]}${it.unit || ""}`;
+    // **الوحدةُ من طبيعة المقيس لا من شكل الجدول** (قرار 110)
+    if (out) out.textContent = it.fmt(v[it.key]);
   }
 }
 
@@ -2730,6 +2775,13 @@ function filterPanelInput(e) {
 }
 
 function filterPanelClick(e) {
+  // **الإرجاعُ الشامل يمحو القيم** — وهو غيرُ المفتاح الذي يُوقف الأثر ويُبقيها
+  if (e.target?.closest?.("[data-vz-reset-all]")) {
+    vzFilterValues = vzFilterDefaults();
+    syncFilterPanel();
+    applyVideoFilter();
+    return;
+  }
   const reset = e.target?.closest?.("[data-vz-reset]");
   if (reset) {
     const it = VZ_FILTER_ITEMS.find((x) => x.key === reset.dataset.vzReset);
@@ -3093,16 +3145,45 @@ const OVERLAY_CSS = `
       border-bottom:1px solid rgba(255,255,255,.18); font-weight:700;
     }
     .vzFilterPanel .vzFpGroup{ margin:8px 0 4px; opacity:.72; font-size:11px; }
-    .vzFilterPanel .vzFpRow{ display:grid; grid-template-columns:1fr auto auto; gap:6px; align-items:center; margin:6px 0; }
-    .vzFilterPanel .vzFpName{ grid-column:1 / -1; display:flex; justify-content:space-between; gap:8px; }
-    .vzFilterPanel .vzFpVal{ opacity:.7; font-variant-numeric:tabular-nums; }
+    /* ⭐ **صفٌّ واحد لكلّ ضابط** (طلب المالك): الوسم · المنزلق · القيمة · الرجوع.
+       **وسطران يُطيلان اللوحة بلا داعٍ** — والوسمُ القصير شرطُ هذا الصفّ (#77). */
+    .vzFilterPanel .vzFpRow{
+      display:grid; grid-template-columns:5.5em 1fr 3.2em auto;
+      gap:8px; align-items:center; margin:5px 0;
+    }
+    .vzFilterPanel .vzFpName{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .vzFilterPanel .vzFpVal{ opacity:.7; font-variant-numeric:tabular-nums; text-align:end; }
     .vzFilterPanel input[type=range]{ width:100%; margin:0; accent-color:#3ea6ff; }
     .vzFilterPanel .vzFpReset{
       background:none; border:0; color:#fff; opacity:.65; cursor:pointer;
       font-size:14px; line-height:1; padding:2px 4px;
     }
     .vzFilterPanel .vzFpReset:hover{ opacity:1; }
+    /* ⭐ **مفتاحٌ منزلق لا مربّعُ اختيار** — الشكلُ المُقرّ في #77، **ولا مفردةَ
+       ثانية لضابطٍ واحد في المنتج نفسِه** (طلب المالك).
+       ⚠️ **ونسخةُ المظهر هنا لا تُغني عن أصلها ولا تُلغيه:** ورقةُ الإعدادات
+       لا تعبر إلى سكربت المحتوى، **وشحنُ مُولِّد #77 في كل إطارٍ لأجل مظهرٍ
+       أغلى من نسخه** — **وهو حدٌّ مُعلَن لا سهو.**
+       ⛔ **ولا علامةَ اقتباسٍ خلفية هنا: قالبٌ نصّيّ** (رابعةً اليوم). */
     .vzFilterPanel .vzFpSwitch{ cursor:pointer; display:flex; align-items:center; gap:6px; }
+    .vzFilterPanel .vzFpSwitch input{ position:absolute; opacity:0; width:0; height:0; }
+    .vzFilterPanel .vzFpTrack{
+      width:34px; height:18px; border-radius:9px; background:rgba(255,255,255,.28);
+      position:relative; transition:background .12s linear; flex:none;
+    }
+    .vzFilterPanel .vzFpTrack::after{
+      content:""; position:absolute; inset-inline-start:2px; top:2px;
+      width:14px; height:14px; border-radius:50%; background:#fff;
+      transition:inset-inline-start .12s linear;
+    }
+    .vzFilterPanel .vzFpSwitch input:checked + .vzFpTrack{ background:#3ea6ff; }
+    .vzFilterPanel .vzFpSwitch input:checked + .vzFpTrack::after{ inset-inline-start:18px; }
+    /* **وزرُّ الإرجاع الشامل يُميَّز عن المفتاح بوسمه لا بموضعه** */
+    .vzFilterPanel .vzFpResetAll{
+      background:rgba(255,255,255,.12); border:0; color:#fff; cursor:pointer;
+      font:600 11px/1 Arial, sans-serif; padding:5px 8px; border-radius:7px;
+    }
+    .vzFilterPanel .vzFpResetAll:hover{ background:rgba(255,255,255,.22); }
     .vzFilterPanel[data-vz-off="1"] .vzFpBody{ opacity:.45; }
     /* البند #47 — لا تنطبق إلا حين تُضاف السمة، أي في حالة واحدة: عنصر ملء
        الشاشة هو <video> نفسه. أنماط المتصفح الافتراضية لـ [popover] تفرض
@@ -3377,6 +3458,8 @@ function ensureVideoOverlay(video) {
 
 // #108 — Esc يُغلق اللوحة (والدالّة معرَّفةٌ في قسم الفلاتر أعلاه)
 document.addEventListener("keydown", filterEscKeydown, true);
+// #108 — وتبدُّلُ مصدر الفيديو يُصفّر الفلتر (والدالّة في قسم الفلاتر أعلاه)
+document.addEventListener("loadstart", filterVideoLoadStart, true);
 
 document.addEventListener("fullscreenchange", () => {
   if (!vzOverlay || !vzOverlayVideo) return;

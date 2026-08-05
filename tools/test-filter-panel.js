@@ -91,10 +91,18 @@ console.log("\n[3] ⭐ الجاما فلترُ SVG، وثمنُها لا يُد�
   const apply = body("function applyVideoFilter(video)");
   check("[3] ⭐ ولا `url(#…)` في السلسلة إلا حين تُطلب الجاما",
     !!apply && /if \(gamma !== null\)/.test(apply), apply);
-  // والوسمُ يقول الفرق — شرط المالك
-  check("[3] ⭐ ووسمُها يقول الفرق عن الإضاءة",
-    /الجاما — تُوضّح الظلال ولا تُبهت الأبيض/.test(SRC));
-  check("[3] وفي وسم الإعدادات كذلك", /والجاما ليست الإضاءة/.test(UI));
+  // ⛔ **انقلب هذا التأكيد بقاعدة #77 لا ليمرّ** (2026-08-06، قرار المالك):
+  // كان يشترط أن **يحمل الوسمُ شرحَه** («الجاما — تُوضّح الظلال…»)، **والقاعدة
+  // المُقرّة عكسُه: الوسمُ يقول ما يفعله الضابط، والشرحُ خلفه.**
+  // ⭐ **وللمخالفة ثمنٌ ظاهر: وسمٌ طويل يكسر صفَّ السطر الواحد بالبناء.**
+  // ⇒ **والشرحُ في تلميح الميزة بصفحة الإعدادات، حيث يوجد وصفُها أصلاً** —
+  // **ولا قناةَ تلميحٍ ثانية تُبنى في اللوحة** (⇊ [7] بسببها المقيس).
+  const regSrc = slice("const VZ_FILTER_ITEMS = [", "\n];") || "";
+  const labels = [...regSrc.matchAll(/label: "([^"]+)"/g)].map((m) => m[1]);
+  check("[3] الوسوم تُقرأ", labels.length >= 9, labels.length);
+  const carriers = labels.filter((l) => /[—:(]/.test(l) || l.length > 16);
+  check("[3] ⭐ ولا وسمَ يحمل شرحَه (#77)", carriers.length === 0, carriers);
+  check("[3] والشرحُ في تلميح الإعدادات", /والجاما ليست الإضاءة/.test(UI));
 }
 
 // ── [4] المفتاح والبوّابة والتخزين ─────────────────────────────────────────
@@ -134,17 +142,21 @@ console.log("\n[5] ⭐ لوحةٌ مفتوحة ⇒ لا يُخفى شريطُ ا
 // ── [6] ⭐ السلوك — على الكود نفسه، لا على وصفه ────────────────────────────
 console.log("\n[6] ⭐ السلوك: منزلقٌ يُغيّر السلسلة، ومفتاحٌ يُوقف ولا يُضيّع");
 {
-  const REG = slice("const VZ_FILTER_ITEMS = [", "const VZ_GAMMA_ID");
+  const REG = slice("const pct = (v) =>", "const VZ_GAMMA_ID");   // `pct` جزءٌ من السجلّ
   // ⚠️ **المرساة تنتهي عند `resetVideoFilter` لا عند `setFilterPanelOpen`**:
   // الثانية بعد `IDLE_CONSUMERS.speedButton`، **فالشريحةُ كانت تبتلع سجلَّ
   // المستهلكين فترمي** — وهو خطأُ مرساةٍ أمسكه التشغيل الأوّل.
-  const FNS = slice("function vzFilterDefaults()", "function resetVideoFilter(video)");
+  const FNS = slice("function vzFilterDefaults()", "// ⚠️ **والتسجيلُ أسفل");   // يشمل resetVideoFilter و filterVideoLoadStart
   if (!REG || !FNS) { console.log("  ❌ تعذّر الاقتطاع — أصلِح المرساة لا التأكيد"); fail++; }
   else {
-    const video = { isConnected: true, style: { filter: "" }, getRootNode: () => null };
+    // **`tagName` جزءٌ من العقد لا زينة**: `filterVideoLoadStart` تفحصه قبل أن
+    // تُصفّر — **وبلا هذا الحقل يمرّ الحدثُ صامتاً فيُقرأ «لم يُصفّر» عطباً في
+    // المنتج وهو نقصُ سند** (الشاهد الثاني في قرار 26).
+    const video = { tagName: "VIDEO", isConnected: true, style: { filter: "" }, getRootNode: () => null };
     const ctx = {
       console, vzOverlayVideo: video, vzFilterPanel: null,
       filterButtonActive: () => true,
+      speedBtnVideo: () => video,   // **الفيديو الجاري** — النمط القائم (#108)
       syncFilterPanel: () => {},
       // **سندٌ يكفي `ensureGammaFilter`**: شجرةٌ لها `body` يُلحَق بها، و`getElementById`
       // — **وبلا `body` كانت تُرجع `null` فيُقرأ «الجاما لا تدخل» وهو نقصُ السند لا المنتج**
@@ -156,7 +168,9 @@ console.log("\n[6] ⭐ السلوك: منزلقٌ يُغيّر السلسلة، 
       }
     };
     vm.createContext(ctx);
-    vm.runInContext(REG + "\nconst VZ_GAMMA_ID = 'g';\nlet vzFilterValues = null; let vzFilterOn = true;\n" + FNS, ctx);
+    vm.runInContext(REG + "\nconst VZ_GAMMA_ID = 'g';\n" +
+      // **حالةُ الوحدة تُعلَن كما في المنتج** — و`vzFilteredVideo` جزءٌ منها (#108)
+      "let vzFilterValues = null; let vzFilterOn = true; let vzFilteredVideo = null;\n" + FNS, ctx);
     vm.runInContext("vzFilterValues = vzFilterDefaults()", ctx);
 
     check("[6] بلا تغييرٍ: سلسلةٌ فارغة (فلا ثمنَ بلا طلب)",
@@ -180,6 +194,32 @@ console.log("\n[6] ⭐ السلوك: منزلقٌ يُغيّر السلسلة، 
     ctx.filterButtonActive = () => false;
     check("[6] ⭐ وبوّابةٌ مغلقة ⇒ لا فلتر مهما كانت القيم",
       vm.runInContext("applyVideoFilter()", ctx) === "" && video.style.filter === "");
+
+    // ── [8] ⭐⭐ **الحالةُ تتبع الفيديو لا العنصر** (#108، عطبُ «١٠») ──────────
+    // ⛔ **الوعدُ «يزول مع كل فيديو» كان مُعلَّقاً على تبدّل العنصر** — **ويوتيوب
+    // يُبقي العنصر ويُبدّل المصدر** ⇒ **الفلترُ يبقى عبر الانتقال الداخليّ.**
+    // ⚠️ **و«فارغ» لا تُقرأ تصفيراً** (شرط المالك): **الحالةُ تُصفَّر والمنزلقاتُ
+    // تعود إلى افتراضها** — لا أن يخلو عنصرٌ جديد من فلترٍ لم يُوضع عليه.
+    ctx.filterButtonActive = () => true;
+    vm.runInContext("vzFilterValues.brightness = 1.3; applyVideoFilter();", ctx);
+    check("[8] مهّدنا: فلترٌ قائمٌ وقيمةٌ محفوظة",
+      video.style.filter === "brightness(1.3)" && vm.runInContext("vzFilterValues.brightness", ctx) === 1.3);
+    // **(أ) المصدرُ يتبدّل والعنصرُ باقٍ** — حدثُ المنصّة لا اسمُ مضيف
+    vm.runInContext("filterVideoLoadStart({ target: vzFilteredVideo })", ctx);
+    check("[8] ⭐ تبدّلُ المصدر ⇒ الفلترُ يزول **والقيمُ تعود لافتراضها**",
+      video.style.filter === "" && vm.runInContext("vzFilterValues.brightness", ctx) === 1);
+    // **(ب) وحدثٌ لعنصرٍ آخر لا يمسّنا** — فـ`loadstart` يقع كثيراً (إعلانات · معاينات)
+    vm.runInContext("vzFilterValues.brightness = 1.2; applyVideoFilter();", ctx);
+    vm.runInContext("filterVideoLoadStart({ target: { tagName: 'VIDEO' } })", ctx);
+    check("[8] ⭐ وحدثٌ لفيديو آخر لا يُصفّرنا (وهو يقع كثيراً)",
+      video.style.filter === "brightness(1.2)");
+    // **(ج) وتبدّلُ الهُويّة تصفيرٌ كذلك** — والعنصرُ الميّت لا تُكتب عليه
+    const other = { tagName: "VIDEO", isConnected: true, style: { filter: "" }, getRootNode: () => null };
+    ctx.speedBtnVideo = () => other;
+    const applied = vm.runInContext("applyVideoFilter()", ctx);
+    check("[8] ⭐ وفيديو آخر ⇒ تصفيرٌ ثمّ تطبيقٌ على الجاري لا على الميّت",
+      applied === "" && other.style.filter === "" && video.style.filter === "" &&
+      vm.runInContext("vzFilterValues.brightness", ctx) === 1, { applied, other: other.style.filter });
   }
 }
 

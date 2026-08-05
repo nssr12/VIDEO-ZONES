@@ -229,6 +229,30 @@ try {
                w: Math.round(r.width), h: Math.round(r.height),
                أب: (el.parentElement?.className || "").slice(0, 24) }; })()`);
   }
+  // ── [7] ⭐⭐ تأكيدُ **أثر** — السؤالُ الثالث (قرار 109) ────────────────────
+  // **أرمى؟ · أموجود؟ · أوقع الأثر؟** — **ومَلَكنا الأوّلَين وحدَهما حتى اليوم.**
+  // ⛔ **الواقعة:** لوحةٌ حيّةٌ **تُحرَّك ولا يقع شيء** — تكتب على عنصرٍ ميّت،
+  // **بلا رميةٍ ولا تحذير، وعنصرُها موجودٌ ومرئيّ** ⇒ **مرّت من [3] و[5] و[6].**
+  // ⇒ **فكلُّ شرطٍ ينتهي بأثرٍ يراه المستخدم لا بوجودِ عنصر** (شكل #93).
+  {
+    const eff = await evalIn(c, `(() => {
+      const b = document.querySelector(".vzFilterBtn"); if (!b) return { err: "لا زرّ" };
+      if (document.querySelector(".vzFilterPanel.vzHidden")) b.click();
+      const r = document.querySelector('.vzFilterPanel input[type=range][data-vz-key="brightness"]');
+      if (!r) return { err: "لا منزلق" };
+      const v = document.querySelector("video");
+      const قبل = v.style.filter || "";
+      r.value = "1.4"; r.dispatchEvent(new Event("input", { bubbles: true }));
+      const بعد = v.style.filter || "";
+      const عرض = document.querySelector('.vzFpRow[data-vz-key="brightness"] .vzFpVal');
+      return { قبل, بعد, معروض: عرض ? عرض.textContent : null };
+    })()`);
+    check("[7] ⭐⭐ تحريكُ منزلقٍ يُغيّر `filter` على الفيديو الحيّ",
+      !eff?.err && eff.بعد !== eff.قبل && /brightness\(1\.4\)/.test(eff.بعد || ""), eff);
+    // **والقيمةُ تُعرض بوحدتها** (قرار 110): نسبةٌ للمضروب لا رقمٌ خام
+    check("[7] وتُعرض بوحدتها (نسبةً لا رقماً خامّاً)", eff?.معروض === "140%", eff?.معروض);
+  }
+
   for (const f of PRESENT) {
     const mine = rects[f.sel];
     const other = Object.entries(rects).find(([k]) => k !== f.sel)?.[1] || null;
