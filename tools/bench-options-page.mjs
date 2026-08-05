@@ -309,10 +309,25 @@ console.log(`  · وضع المطوّر: ${live.devMode} — ${live.devMode === 
 check("[٦] اللوحة تُقرأ (وُجدت الإضافة فيها)", live.panel?.found === true, live.panel);
 check("[٦] وصفر خطأ فيها", live.panel?.runtime === 0, live.panel?.msgs);
 
+// ⚠️ **العددان يُشتقّان من سجلّ المُولِّد لا يُكتبان هنا** (قرار 34): رقمٌ بيدٍ
+// **يتخلّف بالبناء** — وقد تخلّف فعلاً عند #107 حين انتقل ضابطٌ إلى الـpopup،
+// **فاحمرّت البوّابةُ على تغييرٍ مقصود**. ⇒ **والسجلّ هو المصدر، والرسمُ يُقارَن به.**
+// **والسجلّ يُحمَّل كما يُحمّله `test-settings-ui.js` — لا مُحلِّلٌ نصّيٌّ ثانٍ**
+// (وهو درسُ `test-name-resolves`: الخصوصيّةُ تُبنى والعموميّةُ تُستعار).
+const { createRequire } = await import("node:module");
+const uiReg = createRequire(import.meta.url)(path.join(ROOT, "settings-ui.js"));
+const WANT_CLEAN = Object.keys(uiReg.VZ_UI_CLEAN || {}).length;
+const WANT_TIMING = (uiReg.VZ_UI_TIMING || []).length;
+
 console.log("\n[٤] وما رُسم — بالعدّ فسقوطُ ضابطٍ يُرى");
-check("[٤] 38 مربّع Clean Player", live.drawn?.clean === 38, live.drawn);
-check("[٤] و8 ضوابط توقيت", live.drawn?.timing === 8, live.drawn);
-check("[٤] ولكلٍّ زرّ تلميح", live.drawn?.help >= 46, live.drawn);
+check(`[٤] سجلّ المُولِّد قُرئ (${WANT_CLEAN} تنظيف · ${WANT_TIMING} توقيت)`,
+  WANT_CLEAN > 0 && WANT_TIMING > 0, { WANT_CLEAN, WANT_TIMING });
+check(`[٤] ${WANT_CLEAN} مربّع Clean Player`, live.drawn?.clean === WANT_CLEAN, live.drawn);
+check(`[٤] و${WANT_TIMING} ضوابط توقيت`, live.drawn?.timing === WANT_TIMING, live.drawn);
+// **وهو مشتقٌّ كذلك: زرُّ تلميحٍ لكلّ ضابطٍ في السجلّين** — والرقمُ المكتوب
+// (`46`) كان يعني `38+8`، **فسقط بانتقال ضابطٍ واحد** ولا يقول ذلك لقارئه.
+check(`[٤] ولكلٍّ زرّ تلميح (${WANT_CLEAN + WANT_TIMING})`,
+  live.drawn?.help >= WANT_CLEAN + WANT_TIMING, live.drawn);
 
 // ── الشاهد السالب: نكسرها عمداً مرّةً واحدة ثمّ نُرجعها ────────────────────
 if (WITNESS) {

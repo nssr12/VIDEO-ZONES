@@ -33,7 +33,7 @@ There is no test suite. Verify UI changes manually in the browser.
 |------|------|
 | `manifest.json` | MV3 manifest, permissions, content-script declaration |
 | `content.js` | Single content script injected at `document_start` in all frames. Contains: zone detection, action runner, overlay, subtitle styling, YouTube caption automation, site-profile resolver |
-| `popup.html` / `popup.js` | Toolbar popup: master switch, global enable, per-site rules, blocked-site toggle, page status, manual injection, overlay duration slider, Sound Booster slider, subtitles toggle |
+| `popup.html` / `popup.js` | Toolbar popup: master switch, global enable, per-site rules, blocked-site toggle, page status, manual injection, overlay duration slider, Sound Booster slider, subtitles toggle, **YouTube control-bar mode (#107 — the ONLY place it lives; no mirror on the options page)** |
 | `options.html` / `options.js` / `options.css` | Full settings page: zone editor, grid appearance, volume indicator, overlay timing, subtitles, blocked sites, backup/restore, settings guide |
 | `settings-ui.js` | **#77** — سجلّات صفحة الإعدادات ومُولِّدها: المجموعات الخمس · 38 وسم Clean Player · 8 ضوابط توقيت. **يُشحن**، و`options.html` تستهلكه و`tools/preview-77.html` غلافٌ فوقه. لا يلمس `chrome.*` ولا التخزين |
 | `storage.js` | Shared by popup/options/background: sync quota guards (`safeSyncSet`), schema migration (`migrateAll`), and the verbatim-paired blocks with `content.js`. Classic script, **not** an ES module |
@@ -205,7 +205,18 @@ settings = {
   overlay: {
     autoHideMs, volumeAutoHideMs, enabled,
     hintEnabled,                       // default true  (#63) — `!== false`
-    speedBadge                         // default FALSE (#71) — `!!x`, opt-in feature
+    speedBadge,                        // default FALSE (#71) — `!!x`, opt-in feature
+    // #107 — YouTube control bar: ONE tri-state, not two switches. "off" (default,
+    // absent = off) | "idle" (hide on idle, any activity brings it back) | "near"
+    // (always hidden, ONLY pointer proximity brings it back — the near region is
+    // the target rect padded by IDLE_NEAR_PAD_PX, clamped to the player rect).
+    // Read through progressBarModeOf() — a PAIRED block in storage.js + content.js.
+    // It tolerates the legacy boolean `hideProgressBar` at READ time; migrateAll()
+    // seeds the new key (true ⇒ "idle") and deletes the old one. NEVER read the
+    // legacy key with `!!`: `!!"off"` is true, which is why this is a NEW key
+    // rather than a retyped one — an older version on another synced device would
+    // otherwise turn the feature ON for someone who had it off.
+    progressBarMode
   },
   blockedHosts: ["youtube.com", ...],
   soundDisplay: { color, fontSize },

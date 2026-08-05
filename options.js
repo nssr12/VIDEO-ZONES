@@ -268,7 +268,6 @@ async function getSettings() {
   // ⚠️ **#71 — والافتراض هنا مطفأ، والشكل مقلوب عمداً:** ميزةٌ جديدة **لا تُشغَّل
   // بلا طلب**، فلا يرى من لم يطلبها حرفاً. الشكلان لا يُوحَّدان.
   if (typeof settings.overlay.speedBadge !== "boolean") settings.overlay.speedBadge = false;
-  if (typeof settings.overlay.hideProgressBar !== "boolean") settings.overlay.hideProgressBar = false;
   if (typeof settings.overlay.speedButton !== "boolean") settings.overlay.speedButton = false;
   if (!(Number(settings.overlay.speedButtonPreset) > 0)) settings.overlay.speedButtonPreset = 2;
   // #70 · #72 — مهلة السكون: الحدّ الأدنى صريح، و«صفر» ليست إطفاءً
@@ -671,7 +670,6 @@ const TIMING_CONTROLS = {
   idleDuration:       (s, el) => { s.idle = { ...(s.idle || {}), ms: Number(el.value) }; },
   zoneHintEnabled:    (s, el) => { s.overlay.hintEnabled = el.checked; },
   speedBadgeEnabled:  (s, el) => { s.overlay.speedBadge = el.checked; },
-  hideProgressBar:    (s, el) => { s.overlay.hideProgressBar = el.checked; },
   speedButtonEnabled: (s, el) => { s.overlay.speedButton = el.checked; },
   speedButtonPreset:  (s, el) => { s.overlay.speedButtonPreset = Number(el.value); }
 };
@@ -694,7 +692,6 @@ function timingValueOf(s, id) {
   if (id === "idleDuration") return Math.max(VZ_IDLE_MIN_MS, Number(s.idle?.ms) > 0 ? Number(s.idle.ms) : 2000);
   if (id === "zoneHintEnabled") return o.hintEnabled !== false;
   if (id === "speedBadgeEnabled") return o.speedBadge === true;
-  if (id === "hideProgressBar") return o.hideProgressBar === true;
   if (id === "speedButtonEnabled") return o.speedButton === true;
   if (id === "speedButtonPreset") return Number(o.speedButtonPreset) > 0 ? Number(o.speedButtonPreset) : 2;
   return null;
@@ -1391,7 +1388,8 @@ function validateBackup(parsed) {
 // وهو يعدّ الأجزاء من **بنية migrateAll نفسها** لا من قائمة مكتوبة بجوارها.
 const MIGRATION_PART_TEXT = {
   profiles: "تجزئة قواعد المواقع",
-  zones: "ترقية أوامر المربّعات"
+  zones: "ترقية أوامر المربّعات",
+  progressMode: "ترقية وضع شريط يوتيوب"
 };
 
 function migrationFailureText(result) {

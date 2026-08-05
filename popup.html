@@ -41,6 +41,8 @@
     .toggleRow + .toggleRow{margin-top:4px;border-top:1px dashed var(--border);padding-top:10px}
     .toggleRow .label{font-size:13px;font-weight:600}
     .toggleRow .sub{font-size:11px;color:var(--muted);margin-top:2px}
+    /* #107 — قائمةٌ داخل صفٍّ لا حقلٌ بعرض البطاقة: `select` العامّة `width:100%` */
+    .toggleRow .modeSelect{width:auto;max-width:52%;flex:0 0 auto;padding:6px 8px;font-size:12px}
     .toggle{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0;direction:ltr}
     .toggle input{opacity:0;width:0;height:0;margin:0}
     .toggle .slider{
@@ -126,6 +128,20 @@
         <input type="checkbox" id="subtitlesEnabled">
         <span class="slider"></span>
       </label>
+    </div>
+    <!-- #107 — **قائمةُ اختيارٍ واحدة لا مفتاحان**: مفتاحان مستقلّان يُنتجان
+         تركيبةً بلا معنى (كلاهما مُشغَّل ⇒ أيّهما يفوز؟). **وموضعُه الـpopup
+         وحده، ولا نسخةَ منه في الإعدادات** (قرار المالك: مرآةٌ تتباعد). -->
+    <div class="toggleRow">
+      <div>
+        <div class="label">شريط تحكّم يوتيوب</div>
+        <div class="sub">الشريط السفلي بكامله — التقدّم والوقت وأزرار التشغيل والصوت والترجمة والإعدادات وملء الشاشة. ⚠️ ولا يُخفى أثناء سحب الشريط ولا حين يكون التركيز على شيء منه</div>
+      </div>
+      <select id="progressBarMode" class="modeSelect">
+        <option value="off">يظهر كالمعتاد</option>
+        <option value="idle">يختفي بالسكون ويعود بأي نشاط</option>
+        <option value="near">مخفيّ دائماً ويعود بقرب المؤشّر</option>
+      </select>
     </div>
     <div class="toggleRow">
       <div>

@@ -1081,6 +1081,28 @@ function resolveGridAppearance(stored) {
 }
 // ---- END gridAppearance ----
 
+// ⚠️ PAIRED COPY — duplicated verbatim in storage.js. Edit both TOGETHER.
+// ---- BEGIN progressBarMode ----
+// #107 — **وضعُ عرضٍ ثالث لا مفتاحٌ ثانٍ.** ثلاثُ حالاتٍ يقرؤها المستخدم في
+// قائمةٍ واحدة: `off` يظهر كالمعتاد · `idle` يختفي بالسكون ويعود بأيّ نشاط ·
+// `near` مخفيٌّ دائماً ولا يعود إلا بقرب المؤشّر.
+// ⛔ **ومفتاحان مستقلّان كانا يُنتجان تركيبةً بلا معنى** (كلاهما مُشغَّل ⇒ أيّهما
+// يفوز؟) — **وهو «موضعان لحقيقةٍ واحدة» في ضابطٍ يراه المستخدم** (قرار المالك).
+//
+// ⭐ **والقراءةُ تحتمل الشكلين ولا تنتظر الهجرة:** `content.js` تعمل عند
+// `document_start` **وقد تسبق أيّ مُهاجر**، **وجهازٌ بنسخةٍ قديمة قد يُعيد كتابة
+// المفتاح القديم بعد الهجرة**. ⇒ **الجديدُ يفوز حيث وُجد، والقديمُ يُقرأ ولا يُكتب.**
+// ⚠️ **ولا يُقرأ المفتاح القديم بـ`!!`**: `!!"off"` تساوي `true` — **وهو سببُ
+// أن يكون المفتاح جديداً لا أن يتغيّر نوعُ القديم** (نسخةٌ قديمة كانت ستُشغّل
+// الميزةَ على من أطفأها).
+const PROGRESS_BAR_MODES = ["off", "idle", "near"];
+function progressBarModeOf(overlay) {
+  const o = overlay || {};
+  if (PROGRESS_BAR_MODES.includes(o.progressBarMode)) return o.progressBarMode;
+  return o.hideProgressBar === true ? "idle" : "off";
+}
+// ---- END progressBarMode ----
+
 let gridAppearance = resolveGridAppearance(null);
 
 function applyGridVars(el) {
@@ -1743,6 +1765,10 @@ let idleMoveCheckedAt = 0;
 // **المسار الحارّ يقرأ منطقيّاً واحداً لا حلقة.** يُحسب عند تغيّر الإعدادات
 // وحدها، فبلا مستهلكٍ مُفعَّل: **صفر مؤقّت · صفر قراءة DOM · صفر تخصيص**.
 let idleWanted = false;
+// ⭐ **#107 — ومنطقيٌّ ثانٍ بالشكل نفسه**: هل لأحد المستهلكين حالٌ **تتبع موضعَ
+// المؤشّر** لا حالةَ المحرّك؟ **يُحسب حيث يُحسب `idleWanted`**، فمن لا مستهلكَ
+// متتبّعٌ عنده لا يدفع شيئاً — **والمسارُ الحارّ يبقى منطقيّاً واحداً**.
+let idlePointerTracked = false;
 
 // **سجلٌّ واحد على نمط `OVERLAY_PARTS`** — مستهلكٌ ثالث يُضاف هنا وحده.
 // عقد المستهلك: `enabled()` · `suspended()` اختياريّ · `onActive()` · `onIdle()`.
@@ -1783,6 +1809,9 @@ function idleEngineActive() {
 // (مثال #72: عند `play`/`pause`) — وإلا بقيت الحالة معروضة على شرطٍ مضى.
 function refreshIdleConsumers() {
   idleWanted = idleEngineActive();
+  // **المستهلك يُعلن أنه يتبع المؤشّر، والمحرّك يسأل ولا يعرف لماذا** (#107).
+  idlePointerTracked = Object.values(IDLE_CONSUMERS)
+    .some((c) => c.enabled() && c.tracksPointer?.());
   if (!idleWanted) {
     clearTimeout(idleTimer);
     idleTimer = null;
@@ -1956,8 +1985,14 @@ function applyIdleState() {
     // ⭐ **ومنه القاعدة العامّة (#95): لا يُخفى ما يستقرّ المؤشّر عليه** —
     // **المستهلك يُعلن `target` والمحرّك يسأل، ولا يعرف المحرّك ما هو الهدف.**
     // ⚠️ **والهامش من إعلان المستهلك لا من حكم المحرّك** (#106): غيابُه صفر.
-    if (c.suspended?.() || pointerInsideEl(c.target?.(), c.nearPad?.() ?? 0)) { c.onActive(); continue; }
-    if (idleState === "idle") c.onIdle(); else c.onActive();
+    // ⭐ **#107 — والمحرّك يقول أيُّ حالٍ وقعت، ولا يقول ماذا يُفعل بها:** ثلاثةُ
+    // أسبابٍ تُسمّى (`suspended` · `pointer` · `active`) بدل «نشط» واحدة.
+    // **والسياسةُ للمستهلك**: #70 في وضع `near` **يُخفي مع `active`** ويُظهر مع
+    // الأوّلين، و#70 في `idle` يُظهر في الثلاثة. ⇒ **إخبارٌ بحالٍ أدقّ لا أمرٌ،
+    // فالحدُّ المعماريّ قائم.** ⚠️ **ومن أهمل الوسيط عمل كما كان حرفاً بحرف** (#72).
+    if (c.suspended?.()) { c.onActive("suspended"); continue; }
+    if (pointerInsideEl(c.target?.(), c.nearPad?.() ?? 0)) { c.onActive("pointer"); continue; }
+    if (idleState === "idle") c.onIdle(); else c.onActive("active");
   }
 }
 
@@ -1969,6 +2004,15 @@ function markIdleActivity() {
   idleLastActivityAt = nowMs();
   if (idleState !== "active") {
     idleState = "active";
+    applyIdleState();
+  } else if (idlePointerTracked) {
+    // ⭐⭐ **#107 — وحالٌ تتبع المؤشّر تُعاد قراءتها ولو لم تتبدّل حالةُ المحرّك.**
+    // ⛔ **العطب مقيسٌ في الحارس قبل أن يراه مستخدم:** المحرّك يُعيد التطبيق عند
+    // **الانتقال** وحده، **والانتقالُ لا يقع بين حركةٍ وحركة** ⇒ **في «مخفيّ
+    // دائماً» كان الشريطُ يظهر بالقرب ثمّ يبقى ظاهراً بعد الابتعاد** حتى تمضي
+    // مهلةُ السكون كاملةً — **وعدٌ ينقضه المنتَج بمقدار المهلة.**
+    // ⚠️ **والثمن محسوب لا مُهمَل**: المسار مخنوقٌ سلفاً بـ`IDLE_MOVE_THROTTLE_MS`
+    // (عشرُ فحوصٍ في الثانية)، **ولا يُدفع إلا حيث أُعلن التتبّع**.
     applyIdleState();
   }
   if (idleTimer == null) idleTimer = setTimeout(idleTick, idleMs);
@@ -2099,9 +2143,13 @@ const YT_PROGRESS_SELECTOR = ".ytp-chrome-bottom";
 const YT_PROGRESS_HIDE_CLASS = "vz-idle-hide-progress";
 let ytProgressStyleEl = null;
 
+// **#107 — الوضعُ الحاليّ، من الموضع الواحد.** مُطبَّعٌ عند التحميل، فلا يُعاد
+// تطبيعُه هنا ولا في مسار الإظهار.
+function progressBarMode() { return overlaySettings.progressBarMode || "off"; }
+
 function progressHideActive() {
   if (!extensionActive()) return false;   // #64: الرئيسي ثم الحظر
-  return overlaySettings.hideProgressBar === true && isYouTubeFamilyHost();
+  return progressBarMode() !== "off" && isYouTubeFamilyHost();
 }
 
 // **ورقةٌ تُحقَن مرّة وصنفٌ يُقلَب** — لا حقن/نزع عند كل انتقال: الانتقالات هنا
@@ -2131,6 +2179,10 @@ IDLE_CONSUMERS.progressBar = {
   // وهامشٌ 40 عمودياً **يُثلّث ارتفاعَ منطقته** ⇒ **تغييرُ سلوكٍ قائمٍ لم يُطلب**
   // (قرار 16: يُبلَّغ ولا يُنفَّذ).
   nearPad: () => IDLE_NEAR_PAD_PX,
+  // **#107 — وفي «مخفيّ دائماً» حالُه تتبع موضعَ المؤشّر لا حالةَ المحرّك**،
+  // فيُعلنها. ⛔ **وفي `idle` لا يُعلنها**: هناك يكفي أن تُقرأ لحظةَ الانتقال —
+  // **فلا يدفع من لم يختر الوضعَ الجديد ثمنَه.**
+  tracksPointer: () => progressBarMode() === "near",
   suspended: () =>
     // ⚠️ **شرطٌ ثالثٌ خرج من كتابة الاختبار لا من التصميم:** المحرّك يبدأ
     // **ساكناً** (المصيدة ٣) — وهو الصواب لزرّنا في #72 فلا يظهر بلا طلب،
@@ -2138,10 +2190,28 @@ IDLE_CONSUMERS.progressBar = {
     // **فوراً وقبل أن تمضي مهلةٌ واحدة**. ⇒ **لا نلمس المضيف قبل أن نرى نشاطاً
     // ولو مرّة** — وهي دلالة «الإطفاء لا يُرجِع حالةً للوراء» في بوّابة #64.
     // **والمستهلكان يختلفان هنا بالضبط، وهذا ما بُني الحدّ المعماريّ لأجله.**
-    idleLastActivityAt === 0 ||
-    // والشرطان البنيويّان — ولا صنف مضيفٍ فيهما
+    //
+    // ⭐⭐ **#107 — والسؤالُ طُرح فقُرئ ولم يُلغَ الشرطُ ولم يُبقَ بلا نظر
+    // (طلب المالك): «مخفيٌّ دائماً» أتشمل ما قبل أوّل نشاط؟ نعم — وهما وضعان لا
+    // وضعٌ واحد.** في `idle` **العلّةُ قائمة**: صفحةٌ لم يحوّم عليها أحدٌ لا تفقد
+    // شريطَها بمبادرةٍ منّا. **وفي `near` تنقلب العلّة نفسُها**: المستخدم **طلب
+    // الإخفاء دائماً**، ⇒ **فالإخفاءُ من أوّل لحظةٍ استجابةٌ لطلبه لا مبادرةً
+    // عليه** — وشرطٌ يُبقي الشريطَ حتى أوّل حركةٍ **يجعل الوضعَ لا يُنفَّذ إلا
+    // بعد أن يفعل المستخدم ما اشترى الوضعَ كي لا يفعله.**
+    // ⇒ **فيبقى بنصّه في `idle`، ويسقط في `near` وحده.**
+    (progressBarMode() !== "near" && idleLastActivityAt === 0) ||
+    // والشرطان البنيويّان — ولا صنف مضيفٍ فيهما.
+    // ⚠️ **ولا يتغيّران بالوضع** (شرط المالك): **«مخفيٌّ دائماً» لا تُلغي
+    // القاعدة** — من أمسك الشريط ليسحب **لا يُخفى تحت يده**، ومن بلغه بـ`Tab`
+    // لا يُخفى من تحته. **والحالان يمرّان بـ`onActive("suspended")` فيُظهران في
+    // الوضعين معاً.**
     idlePointerHeld || focusInside(YT_PROGRESS_SELECTOR),
-  onActive: () => setYtProgressHidden(false),
+  // ⭐ **#107 — السياسةُ هنا لا في المحرّك:** في `near` **يُخفى مع «نشاط»**،
+  // ويُظهر مع «امتناع» أو «مؤشّرٍ على الهدف» ⇒ **لا تُرجعه حركةٌ ولا عجلةٌ ولا
+  // أمرُ مربّع، ويُرجعه القربُ وحده.** وفي `idle` يُظهر في الثلاثة كما كان.
+  // ⚠️ **والقربُ هو منطقةُ #106 نفسُها** — `nearPad` أعلاه، **ولا رقمَ ثانياً في
+  // مسار الإظهار** (شرط المالك: رقمٌ واحد يخدم الحالتين، يُقرأ من موضعه).
+  onActive: (why) => setYtProgressHidden(progressBarMode() === "near" && why === "active"),
   onIdle: () => setYtProgressHidden(true),
   // **إطفاؤه يعني: أعِد شريط المضيف** — نحن أخفيناه فنحن نردّه.
   onDisabled: () => setYtProgressHidden(false)
@@ -2479,8 +2549,9 @@ async function loadOverlaySettings(pre) {
     // شكلُ المفتاح الرئيسي وحده — **والقسم [٤] من `tools/test-master-gate.js`
     // يشترطه هناك**، فخلطُ الشكلين يُطفئ إضافةَ من لم يفتح الإعدادات قط.
     speedBadge: !!o.speedBadge,
-    // #70 — ميزةٌ جديدة، افتراضها مطفأ بالشكل نفسه
-    hideProgressBar: !!o.hideProgressBar,
+    // #70 · #107 — **وضعٌ ثلاثيّ لا مفتاح**، والافتراض `off` بالبناء (الكتلة
+    // المتناظرة تُرجعه حين لا مفتاحَ ولا قديم). ⛔ **ولا `!!` هنا**: القيمةُ نصٌّ.
+    progressBarMode: progressBarModeOf(o),
     // #72 — الزرّ ومفتاحه وسرعته المفضّلة (والقصّ للمفضّلة في `runAction` نفسها)
     speedButton: !!o.speedButton,
     speedButtonPreset: Number(o.speedButtonPreset) > 0 ? Number(o.speedButtonPreset) : 2

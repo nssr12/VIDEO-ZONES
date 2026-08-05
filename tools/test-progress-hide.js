@@ -99,8 +99,13 @@ console.log("\n[4] البوّابة #64 والمفتاح المطفأ افترا
   check("[4] ومحصورةٌ بعائلة يوتيوب", !!gate && /isYouTubeFamilyHost\(\)/.test(gate), gate);
   check("[4] ولا تفحص الحظر بنفسها", !!gate && !/isBlockedHost/.test(gate));
   const loader = body("async function loadOverlaySettings(pre)");
-  check("[4] والمفتاح `!!` مطفأ افتراضاً",
-    !!loader && /hideProgressBar: !!o\.hideProgressBar/.test(loader), loader);
+  // ⚠️ **#107 — صار وضعاً ثلاثيّاً، والافتراضُ `off` بالبناء لا بـ`!!`**:
+  // الكتلةُ المتناظرة تُرجع `"off"` حين لا مفتاحَ ولا قديم. **ولا `!!` هنا**،
+  // فـ`!!"off"` تساوي `true` — **وهي علّةُ أن يكون المفتاح جديداً**.
+  check("[4] والوضع يُقرأ من الكتلة المتناظرة لا بتطبيعٍ ثانٍ",
+    !!loader && /progressBarMode: progressBarModeOf\(o\)/.test(loader), loader);
+  check("[4] ولا `!!` على المفتاح القديم في المُحمِّل",
+    !!loader && !/!!o\.hideProgressBar/.test(loader), loader);
   const entries = fs.readFileSync("tools/test-master-gate.js", "utf8");
   check("[4] وهي مسجَّلة في `ENTRIES`", /function progressHideActive\(\)/.test(entries));
 }
@@ -127,7 +132,7 @@ console.log("\n[5] ⭐ السلوك: يُخفي بالسكون، ويمتنع ت
       isYouTubeFamilyHost: () => true,
       settingsRead: async () => ({ settings: {} }),
       getVideoUnderPointer: () => ({ tagName: "VIDEO" }),
-      overlaySettings: { hideProgressBar: true },
+      overlaySettings: { progressBarMode: "idle" },
       window: { addEventListener: (t, fn) => { (listeners[t] ||= []).push(fn); } },
       document: {
         addEventListener: (t, fn) => { (listeners[t] ||= []).push(fn); },
@@ -207,9 +212,9 @@ console.log("\n[5] ⭐ السلوك: يُخفي بالسكون، ويمتنع ت
     check("[5] ورفع التركيز يعيده إلى حالة المحرّك", hidden() === true);
 
     // وإطفاء المفتاح **يستعيد** الشريط ولا يتركه عالقاً
-    ctx.overlaySettings.hideProgressBar = false;
+    ctx.overlaySettings.progressBarMode = "off";
     vm.runInContext("refreshIdleConsumers()", ctx);
-    check("[5] ⭐ وإطفاء المفتاح يُعيد الشريط — لا إخفاء عالق", hidden() === false);
+    check("[5] ⭐ و«يظهر كالمعتاد» يُعيد الشريط — لا إخفاء عالق", hidden() === false);
 
     // ── [6] ⭐ #106 — منطقةُ الامتناع أوسعُ من الهدف، ومحدودةٌ بالمشغّل ────────
     // **السؤال بلغة المستخدم:** *«هل يكفي أن أقترب من الشريط ليبقى، أم يلزمني أن
@@ -226,7 +231,7 @@ console.log("\n[5] ⭐ السلوك: يُخفي بالسكون، ويمتنع ت
       getBoundingClientRect: () => BAR,
       closest: () => ({ getBoundingClientRect: () => PLAYER })
     });
-    ctx.overlaySettings.hideProgressBar = true;
+    ctx.overlaySettings.progressBarMode = "idle";
     // ⚠️ **المفتاح أُطفئ في السطر أعلاه فالمحرّك مطفأ** — وبلا هذا السطر
     // **يخرج القسم كلُّه أخضرَ عن عمى**: `markIdleActivity` لا تفعل شيئاً،
     // فتبقى الحالُ على آخر ما كانت عليه **فتُقرأ «لم يُخفَ» امتناعاً**.
@@ -255,6 +260,69 @@ console.log("\n[5] ⭐ السلوك: يُخفي بالسكون، ويمتنع ت
       closest: () => ({ getBoundingClientRect: () => PLAYER })
     });
     check("[6] ⭐ وهدفٌ `0×0` لا يُحييه الهامش (قرار 22 يسبقه)", rest(350, 130) === true);
+
+    // ── [8] ⭐ #107 — الأوضاع الثلاثة: ما الذي يُظهره ──────────────────────────
+    // **السؤال بلغة المستخدم:** *«اخترتُ «مخفيّ دائماً» — فهل يعود بحركةٍ أو
+    // بأمرِ مربّع؟ وهل يبقى ممسوكاً وأنا أسحبه؟»*
+    console.log("\n[8] ⭐ #107 — «مخفيّ دائماً»: لا تُرجعه حركةٌ، ويُرجعه القربُ وحده");
+    ctx.document.querySelector = () => ({
+      isConnected: true,
+      getBoundingClientRect: () => BAR,
+      closest: () => ({ getBoundingClientRect: () => PLAYER })
+    });
+    // **`off` ⇒ الميزةُ مُطفأة والشريطُ يعود** — ولا إخفاء عالق
+    ctx.overlaySettings.progressBarMode = "off";
+    vm.runInContext("refreshIdleConsumers()", ctx);
+    check("[8] `off` ⇒ الشريط ظاهر (ولا إخفاء عالق)", hidden() === false);
+
+    // ⭐ **وقبل أوّل نشاط**: في `idle` يبقى الشريط (لا نلمس المضيف بمبادرةٍ منّا)،
+    // **وفي `near` يُخفى** — فالمستخدم طلب «دائماً»، والإخفاء استجابةٌ لا مبادرة.
+    // **ويُقاس على محرّكٍ لم يرَ نشاطاً قط**، لا على واحدٍ أُعيد تصفيرُه بالكلام.
+    const freshEngine = (mode) => {
+      vm.runInContext("idleLastActivityAt = 0; idleState = 'idle'; idlePointerHeld = false;", ctx);
+      ctx.lastPointer.x = null; ctx.lastPointer.y = null;
+      ctx.overlaySettings.progressBarMode = mode;
+      vm.runInContext("refreshIdleConsumers()", ctx);
+      return hidden();
+    };
+    check("[8] ⭐ `idle` قبل أوّل نشاط ⇒ لا يُخفى (الشرط الثالث قائم)",
+      freshEngine("idle") === false);
+    check("[8] ⭐ `near` قبل أوّل نشاط ⇒ يُخفى (وهو المطلوب بعينه)",
+      freshEngine("near") === true);
+
+    // **وبعد نشاطٍ والمؤشّر بعيد ⇒ يبقى مخفيّاً بلا انتظار مهلة**
+    ctx.lastPointer.x = 350; ctx.lastPointer.y = 20;
+    vm.runInContext("markIdleActivity()", ctx);
+    check("[8] ⭐ ونشاطٌ والمؤشّر بعيد ⇒ يبقى مخفيّاً فوراً (لا تُرجعه حركة)",
+      hidden() === true);
+    // **والأمرُ من مربّعٍ نشاطٌ كذلك** — المسار نفسه، فلا استثناء له
+    vm.runInContext("markIdleActivity()", ctx);
+    advance(3000);
+    check("[8] وبعد المهلة كذلك — لا فرق (فالسكونُ لا يُظهر شيئاً هنا)",
+      hidden() === true);
+
+    // ⭐ **ويُرجعه القربُ وحده — بمنطقة #106 نفسِها، بلا رقمٍ ثانٍ**
+    ctx.lastPointer.y = 70;                 // 30px فوق أعلى الشريط
+    vm.runInContext("markIdleActivity()", ctx);
+    check("[8] ⭐ والقربُ (30px فوقه) يُرجعه", hidden() === false);
+    ctx.lastPointer.y = 20;                 // خارج الهامش
+    vm.runInContext("markIdleActivity()", ctx);
+    check("[8] والابتعادُ يُخفيه ثانيةً", hidden() === true);
+
+    // ⭐ **والشرطان البنيويّان لا يُلغيهما الوضع** (شرط المالك): من أمسك الشريط
+    // ليسحب **لا يُخفى تحت يده** ولو كان الوضعُ «مخفيّ دائماً».
+    fire("mousedown", { isTrusted: true, type: "mousedown" });
+    check("[8] ⭐ ومُمسكٌ بالشريط لا يُخفى تحت يده — ولو كان «مخفيّ دائماً»",
+      hidden() === false, { held: vm.runInContext("idlePointerHeld", ctx) });
+    fire("mouseup", {});
+    check("[8] والإفلاتُ يعيده مخفيّاً", hidden() === true);
+    ctx.document.activeElement = { closest: (s) => (s === ".ytp-chrome-bottom" ? {} : null) };
+    vm.runInContext("refreshIdleConsumers()", ctx);
+    check("[8] ⭐ والتركيزُ داخل الشريط يُظهره كذلك (تنقّل لوحة المفاتيح لا ينكسر)",
+      hidden() === false);
+    ctx.document.activeElement = null;
+    vm.runInContext("refreshIdleConsumers()", ctx);
+    check("[8] ورفعُ التركيز يعيده مخفيّاً", hidden() === true);
   }
 }
 

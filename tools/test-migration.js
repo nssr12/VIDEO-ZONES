@@ -70,7 +70,7 @@ function pairedBlock(file, name) {
 (async () => {
   console.log("\n[0] النسختان المقترنتان متطابقتان حرفياً");
   {
-    for (const name of ["baseDomain", "normalizeKeyCombo", "gridAppearance"]) {
+    for (const name of ["baseDomain", "normalizeKeyCombo", "gridAppearance", "progressBarMode"]) {
       const a = pairedBlock("storage.js", name), b = pairedBlock("content.js", name);
       check(`${name}: العلامات موجودة في الملفين`, !!a && !!b);
       check(`${name}: النصّ متطابق حرفياً`, a === b, "انحراف بين storage.js و content.js");

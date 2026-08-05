@@ -228,6 +228,28 @@ function resolveGridAppearance(stored) {
 }
 // ---- END gridAppearance ----
 
+// ⚠️ PAIRED COPY — duplicated verbatim in content.js. Edit both TOGETHER.
+// ---- BEGIN progressBarMode ----
+// #107 — **وضعُ عرضٍ ثالث لا مفتاحٌ ثانٍ.** ثلاثُ حالاتٍ يقرؤها المستخدم في
+// قائمةٍ واحدة: `off` يظهر كالمعتاد · `idle` يختفي بالسكون ويعود بأيّ نشاط ·
+// `near` مخفيٌّ دائماً ولا يعود إلا بقرب المؤشّر.
+// ⛔ **ومفتاحان مستقلّان كانا يُنتجان تركيبةً بلا معنى** (كلاهما مُشغَّل ⇒ أيّهما
+// يفوز؟) — **وهو «موضعان لحقيقةٍ واحدة» في ضابطٍ يراه المستخدم** (قرار المالك).
+//
+// ⭐ **والقراءةُ تحتمل الشكلين ولا تنتظر الهجرة:** `content.js` تعمل عند
+// `document_start` **وقد تسبق أيّ مُهاجر**، **وجهازٌ بنسخةٍ قديمة قد يُعيد كتابة
+// المفتاح القديم بعد الهجرة**. ⇒ **الجديدُ يفوز حيث وُجد، والقديمُ يُقرأ ولا يُكتب.**
+// ⚠️ **ولا يُقرأ المفتاح القديم بـ`!!`**: `!!"off"` تساوي `true` — **وهو سببُ
+// أن يكون المفتاح جديداً لا أن يتغيّر نوعُ القديم** (نسخةٌ قديمة كانت ستُشغّل
+// الميزةَ على من أطفأها).
+const PROGRESS_BAR_MODES = ["off", "idle", "near"];
+function progressBarModeOf(overlay) {
+  const o = overlay || {};
+  if (PROGRESS_BAR_MODES.includes(o.progressBarMode)) return o.progressBarMode;
+  return o.hideProgressBar === true ? "idle" : "off";
+}
+// ---- END progressBarMode ----
+
 const SP_PREFIX = "sp:";
 const SYNC_ITEM_LIMIT = 8192;    // chrome.storage.sync.QUOTA_BYTES_PER_ITEM
 const SYNC_TOTAL_LIMIT = 102400; // chrome.storage.sync.QUOTA_BYTES
@@ -466,11 +488,41 @@ function migrateZoneActionsInto(settings) {
 
 // نسخة التخزين من التحويل نفسه: تقرأ، تحوّل، ولا تكتب إلا إن تغيّر شيء.
 // التثبيت الجديد لا مفتاح `settings` عنده أصلاً ⇒ قراءة واحدة وصفر كتابة.
-async function migrateZoneActions() {
-  const { settings } = await chrome.storage.sync.get({ settings: null });
+async function migrateZoneActions(pre) {
+  const settings = pre !== undefined ? pre : (await chrome.storage.sync.get({ settings: null })).settings;
   if (!settings || typeof settings !== "object") return { ok: true, migrated: 0 };
   if (!migrateZoneActionsInto(settings)) return { ok: true, migrated: 0 };
 
+  const written = await safeSyncSet({ settings });
+  if (!written.ok) return { ok: false, reason: "write", message: written.message };
+  return { ok: true, migrated: 1 };
+}
+
+// ── #107 — بذرةُ الوضع الثلاثيّ من المفتاح المنطقيّ القديم ────────────────────
+// ⭐⭐ **بوّابتُها الوجودُ لا القيمة** (قرار المالك 2026-08-05، وقرار 97):
+// **`progressBarMode` موجودٌ ⇒ لا تُبذَر ثانيةً، مهما كان القديمُ حاضراً.**
+// ⛔ **وشرطٌ على القيمة كان سيُصيب اختيارَ المستخدم:** `"off"` **قيمةٌ اختارها
+// مستخدم**، وجهازٌ بنسخةٍ قديمة قد يُعيد كتابة `hideProgressBar: true` بعد
+// الهجرة ⇒ **فبوّابةٌ تسأل «أهي بقيمةٍ تُشبه ما نبذره؟» تُعيد البذر على كلّ من
+// اختار «مطفأ»** — **وهي عائلةُ «الصفرُ لا يُصدَّق حتى يُفصل مصدره» في الهجرات:
+// «اختارها» و«لم تُكتب قط» تطبعان القيمة نفسها.**
+//
+// **والبذرة:** `true ⇒ "idle"` وغيرُه `⇒ "off"`. ⛔ **ولا تُنتج الهجرةُ `"near"`
+// أبداً** — **لا أحد طلبه**، وميزةٌ تُشغَّل بلا طلب هي ما نمنعه في كل مفتاح جديد.
+// **والقديمُ يُحذف** — والانحدارُ على جهازٍ قديم إلى **«مطفأ»**، ⇒ **وميزةٌ
+// تُفقَد أهونُ من ميزةٍ تُشغَّل على من أطفأها** (حجّةُ القبول، قرار المالك).
+async function migrateProgressBarMode(pre) {
+  const settings = pre !== undefined ? pre : (await chrome.storage.sync.get({ settings: null })).settings;
+  if (!settings || typeof settings !== "object") return { ok: true, migrated: 0 };
+  const o = settings.overlay;
+  if (!o || typeof o !== "object") return { ok: true, migrated: 0 };
+  if (!Object.prototype.hasOwnProperty.call(o, "hideProgressBar")) return { ok: true, migrated: 0 };
+  // **الوجود وحده يمنع البذر — والحذفُ يقع في الحالين** كي لا يبقى مفتاحٌ ميّت
+  // يعود فيُهاجَر أبداً.
+  if (!Object.prototype.hasOwnProperty.call(o, "progressBarMode")) {
+    o.progressBarMode = o.hideProgressBar === true ? "idle" : "off";
+  }
+  delete o.hideProgressBar;
   const written = await safeSyncSet({ settings });
   if (!written.ok) return { ok: false, reason: "write", message: written.message };
   return { ok: true, migrated: 1 };
@@ -481,6 +533,17 @@ async function migrateZoneActions() {
 // جاء ثانياً وجد العمل منتهياً فلم يكتب شيئاً.
 async function migrateAll() {
   const profiles = await migrateSiteProfiles();
-  const zones = await migrateZoneActions();
-  return { ok: profiles.ok !== false && zones.ok !== false, profiles, zones };
+  // ⭐ **#107 — قراءةٌ واحدة تخدم جزأي `settings`، ولا تنمو بعدد الأجزاء.**
+  // **الحارس قاسها** (`test-sw-migration`: «قراءتان فقط») **فأمسك النموّ في
+  // يومه** — وجزءٌ ثالثٌ يقرأ لنفسه كان سيجعلها ثلاثاً، **والخامسُ خمساً**.
+  // ⇒ **وهو البند #13 نفسُه** (بدءٌ بقراءةٍ واحدة بدل إحدى عشرة) **مطبَّقاً على
+  // الهجرة.** ⚠️ **والكائنُ نفسُه يُمرَّر إلى الجزأين**، فكتابةُ الثاني تحمل
+  // تعديلَ الأوّل ولا تطمسه.
+  const { settings } = await chrome.storage.sync.get({ settings: null });
+  const zones = await migrateZoneActions(settings);
+  const progressMode = await migrateProgressBarMode(settings);
+  return {
+    ok: profiles.ok !== false && zones.ok !== false && progressMode.ok !== false,
+    profiles, zones, progressMode
+  };
 }

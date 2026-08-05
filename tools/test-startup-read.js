@@ -50,7 +50,19 @@ const LOADERS = [
   { fn: "loadSiteProfile",            state: ["siteProfile"] }
 ];
 
-const SOURCE = [extract("settingsRead"), ...LOADERS.map((l) => extract(l.fn)), extract("ensureZonesDefaults")].join("\n\n");
+// ⚠️ **#107 — والكتلة المتناظرة تُؤخذ بعلامتيها من المنتَج، لا تُسنَد نظيرةً في
+// السياق**: `loadOverlaySettings` تنادي `progressBarModeOf`، **وسندٌ يكتب نظيرَه
+// بيده يقيس نظيرَه لا منتَجَنا** (قرار 47). **وغيابُها يرفع `ReferenceError`
+// حقيقياً — وقد رفعه فعلاً في أوّل تشغيلة، فأمسك الحارسُ اعتمادَ المُحمِّل الجديد.**
+function pairedBlock(name) {
+  const a = SRC.indexOf(`// ---- BEGIN ${name} ----`);
+  const b = SRC.indexOf(`// ---- END ${name} ----`, a);
+  if (a === -1 || b === -1) throw new Error(`الكتلة المتناظرة ${name} غير موجودة`);
+  return SRC.slice(a, b);
+}
+
+const SOURCE = [pairedBlock("progressBarMode"), extract("settingsRead"),
+  ...LOADERS.map((l) => extract(l.fn)), extract("ensureZonesDefaults")].join("\n\n");
 
 // A populated store: defaults would hide a loader that reads the wrong key.
 const HOST = "example.com";

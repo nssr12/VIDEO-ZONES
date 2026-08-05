@@ -322,7 +322,8 @@ const check = (n, c, x) => c ? (pass++, console.log("  ✅ " + n))
     const failureText = (r) => (typeof ctx.migrationFailureText === "function" ? ctx.migrationFailureText(r) : "");
 
     check("القارئ وجد أجزاء migrateAll", parts.length >= 2, parts);
-    check("وهي profiles و zones", JSON.stringify(parts) === JSON.stringify(["profiles", "zones"]), parts);
+    check("وهي profiles و zones و progressMode",
+      JSON.stringify(parts) === JSON.stringify(["profiles", "zones", "progressMode"]), parts);
 
     // ⚠️ فشل هذا التأكيد يعني أن جزء هجرة أُضيف إلى migrateAll بلا نصّ رسالته
     // في options.js — أضِف النصّ، لا تُعدّل التأكيد.
