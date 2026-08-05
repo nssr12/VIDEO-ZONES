@@ -50,8 +50,12 @@ export default [
   { files: ["content.js", "yt_quality_main.js"],
     languageOptions: { sourceType: "script", ecmaVersion: 2023, globals: BROWSER } },
   ...pageConfigs,
-  // مِجَسّاتُ اللصق تعيش في صفحة المضيف — وتُعلن ذلك في رأسها
-  { files: ["tools/report-*.js", "tools/probe-70-*.js", "tools/force-sync-failure.js"],
+  // مِجَسّاتُ اللصق تعيش في صفحة المضيف — وتُعلن ذلك في رأسها.
+  // ⛔ **وكانت `probe-70-*` بعينها** ⇒ **قائمةٌ تحرس ما فيها وتُفلت ما يُضاف**،
+  // **فأفلتت `probe-108-button.js` يومَ وُلد** (2026-08-06). ⇒ **وُسِّعت بالشكل
+  // لا بالاسم** (`probe-*`): **مِجَسُّ لصقٍ جديد يدخل التصنيف بنفسه** — وهو درس
+  // «اجعل الخطأ مستحيلاً بموضع واحد بدل أن تُحصيه في قائمة» (قرار 16ج).
+  { files: ["tools/report-*.js", "tools/probe-*.js", "tools/force-sync-failure.js"],
     languageOptions: { sourceType: "script", ecmaVersion: 2023, globals: { ...BROWSER, ...DEVTOOLS } } },
   // رِكازُ العقدة
   { files: ["tools/**/*.mjs"],

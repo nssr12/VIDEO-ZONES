@@ -21,6 +21,10 @@
   const need = ["filterButtonActive", "speedBtnVideo", "videoOwnsControls",
                 "playerScopeForVideo", "speedBtnHostSlot", "speedBtnPlacement"];
   const missing = need.filter((n) => typeof globalThis[n] !== "function");
+  // ⚠️ **وتُؤخذ بأسمائها من العالم لا تُنادى مباشرةً** — فهي دوالُّ سكربت المحتوى
+  // **ولا وجودَ لها في ملفّ المِجَسّ**: نداءٌ مباشر **يُحمّر `lint-names.mjs` بحقّ**
+  // (اسمٌ يُستعمل حيث لا يُحلّ)، **والحارسُ لا يُضعَّف ليمرّ عليه كودُنا.**
+  const P = Object.fromEntries(need.map((n) => [n, globalThis[n]]));
   if (missing.length) {
     console.log(`${MARK} ⛔ **لا قياس** — السياق ليس سياق الإضافة (غائب: ${missing.join(", ")}).\n` +
       "   بدّل السياق من قائمة أعلى الكونسول إلى اسم الإضافة، ثمّ أعِد اللصق.");
@@ -36,23 +40,23 @@
   const out = { url: location.href.slice(0, 90) };
 
   // ① البوّابة والمفتاح
-  out["١_المفتاح"] = filterButtonActive();
+  out["١_المفتاح"] = P.filterButtonActive();
 
   // ② الفيديو الذي يُبنى له
-  const v = speedBtnVideo();
+  const v = P.speedBtnVideo();
   out["٢_فيديو"] = v ? { rect: rect(v), paused: v.paused } : null;
 
   // ③ شرط #94 الموجب
-  out["٣_يملك_أدواته"] = v ? videoOwnsControls(v) : "لا فيديو";
+  out["٣_يملك_أدواته"] = v ? P.videoOwnsControls(v) : "لا فيديو";
 
   // ④ نطاق المشغّل والشريط
-  const scope = v ? playerScopeForVideo(v) : null;
+  const scope = v ? P.playerScopeForVideo(v) : null;
   out["٤_النطاق"] = name(scope);
   const barInScope = scope?.querySelector?.(".ytp-right-controls");
   out["٤ب_الشريط_في_النطاق"] = barInScope ? rect(barInScope) : null;
 
   // ⑤ ما تُرجعه دالّةُ الموضع نفسُها — **وهي القاطعة**
-  const slot = v ? speedBtnHostSlot(v) : null;
+  const slot = v ? P.speedBtnHostSlot(v) : null;
   out["٥_الموضع_المُرجَع"] = slot ? name(slot) : "null ⇒ **سقوطٌ إلى الطبقة**";
 
   // ⑥ الزرّان: أين هما وكيف يُرَيان
@@ -63,10 +67,10 @@
     أيقونة: rect(fb.querySelector("svg")) } : "**غير موجود في الشجرة**";
   out["٦ب_زرّ_السرعة"] = sb ? { أب: name(sb.parentElement), inBar: sb.classList.contains("vzInBar"),
     مخفيّ: sb.classList.contains("vzHidden"), rect: rect(sb) } : "غير موجود";
-  out["٦ج_موضع_السرعة"] = speedBtnPlacement();
+  out["٦ج_موضع_السرعة"] = P.speedBtnPlacement();
 
   // ⑦ حالُ المحرّك — فالزرّ يتبع السكون
-  out["٧_المحرّك"] = typeof vzIdleSnapshot === "function" ? vzIdleSnapshot() : "لا لقطة";
+  out["٧_المحرّك"] = typeof globalThis.vzIdleSnapshot === "function" ? globalThis.vzIdleSnapshot() : "لا لقطة";
 
   // ⑧ ورقة الأنماط: أهي محقونة أصلاً؟
   out["٨_الأنماط"] = !!document.querySelector("style#vz_overlay_css, style[data-vz]") ||
