@@ -663,6 +663,38 @@ measured becomes a public claim.**
 was standing there saying it, the defect was in front of the user, and nobody
 was listening.
 
+### ⭐⭐ "Is it worth the hour?" — answered by measurement, in its second application
+
+**This question will be asked of the condition every single time. The answer is
+recorded here, not in a sweep log, because a log is read once and a condition is
+read forever.**
+
+**2026-08-05, the `2.17.0` sweep. The eight-check gate was green.** The sweep
+alone found `probe-17-coverage` **dead on a throw** — it drives a control that
+#107 had moved — and **its death hid the 22 steps after it.** In the same sweep:
+a hand-written number (`timing === 8`) turned out to live in **two** places; one
+had been fixed and nobody asked whether it had a twin.
+
+⇒ **The condition is not release ceremony. It is the only moment when what
+nothing else runs, runs.**
+
+⚠️ **And the second face, written so nobody proposes merging the two later "to
+save time": the gate does not replace the sweep, and the sweep does not replace
+the gate.** They fail different things and see different things:
+
+| | The eight-check gate | The on-demand sweep |
+|---|---|---|
+| **What it blocks** | the commit | the version |
+| **When** | every commit | every version bump |
+| **What it sees** | local, deterministic contracts | live hosts, real players, whole rigs |
+| **What it cannot see** | anything needing a live host | anything broken between two bumps |
+
+**Measured proof they are not redundant:** the gate was green while a witness lay
+dead (2026-08-05), and the sweep is far too slow and host-dependent to gate a
+commit — its red would become noise and teach people to skip it (#97's warning).
+⇒ **Two conditions, two triggers, two blind spots. Neither is the other's
+economy.**
+
 ## Useful one-liners
 
 ```bash
