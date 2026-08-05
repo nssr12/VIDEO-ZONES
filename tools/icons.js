@@ -21,7 +21,7 @@ const VZ_ICON_ATTRS =
   'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"';
 
 // ما يدخل الكود المشحون — **ويُقاس أنه مستعمَل**
-const VZ_ICONS_SHIPPED = ["speed"];
+const VZ_ICONS_SHIPPED = ["speed", "enhance"];   // #108 — «enhance» لزرّ الفلاتر
 
 const VZ_ICONS = {
   "preview": { ar: "معاينة", d: "<rect x=\"2.2\" y=\"5\" width=\"19.6\" height=\"13\" rx=\"2\"/> <rect x=\"5\" y=\"8\" width=\"5.6\" height=\"4.2\" rx=\"1\"/> <path d=\"M5 15.2h5.6\"/> <path d=\"M12.4 14.4c1.5-2.3 3.2-3.4 5.1-3.4s3.6 1.1 5.1 3.4c-1.5 2.3-3.2 3.4-5.1 3.4s-3.6-1.1-5.1-3.4Z\"/> <circle cx=\"17.5\" cy=\"14.4\" r=\"1.5\"/>" },

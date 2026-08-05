@@ -85,7 +85,12 @@ try {
     settings: {
       enabled: true,
       idle: { ms: 300 },
-      overlay: { autoHideMs: 900, volumeAutoHideMs: 900, enabled: true, hintEnabled: true },
+      // ⭐ **والميزاتُ تُشغَّل هنا لا تُترك على افتراضها** (#111): **ميزةٌ لا
+      // تُشغَّل لا تُقاس** — **وهو ما جعل #108 يمرّ**. **وكلُّ ميزةٍ جديدة تُضاف
+      // إلى هذا السطر يومَ تُشحن، وإلا فحصنا الإطفاء لا الميزة** (قرار 102).
+      overlay: { autoHideMs: 900, volumeAutoHideMs: 900, enabled: true, hintEnabled: true,
+        speedBadge: true, speedButton: true, speedButtonPreset: 2,
+        progressBarMode: "idle", filterButton: true },
       zones: { enabled: true, fullscreenOnly: false,
         wheel: { map: { "5": { up: ["ACTION:SPEED:+0.25"], down: ["ACTION:SPEED:-0.25"] } } } }
     },
@@ -137,6 +142,20 @@ try {
   await c.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 320, y: 320 });
   await c.send("Input.dispatchMouseEvent", { type: "mousePressed", x: 320, y: 320, button: "left", clickCount: 1 });
   await c.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: 320, y: 320, button: "left", clickCount: 1 });
+  // **ولمسُ الميزة نفسِها**: زرُّ الفلاتر يُفتح ويُغلق — فالمسارُ يُنتج الحال
+  const touched = await evalIn(c, `(() => {
+    const b = document.querySelector(".vzFilterBtn");
+    if (!b) return "لا زرّ";
+    b.click();
+    const open = !!document.querySelector(".vzFilterPanel:not(.vzHidden)");
+    const r = document.querySelector(".vzFilterPanel input[type=range]");
+    if (r) { r.value = String(Number(r.value) + Number(r.step || 0.05));
+             r.dispatchEvent(new Event("input", { bubbles: true })); }
+    const filtered = !!(document.querySelector("video") || {}).style?.filter;
+    b.click();
+    return { open, filtered, filter: (document.querySelector("video")||{}).style?.filter || "" };
+  })()`);
+  check("[3ب] ⭐ ولوحةُ الفلاتر تُفتح ويُلمس منزلقُها", touched && touched.open === true, touched);
   await sleep(1500);
 
   const { thrown, logged } = readEvents();

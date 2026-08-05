@@ -437,7 +437,10 @@ console.log("\n[11] ⭐ كل مستهلكٍ يُعلن معنى إطفائه، �
 {
   const RE = /IDLE_CONSUMERS\.[A-Za-z0-9_$]+ = \{[\s\S]*?\n\};/g;
   const decl = SRC.match(RE) || [];
-  check("[11] مستهلكان مسجَّلان", decl.length === 2, "العدد " + decl.length);
+  // ⚠️ **العددُ يتبع السجلّ ولا يُثبَّت بيد** (قرار 34): صار ثلاثةً بـ#108، **وما
+  // يحرسه التأكيدُ ليس عددَهم بل أن لكلٍّ إعلانَه** — فالعددُ هنا حارسُ فراغٍ لا
+  // حارسُ رقم: صفرٌ يعني أن المرساة سقطت، لا أن مستهلكاً نقص.
+  check(`[11] المستهلكون مسجَّلون (${decl.length})`, decl.length >= 2, "العدد " + decl.length);
   for (const d of decl) {
     const name = (d.match(/IDLE_CONSUMERS\.([A-Za-z0-9_$]+)/) || [])[1];
     check("[11] " + name + " يُعلن onDisabled", /onDisabled\s*:/.test(d), d.slice(0, 90));
