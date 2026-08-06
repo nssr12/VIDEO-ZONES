@@ -415,18 +415,45 @@ label{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:600;let
 .helpBody code{background:#161c24;padding:1px 5px;border-radius:5px;font-size:12px;direction:ltr;display:inline-block}
 .rename{align-items:center}
 
-/* ── #118 — محرِّرُ شريط الأزرار ───────────────────────────────────────────── */
-.vzBarList{ display:flex; flex-direction:column; gap:8px; }
-.vzBarRow{
-  display:flex; align-items:center; gap:10px;
-  padding:10px 12px; border-radius:10px; cursor:grab;
-  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.12);
+/* ── #118 · #122 — محاكي المشغّل: الشريطُ السفليّ والدرج ──────────────────── */
+/* ⚠️ **`direction: ltr` صراحةً**: صفحتُنا RTL وشريطُ يوتيوب LTR — **وبلا هذا
+   ينقلب معنى «قبل» و«بعد» بين المحرِّر والحقن، فتصير المعاينةُ تكذب.** */
+.vzSim{ direction:ltr; display:flex; flex-direction:column; gap:10px; }
+.vzSimScreen{
+  position:relative; aspect-ratio:16/9; max-height:220px;
+  background:linear-gradient(#1a1a1f,#0d0d10);
+  border:1px solid rgba(255,255,255,.14); border-radius:10px; overflow:hidden;
 }
-/* ⚠️ **حلقةُ تركيزٍ ظاهرة**: الصفُّ يصله `Tab` ويُحرَّك بالسهمين، فإخفاءُ الحلقة
-   يجعل مسارَ لوحة المفاتيح موجوداً ولا يُرى — وهو استبدالُ الوضوح بإخفاء. */
-.vzBarRow:focus-visible{ outline:2px solid #6ea8fe; outline-offset:2px; }
-.vzBarRow.vzBarOff{ opacity:.55; }
-.vzBarGrip{ opacity:.6; font-size:15px; line-height:1; }
+.vzSimHint{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-size:12px; opacity:.35; pointer-events:none;
+}
+/* الشريطُ السفليّ — كشريط يوتيوب: خطُّ تقدّمٍ فوقه وأزرارٌ إلى يمينه */
+.vzSimBar{
+  position:absolute; left:0; right:0; bottom:0; min-height:46px;
+  display:flex; align-items:center; justify-content:flex-end; gap:6px;
+  padding:0 10px 6px; background:linear-gradient(transparent,rgba(0,0,0,.75));
+}
+.vzSimBar::before{
+  content:""; position:absolute; left:10px; right:10px; top:6px; height:3px;
+  border-radius:2px; background:rgba(255,255,255,.28);
+}
+.vzSimTray{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  min-height:52px; padding:8px 10px; border-radius:10px;
+  border:1px dashed rgba(255,255,255,.22); background:rgba(255,255,255,.03);
+}
+.vzSimTrayLbl{ font-size:12px; opacity:.6; }
+.vzSimBtn{
+  font:inherit; color:#fff; cursor:grab;
+  background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.28);
+  border-radius:8px; padding:7px 11px; min-height:34px;
+}
+/* ⚠️ **حلقةُ تركيزٍ ظاهرة**: الزرُّ يصله `Tab` ويُحرَّك بالأسهم — **وإخفاءُ
+   الحلقة يجعل مسارَ لوحة المفاتيح موجوداً ولا يُرى**، وهو استبدالُ الوضوح بإخفاء. */
+.vzSimBtn:focus-visible{ outline:2px solid #6ea8fe; outline-offset:2px; }
+.vzSimBtn.vzSimOff{ opacity:.6; }
+.vzSimHelps{ direction:rtl; display:flex; flex-direction:column; gap:6px; margin-top:10px; }
+.vzSimHelpRow{ display:flex; align-items:center; gap:8px; }
 .vzBarName{ flex:1; }
-.vzBarState{ font-size:12px; opacity:.75; }
-.vzBarLive{ margin:8px 0 0; font-size:12px; opacity:.8; min-height:1em; }
+.vzBarLive{ direction:rtl; margin:2px 0 0; font-size:12px; opacity:.8; min-height:1em; }

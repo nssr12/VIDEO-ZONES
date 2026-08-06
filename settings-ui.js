@@ -492,140 +492,189 @@ const VZ_BAR_BUTTONS = [
     help: "يفتح لوحةَ فلاتر (إضاءة · تباين · تشبّع · جاما · وغيرها). ⚠️ والجاما ليست الإضاءة: الإضاءةُ ترفع كلَّ شيء فتبهت الصورة، والجاما ترفع الظلالَ وحدها ويبقى الأبيضُ مكانه. ⚠️ ولا تُحفظ قيمُ الفلاتر: تزول مع كلّ فيديو." }
 ];
 
-// يبني المحرِّر. `get()` يُرجع القائمة الحاليّة، و`set(list)` يحفظها.
+// ── #122 (المرحلة أ) — **إطارٌ يحاكي المشغّل، لا قائمةٌ رأسيّة** ────────────
+//
+// ⭐ **قرار المالك:** القائمةُ الرأسيّة **تُستبدَل** بإطارٍ يحاكي مشغّل يوتيوب
+// وفيه **شريطٌ أفقيّ سفليّ**: أزرارُنا **تُسحب داخله فتُفعَّل** · **وتُحرَّك فيه
+// فيتغيّر ترتيبُها** · **وتُسحب خارجه فتُطفأ** — **وموضعُها محفوظٌ في الحالين.**
+// ⛔ **ولا تُضاف إلى القائمة: تُستبدَل بها** — **فلا موضعان لحقيقةٍ واحدة.**
+//
+// ⛔ **وأزرارُ يوتيوب لا تدخل هذا الإطار في هذي المرحلة** — تلك المرحلة (ب)،
+// **وهي عرضٌ لا تحكّم**: الـ38 مفتاحاً في Clean Player تبقى **المكانَ الوحيد
+// للتغيير**، **فالإطارُ مرآةٌ لا مصدر.**
+//
+// ⛔⭐ **ومسارُ لوحة المفاتيح شرطٌ (#77) لا يُلغيه المحاكي** — **بل يزداد لزوماً:
+// واجهةُ سحبٍ بلا لوحة مفاتيح تستبدل الوضوحَ بإخفاء.** **والأسهمُ تُحرّك،
+// والمسافةُ تُدخل الزرَّ الشريطَ وتُخرجه، ومنطقةٌ حيّة تقول أين استقرّ وفي أيّ
+// منطقة** — **ولا يُترك ذلك للرسم وحده.**
+//
+// ⚠️ **والشريطُ `direction: ltr` صراحةً** — كما `.grid` و`.vzGrid`: **صفحتُنا
+// عربيّةٌ RTL وشريطُ يوتيوب LTR**، **فبلا التصريح ينقلب معنى «قبل» و«بعد» بين
+// المحرِّر والحقن** ⇒ **معاينةٌ تكذب، وهي ما بُني هذا كلُّه لمنعه.**
+const VZ_SIM_ZONES = { in: "داخل الشريط", out: "خارج الشريط" };
+
 function vzUiBuildBarEditor(doc, root, { get, set } = {}) {
   root.textContent = "";
+
+  const sim = doc.createElement("div");
+  sim.className = "vzSim";
+  const screen = doc.createElement("div");
+  screen.className = "vzSimScreen";
+  const hint = doc.createElement("span");
+  hint.className = "vzSimHint";
+  hint.textContent = "معاينةُ المشغّل";
+  const bar = doc.createElement("div");
+  bar.className = "vzSimBar";
+  bar.dataset.vzZone = "in";
+  bar.setAttribute("role", "listbox");
+  bar.setAttribute("aria-label", "داخل الشريط — بترتيب الظهور");
+  screen.appendChild(hint);
+  screen.appendChild(bar);
+
+  const tray = doc.createElement("div");
+  tray.className = "vzSimTray";
+  tray.dataset.vzZone = "out";
+  tray.setAttribute("role", "listbox");
+  tray.setAttribute("aria-label", "خارج الشريط — لا تظهر في المشغّل");
+  const trayLbl = doc.createElement("span");
+  trayLbl.className = "vzSimTrayLbl";
+  trayLbl.textContent = "خارج الشريط";
+  tray.appendChild(trayLbl);
+
   const live = doc.createElement("p");
   live.className = "vzBarLive";
   live.setAttribute("aria-live", "polite");
   live.setAttribute("role", "status");
-  const listEl = doc.createElement("div");
-  listEl.className = "vzBarList";
-  listEl.setAttribute("role", "listbox");
-  listEl.setAttribute("aria-label", "ترتيب أزرار الشريط");
-  root.appendChild(listEl);
+
+  sim.appendChild(screen);
+  sim.appendChild(tray);
+  root.appendChild(sim);
   root.appendChild(live);
+  const helps = doc.createElement("div");
+  helps.className = "vzSimHelps";
+  root.appendChild(helps);
 
   const meta = (id) => VZ_BAR_BUTTONS.find((b) => b.id === id) || { id, label: id, help: "" };
-  const say = (msg) => { live.textContent = msg; };
+  const say = (m) => { live.textContent = m; };
+  const list = () => (get && get()) || [];
+  const posOf = (id) => list().findIndex((x) => x.id === id) + 1;
 
   function render() {
-    const list = (get && get()) || [];
-    listEl.textContent = "";
-    list.forEach((it, i) => {
+    const l = list();
+    bar.querySelectorAll("[data-vz-bar-id]").forEach((e) => e.remove());
+    tray.querySelectorAll("[data-vz-bar-id]").forEach((e) => e.remove());
+    helps.textContent = "";
+    for (const it of l) {
       const m = meta(it.id);
-      const row = doc.createElement("div");
-      row.className = it.on ? "vzBarRow" : "vzBarRow vzBarOff";
-      row.setAttribute("role", "option");
-      row.setAttribute("data-vz-bar-id", it.id);
-      row.setAttribute("aria-selected", String(!!it.on));
-      row.tabIndex = 0;
-      row.draggable = true;
-      // **الوصفُ يقول الموضعَ والحال معاً** — فقارئُ الشاشة لا يرى الرسم
-      row.setAttribute("aria-label",
-        `${m.label} — الموضع ${i + 1} من ${list.length}، ${it.on ? "ظاهر" : "مخفيّ"}. ` +
-        `السهمان للأعلى والأسفل يحرّكانه، والمسافة تُظهره أو تُخفيه.`);
+      const chip = doc.createElement("button");
+      chip.type = "button";
+      chip.className = it.on ? "vzSimBtn" : "vzSimBtn vzSimOff";
+      chip.dataset.vzBarId = it.id;
+      chip.draggable = true;
+      chip.tabIndex = 0;
+      chip.setAttribute("role", "option");
+      chip.setAttribute("aria-selected", String(!!it.on));
+      chip.textContent = m.label;
+      // **الوصفُ يقول المنطقةَ والموضعَ معاً** — فقارئُ الشاشة لا يرى الإطار
+      chip.setAttribute("aria-label",
+        `${m.label} — ${it.on ? VZ_SIM_ZONES.in : VZ_SIM_ZONES.out}، الموضع ${posOf(it.id)} من ${l.length}. ` +
+        `الأسهمُ تحرّكه، والمسافةُ تُدخله الشريطَ أو تُخرجه منه.`);
+      (it.on ? bar : tray).appendChild(chip);
 
-      const grip = doc.createElement("span");
-      grip.className = "vzBarGrip";
-      grip.setAttribute("aria-hidden", "true");
-      grip.textContent = "⠿";
-
-      const name = doc.createElement("span");
-      name.className = "vzBarName";
-      name.textContent = m.label;
-
-      const state = doc.createElement("span");
-      state.className = "vzBarState";
-      state.textContent = it.on ? "ظاهر" : "مخفيّ";
-
-      row.appendChild(grip);
-      row.appendChild(name);
-      row.appendChild(state);
-      row.appendChild(vzUiHelpButton(doc, `help_bar_${it.id}`, m.label));
+      const hb = vzUiHelpButton(doc, `help_bar_${it.id}`, m.label);
       const body = doc.createElement("p");
       body.className = "vzHelpBody";
       body.id = `help_bar_${it.id}`;
       body.hidden = true;
       body.textContent = m.help;
-
-      listEl.appendChild(row);
-      listEl.appendChild(body);
-    });
-    vzUiWireHelp(doc, listEl);
+      const row = doc.createElement("div");
+      row.className = "vzSimHelpRow";
+      const nm = doc.createElement("span");
+      nm.className = "vzBarName";
+      nm.textContent = m.label;
+      row.appendChild(nm);
+      row.appendChild(hb);
+      helps.appendChild(row);
+      helps.appendChild(body);
+    }
+    vzUiWireHelp(doc, helps);
   }
 
-  const move = (id, delta) => {
-    const list = (get && get()) || [];
-    const i = list.findIndex((x) => x.id === id);
+  const focusChip = (id) => {
+    const el = root.querySelector(`[data-vz-bar-id="${id}"]`);
+    if (el) el.focus();
+  };
+
+  // **الأسهمُ تحرّك في القائمة كلِّها** — فالموضعُ محفوظٌ داخلَ الشريط وخارجَه معاً
+  function move(id, delta) {
+    const l = list();
+    const i = l.findIndex((x) => x.id === id);
     const j = i + delta;
-    if (i === -1 || j < 0 || j >= list.length) return;
-    const next = list.slice();
+    if (i === -1 || j < 0 || j >= l.length) return;
+    const next = l.slice();
     [next[i], next[j]] = [next[j], next[i]];
     set && set(next);
     render();
-    const el = listEl.querySelector(`[data-vz-bar-id="${id}"]`);
-    if (el) el.focus();
-    say(`${meta(id).label}: الموضع ${j + 1} من ${next.length}`);
-  };
+    focusChip(id);
+    const it = next[j];
+    say(`${meta(id).label}: ${it.on ? VZ_SIM_ZONES.in : VZ_SIM_ZONES.out}، الموضع ${j + 1} من ${next.length}`);
+  }
 
-  const toggle = (id) => {
-    const list = (get && get()) || [];
-    const next = list.map((x) => (x.id === id ? { id: x.id, on: !x.on } : x));
+  function setZone(id, on) {
+    const l = list();
+    if (!l.some((x) => x.id === id && x.on !== on)) return;
+    const next = l.map((x) => (x.id === id ? { id: x.id, on } : x));
     set && set(next);
     render();
-    const el = listEl.querySelector(`[data-vz-bar-id="${id}"]`);
-    if (el) el.focus();
-    const now = next.find((x) => x.id === id);
-    // ⭐ **الإطفاءُ يقلب `on` ولا يمحو الترتيب** — ويُقال صريحاً
-    say(`${meta(id).label}: ${now.on ? "ظاهر" : "مخفيّ"} — وموضعُه محفوظ`);
-  };
+    focusChip(id);
+    // ⭐ **والموضعُ يُقال صريحاً مع المنطقة** — فالإطفاءُ يحفظه، وهو سببُ الشكل كلِّه
+    say(`${meta(id).label}: ${on ? VZ_SIM_ZONES.in : VZ_SIM_ZONES.out} — وموضعُه ${posOf(id)} محفوظ`);
+  }
 
-  listEl.addEventListener("keydown", (e) => {
-    const row = e.target && e.target.closest && e.target.closest("[data-vz-bar-id]");
-    if (!row) return;
-    const id = row.getAttribute("data-vz-bar-id");
-    if (e.key === "ArrowUp") { e.preventDefault(); move(id, -1); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); move(id, +1); }
-    else if (e.key === " " || e.key === "Spacebar") { e.preventDefault(); toggle(id); }
+  root.addEventListener("keydown", (e) => {
+    const chip = e.target && e.target.closest && e.target.closest("[data-vz-bar-id]");
+    if (!chip) return;
+    const id = chip.dataset.vzBarId;
+    const on = !chip.classList.contains("vzSimOff");
+    if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); move(id, -1); }
+    else if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); move(id, +1); }
+    else if (e.key === " " || e.key === "Spacebar" || e.key === "Enter") { e.preventDefault(); setZone(id, !on); }
   });
 
-  // ── السحب: يُعيد الترتيب داخل القائمة، والإفلاتُ خارجَها يقلب `on` ─────────
   let dragId = null;
-  listEl.addEventListener("dragstart", (e) => {
-    const row = e.target && e.target.closest && e.target.closest("[data-vz-bar-id]");
-    if (!row) return;
-    dragId = row.getAttribute("data-vz-bar-id");
+  root.addEventListener("dragstart", (e) => {
+    const chip = e.target && e.target.closest && e.target.closest("[data-vz-bar-id]");
+    if (!chip) return;
+    dragId = chip.dataset.vzBarId;
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
   });
-  listEl.addEventListener("dragover", (e) => { if (dragId) e.preventDefault(); });
-  listEl.addEventListener("drop", (e) => {
-    const row = e.target && e.target.closest && e.target.closest("[data-vz-bar-id]");
-    if (!dragId || !row) return;
-    e.preventDefault();
-    const overId = row.getAttribute("data-vz-bar-id");
-    if (overId === dragId) { dragId = null; return; }
-    const list = (get && get()) || [];
-    const from = list.findIndex((x) => x.id === dragId);
-    const to = list.findIndex((x) => x.id === overId);
-    if (from === -1 || to === -1) { dragId = null; return; }
-    const next = list.slice();
-    next.splice(to, 0, next.splice(from, 1)[0]);
-    set && set(next);
-    render();
-    say(`${meta(dragId).label}: الموضع ${to + 1} من ${next.length}`);
-    dragId = null;
-  });
-  // **الإفلاتُ خارج القائمة يقلب `on` ولا يمحو الترتيب** (قرار المالك)
-  root.addEventListener("dragover", (e) => {
-    if (dragId && !(e.target && e.target.closest && e.target.closest(".vzBarList"))) e.preventDefault();
-  });
+  root.addEventListener("dragend", () => { dragId = null; });
+  root.addEventListener("dragover", (e) => { if (dragId) e.preventDefault(); });
   root.addEventListener("drop", (e) => {
     if (!dragId) return;
-    if (e.target && e.target.closest && e.target.closest(".vzBarList")) return;
     e.preventDefault();
     const id = dragId; dragId = null;
-    toggle(id);
+    const overChip = e.target && e.target.closest && e.target.closest("[data-vz-bar-id]");
+    const zoneEl = e.target && e.target.closest && e.target.closest("[data-vz-zone]");
+    if (overChip && overChip.dataset.vzBarId !== id) {
+      const l = list();
+      const from = l.findIndex((x) => x.id === id);
+      const to = l.findIndex((x) => x.id === overChip.dataset.vzBarId);
+      if (from !== -1 && to !== -1) {
+        const next = l.slice();
+        next.splice(to, 0, next.splice(from, 1)[0]);
+        // **والإفلاتُ على زرٍّ يتبنّى منطقتَه كذلك** — فالسحبُ من الدرج إلى الشريط
+        // **فوق زرٍّ فيه** يجب أن يُفعّله، لا أن يُرتّبه في الدرج.
+        const zone = zoneEl ? zoneEl.dataset.vzZone : null;
+        const on = zone ? zone === "in" : next[to].on;
+        set && set(next.map((x) => (x.id === id ? { id, on } : x)));
+        render();
+        focusChip(id);
+        say(`${meta(id).label}: ${on ? VZ_SIM_ZONES.in : VZ_SIM_ZONES.out}، الموضع ${to + 1} من ${next.length}`);
+      }
+      return;
+    }
+    if (zoneEl) setZone(id, zoneEl.dataset.vzZone === "in");
   });
 
   render();
