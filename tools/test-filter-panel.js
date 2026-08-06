@@ -110,13 +110,41 @@ console.log("\n[4] مفتاحٌ واحد يُخزَّن: أيظهر الزرّ �
 {
   const gate = body("function filterButtonActive()");
   check("[4] البوّابة تنادي `extensionActive()`", !!gate && /extensionActive\(\)/.test(gate), gate);
-  check("[4] والمفتاح مطفأ افتراضاً (`=== true`)", !!gate && /filterButton === true/.test(gate), gate);
+  // ⛔⭐ **كان يطابق `filterButton === true` نصّاً في البوّابة** — **والشكل تغيّر
+  // بـ#118** (صارت تقرأ القائمة). ⇒ **والمقصود لم يتغيّر: مطفأٌ افتراضاً.**
+  // **فيُقاس سلوكاً بدل مطابقةٍ على شكل** — **والتغطية أقوى**: مطابقةُ الشكل
+  // تمرّ على `=== true` **ولو كان الافتراضُ مشغَّلاً في مسارٍ آخر**.
+  check("[4] والبوّابة تقرأ القائمة الواحدة لا مفتاحاً مفرداً",
+    !!gate && /barButtonOn\(overlaySettings, "filter"\)/.test(gate), gate);
+  {
+    const vm2 = require("vm");
+    const paired = (() => { const t = fs.readFileSync("content.js", "utf8");
+      const a = t.indexOf("// ---- BEGIN barButtons ----"), b = t.indexOf("// ---- END barButtons ----");
+      return a === -1 || b === -1 ? null : t.slice(a, b); })();
+    const c2 = { console };
+    vm2.createContext(c2);
+    if (paired) vm2.runInContext(paired, c2);
+    const off = (ov) => vm2.runInContext(`barButtonOn(${JSON.stringify(ov)}, "filter")`, c2);
+    check("[4] ⭐ ومطفأٌ افتراضاً سلوكاً: تخزينٌ فارغ ⇒ لا زرّ", paired && off({}) === false);
+    check("[4] وقائمةٌ فيها الزرّ مطفأً ⇒ لا زرّ",
+      paired && off({ barButtons: [{ id: "filter", on: false }] }) === false);
+    check("[4] وقائمةٌ فيها مشغَّلاً ⇒ زرّ",
+      paired && off({ barButtons: [{ id: "filter", on: true }] }) === true);
+    check("[4] ⭐ والقديمُ يُقرأ ولا يُكتب: `filterButton:true` بلا قائمة ⇒ زرّ",
+      paired && off({ filterButton: true }) === true);
+    check("[4] ⭐ وقائمةٌ موجودةٌ تُلغي القديم — فلا يعود مفتاحٌ مهاجَر",
+      paired && off({ filterButton: true, barButtons: [{ id: "speed", on: true }] }) === false);
+  }
   const loader = body("async function loadOverlaySettings(pre)");
   check("[4] والمُحمِّل يقرؤه بـ`!!` (ميزةٌ جديدة لا تُشغَّل بلا طلب)",
     !!loader && /filterButton: !!o\.filterButton/.test(loader), loader);
-  check("[4] وضابطُه في سجلّ الإعدادات", /id: "filterButtonEnabled"/.test(UI));
-  check("[4] وله حقلٌ يكتبه", /filterButtonEnabled:\(s, el\) => \{ s\.overlay\.filterButton = el\.checked; \}/.test(OPTIONS));
-  check("[4] وقارئٌ يملؤه", /if \(id === "filterButtonEnabled"\) return o\.filterButton === true;/.test(OPTIONS));
+  // ⛔⭐ **المسارُ تبدّل بـ#118 والنيّةُ باقية** (قرار 33: تُصحَّح المرساة لا
+  // يُضعَّف التأكيد): **المفتاحُ صار `on` في قائمةٍ مرتَّبة**، فلا ضابطَ مفردٌ في
+  // سجلّ الإعدادات ولا حقلَ له في `TIMING_CONTROLS`. ⇒ **والمطلوبُ نفسُه يُقاس
+  // على المسار الجديد: مُعلَنٌ في سجلّ الأزرار · ويُكتب · ويُملأ.**
+  check("[4] وضابطُه مُعلَنٌ في سجلّ أزرار الشريط", /\{ id: "filter",/.test(UI));
+  check("[4] وله مسارٌ يكتبه", /async function persistBarButtons\(\)[\s\S]{0,400}?barButtons: barList\.map/.test(OPTIONS));
+  check("[4] وقارئٌ يملؤه", /function renderBarButtons\(overlay\)[\s\S]{0,200}?barButtonsOf\(overlay\)/.test(OPTIONS));
   // ⭐ **ولا قيمةَ فلترٍ في التخزين** — الفلتر يزول مع كلّ فيديو
   check("[4] ⭐ ولا قيمةَ فلترٍ تُكتب في التخزين",
     !/vzFilterValues[\s\S]{0,80}safeSyncSet/.test(SRC) && !/filterValues/.test(OPTIONS));

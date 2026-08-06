@@ -235,6 +235,34 @@ async function run(label) {
       timing: document.querySelectorAll("#timingList input").length,
       help: document.querySelectorAll(".vzHelp").length
     }))()`);
+    // ── (٨) ⭐⭐ #118 — **المحرِّرُ يعمل، لا يُرسَم وحسب** ───────────────────
+    // ⛔ **«مرسوم» ليس «يعمل»** — ولوحةٌ حيّةٌ عاطلة مرّت من كلّ ما بنيناه في
+    // #108 (**بلا رميةٍ ولا تحذير وعنصرُها موجودٌ ومرئيّ**). ⇒ **فالشرطُ ينتهي
+    // بأثرٍ في التخزين لا بوجود عنصر** (قرار 109: أرمى؟ · أموجود؟ · أوقع الأثر؟).
+    // ⭐ **والمسارُ المقيس هو مسارُ لوحة المفاتيح** — **وهو شرطُ قبولٍ لا تحسين**:
+    // السحبُ لا يُحاكى بـCDP بثقة، **ولوحةُ المفاتيح هي الطريق الذي وعدنا به.**
+    const barEditor = await evalIn(c, `(async () => {
+      const rows = () => [...document.querySelectorAll("#barEditor [data-vz-bar-id]")]
+        .map((e) => e.getAttribute("data-vz-bar-id"));
+      const before = rows();
+      if (before.length < 2) return { skip: "أقلُّ من صفّين" };
+      const first = document.querySelector("#barEditor [data-vz-bar-id]");
+      first.focus();
+      // ⚠️ التركيزُ الفعليّ لا يُقاس في متصفّحٍ مقطوع الرأس — حدٌّ مُسجَّلٌ عندنا
+      // من قبل (تعليقُ Esc في settings-ui.js). ⇒ فيُقاس ما يُقاس: أنّ الصفَّ
+      // يصله Tab بالبناء (tabIndex === 0) — ولا يُدّعى أكثر.
+      // ⛔ ولا علامةَ اقتباسٍ خلفية في هذي الكتلة: هي قالبٌ نصّيّ، والعلامةُ
+      // تقطعه — وهو الفخُّ المكتوب في content.js، ووقعتُ فيه هنا وأمسكه node.
+      const focusable = first.tabIndex === 0;
+      first.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      await new Promise((r) => setTimeout(r, 500));
+      const after = rows();
+      const st = await chrome.storage.sync.get({ settings: {} });
+      const stored = ((st.settings || {}).overlay || {}).barButtons || null;
+      const live = document.querySelector("#barEditor .vzBarLive");
+      return { before, after, focusable, stored, نطق: live ? live.textContent : null };
+    })()`);
+
     try { c.ws.close(); } catch {}
 
     // ── (٦) **مصدرٌ ثانٍ: لوحة «أخطاء» في `chrome://extensions`** ───────────
@@ -259,7 +287,7 @@ async function run(label) {
       try { x.ws.close(); } catch {}
     }
 
-    return { label, ok: true, errors, loadErrors, nav, sweep, drawn, panel, devMode, derived };
+    return { label, ok: true, errors, loadErrors, nav, sweep, drawn, panel, devMode, derived, barEditor };
   } finally {
     killChrome(chrome);
     await sleep(400);
@@ -288,6 +316,26 @@ check("[٢] القسم يُفتح بالنقر", live.nav?.ok === true, live.nav
 const sw = live.sweep || [];
 console.log(`\n[٣] كلُّ ضابطٍ يُبدَّل ويُقرأ بعده — ${sw.length} ضابطاً`);
 for (const v of sweepVerdicts(sw, live.drawn)) check(v.name, v.ok, v.extra);
+
+// ── [٨] #118 — المحرِّرُ يعمل بلوحة المفاتيح، والأثرُ يصل التخزين ──────────
+{
+  const b = live.barEditor || {};
+  console.log("\n[٨] #118 — محرِّرُ شريط الأزرار: أثرٌ لا رسم");
+  check("[٨] الصفوفُ مرسومةٌ بمعرّفاتها", Array.isArray(b.before) && b.before.length >= 2, b.before);
+  // ⚠️ **يُقاس الوصولُ لا وقوعُ التركيز**: التركيزُ لا يعمل مقطوعَ الرأس، **و«لم
+  // أقس» ليست «قِستُ فوجدت صفراً»** — **والوقوعُ خطوةٌ عند المالك (`م3`).**
+  check("[٨] ⭐ والصفُّ يصله `Tab` بالبناء (`tabIndex=0`، لا `div` أصمّ)",
+    b.focusable === true, b);
+  check("[٨] ⭐⭐ و`↓` يُحرّكه فعلاً",
+    Array.isArray(b.after) && JSON.stringify(b.after) !== JSON.stringify(b.before), b);
+  // ⭐ **والأثرُ في التخزين لا في الرسم** — محرِّرٌ يُحرّك صفّاً ولا يحفظ **أسوأ
+  // من محرِّرٍ لا يتحرّك**: الأوّل يَعِد ويكذب، والثاني يُشتكى منه في دقيقة.
+  check("[٨] ⭐⭐ والترتيبُ الجديد وصل التخزين",
+    Array.isArray(b.stored) && b.stored.length >= 2 &&
+    JSON.stringify(b.stored.map((x) => x.id)) === JSON.stringify(b.after), b.stored);
+  check("[٨] ⭐ والحالُ تُقال في منطقةٍ حيّة (لا بالرسم وحده)",
+    typeof b.نطق === "string" && b.نطق.trim().length > 0, b.نطق);
+}
 
 // ── [٧] #84 — الظهور مُشتقّ: مدخلان مستقلّان، ولا مفتاح حالة ────────────────
 const d = live.derived || {};

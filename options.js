@@ -638,8 +638,46 @@ function buildHostList() {
   const host = VZ_UI_HOSTS[0];
   $("hostSectionTitle").textContent = host.عنوان;
   $("hostSectionDesc").textContent = host.وصف;
-  vzUiBuildList(document, $("hostList"), host.controls);
+  vzUiBuildList(document, $("hostList"), host.controls, (id, liveOnly) => {
+    // **ولا معالجٌ مشترك يبتلع الفروق:** ما له سجلٌّ في `TIMING_CONTROLS` يمرّ
+    // بمساره المحروس بالختم، وما عداه له مستمعُه المربوط أدناه في `init`.
+    if (!TIMING_CONTROLS[id]) return;
+    if (liveOnly) { renderTimingValue(id); return; }
+    persistTiming(id);
+  });
   vzUiWireHelp(document, $("hostList"));
+}
+
+// ── #118 — المحرِّر: يُبنى مرّةً، ويُملأ من التخزين، ويكتب مفتاحاً واحداً ───
+// ⛔ **ولا يُبنى في مسار الرسم** — البناءُ هادمٌ والرسمُ حارس (#69).
+let barEditor = null;
+let barList = [];          // آخرُ ما رُسم — ومصدرُه التخزينُ لا الـDOM
+function buildBarEditor() {
+  barEditor = vzUiBuildBarEditor(document, $("barEditor"), {
+    get: () => barList,
+    set: (next) => { barList = next; persistBarButtons(); }
+  });
+}
+
+function renderBarButtons(overlay) {
+  barList = barButtonsOf(overlay);          // **الكتلةُ المتناظرة، لا تطبيعٌ ثانٍ**
+  if (barEditor) barEditor.render();
+  markRendered("barEditor");
+}
+
+async function persistBarButtons() {
+  const el = $("barEditor");
+  if (!el || el.dataset[VZ_RENDERED] !== "1") {
+    showToast("bad", "لم يُحفظ: المحرِّر لم يُرسَم بعد. أعد فتح الصفحة وحاول.");
+    return;
+  }
+  const s = await getSettings();
+  s.overlay = { ...(s.overlay || {}), barButtons: barList.map((x) => ({ id: x.id, on: x.on === true })) };
+  if (!(await saveSettings(s))) return;
+  const tabs = await chrome.tabs.query({});
+  for (const t of tabs) {
+    if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_OVERLAY_SETTINGS" }).catch(() => {});
+  }
 }
 
 function buildSubsList() {
@@ -710,8 +748,9 @@ const TIMING_CONTROLS = {
   idleDuration:       (s, el) => { s.idle = { ...(s.idle || {}), ms: Number(el.value) }; },
   zoneHintEnabled:    (s, el) => { s.overlay.hintEnabled = el.checked; },
   speedBadgeEnabled:  (s, el) => { s.overlay.speedBadge = el.checked; },
-  speedButtonEnabled: (s, el) => { s.overlay.speedButton = el.checked; },
-  filterButtonEnabled:(s, el) => { s.overlay.filterButton = el.checked; },
+  // ⛔ **خرج الثلاثة بـ#118**: مفتاحا الزرّين **صارا `on` في قائمة `barButtons`**
+  // (`persistBarButtons`)، **وسرعةُ النقرة انتقلت إلى قسم يوتيوب** — **نقلُ موضعٍ
+  // لا هجرة**، وكتابتُها في `persistHostControl` أدناه.
   speedButtonPreset:  (s, el) => { s.overlay.speedButtonPreset = Number(el.value); }
 };
 
@@ -739,9 +778,16 @@ function timingValueOf(s, id) {
   return null;
 }
 
+// ⚠️ **يقرأ السجلّين معاً منذ #118**: `speedButtonPreset` **انتقل إلى قسم يوتيوب**
+// (نقلُ موضعٍ لا هجرة) — **وضابطٌ ينتقل يفقد مسارَ رسمه إن ظلّ المسارُ يعرف سجلّاً
+// واحداً**، **فيُرفض حفظُه بالختم (#78) ولا يقول لماذا.** ⇒ **المسارُ يتبع الضابط.**
+function timingSpec(id) {
+  return VZ_UI_TIMING.find((x) => x.id === id) ||
+    VZ_UI_HOSTS.flatMap((h) => h.controls).find((x) => x.id === id) || null;
+}
 function renderTimingValue(id) {
-  const c = VZ_UI_TIMING.find((x) => x.id === id);
-  const el = timingInputs[id];
+  const c = timingSpec(id);
+  const el = $(id);
   if (!c || !el || c.kind !== "range") return;
   const v = Number(el.value);
   const out = $(`${id}Value`);
@@ -757,6 +803,15 @@ function renderOverlayTiming(settings) {
     if (c.kind === "toggle") el.checked = !!v; else el.value = String(v);
     el.dataset[VZ_RENDERED] = "1";
     renderTimingValue(c.id);
+  }
+  // **وما انتقل يُرسم ويُختم من مساره هو** — والختمُ شرطُ الكتابة (#78)
+  for (const id of Object.keys(TIMING_CONTROLS)) {
+    if (VZ_UI_TIMING.some((c) => c.id === id)) continue;
+    const el = $(id);
+    if (!el) continue;
+    el.value = String(timingValueOf(settings, id));
+    el.dataset[VZ_RENDERED] = "1";
+    renderTimingValue(id);
   }
   syncSpeedBadgeRow(timingValueOf(settings, "volumeDuration"));
 }
@@ -1042,6 +1097,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   buildTimingList();
   buildHostList();
   buildSubsList();
+  buildBarEditor();
   uiBuilt = true;         // **بعد الأربعة كلِّها لا بعد بعضها**
   await renderAllFromStorage();
 
@@ -1362,6 +1418,7 @@ async function renderAllFromStorage() {
   renderYtAutoQuality(s.ytAutoQuality);
   renderYtShortsRedirect(s.ytShortsRedirect);
   renderProgressBarMode(s.overlay);
+  renderBarButtons(s.overlay);
   // Don't clobber checkboxes the user is toggling while a save is in flight
   if (!cleanPlayerBusy()) renderCleanPlayer(s.cleanPlayer);
   // Don't interrupt active zone editing
@@ -1447,7 +1504,8 @@ function validateBackup(parsed) {
 const MIGRATION_PART_TEXT = {
   profiles: "تجزئة قواعد المواقع",
   zones: "ترقية أوامر المربّعات",
-  progressMode: "ترقية وضع شريط يوتيوب"
+  progressMode: "ترقية وضع شريط يوتيوب",
+  barButtons: "ترقية ترتيب أزرار الشريط"
 };
 
 function migrationFailureText(result) {

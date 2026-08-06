@@ -188,7 +188,7 @@ console.log("\n[6] ⭐ السلوك: عجلةٌ تغيّر، ونقرةٌ تقل
     const ctx = {
       console,
       extensionActive: () => true,
-      overlaySettings: { speedButton: true, speedButtonPreset: 2 },
+      overlaySettings: { barButtons: [{ id: "speed", on: true }], speedButtonPreset: 2 },
       vzOverlayVideo: video,
       vzSpeedBtn: btn,
       getVideoFromPointerPosition: () => video,
@@ -205,7 +205,12 @@ console.log("\n[6] ⭐ السلوك: عجلةٌ تغيّر، ونقرةٌ تقل
         return true;
       }
     };
+    // ⚠️ **بوّابةُ الزرّ صارت تقرأ القائمة (#118)، وكتلتُها المتناظرة خارج
+    // الشريحة** ⇒ **تُدخَل من المنتَج نفسِه لا نسخةً منه** — نسخةٌ في حارسٍ
+    // تتباعد عن أصلها فتُخضِّر على عطبٍ حيّ.
+    const PAIRED = slice("// ---- BEGIN barButtons ----", "// ---- END barButtons ----");
     vm.createContext(ctx);
+    vm.runInContext(PAIRED, ctx);
     vm.runInContext(FEAT, ctx);
     const ev = () => ({ preventDefault() {}, stopPropagation() {}, deltaY: 0, button: 0 });
 
@@ -234,7 +239,9 @@ console.log("\n[6] ⭐ السلوك: عجلةٌ تغيّر، ونقرةٌ تقل
 
     // والمفتاح مطفأ ⇒ صفر أمر
     actions.length = 0;
-    ctx.overlaySettings.speedButton = false;
+    // ⚠️ **الإطفاءُ من القائمة لا من مفتاحٍ مفرد (#118)** — **والقائمةُ تحمل
+    // الزرَّ وهو مطفأ**، فهو الشكلُ الذي يقع عند المستخدم بعد الهجرة.
+    ctx.overlaySettings.barButtons = [{ id: "speed", on: false }];
     vm.runInContext("speedBtnClick(__e)", Object.assign(ctx, { __e: ev() }));
     vm.runInContext("speedBtnWheel(__e)", Object.assign(ctx, { __e: Object.assign(ev(), { deltaY: -1 }) }));
     check("[6] ومفتاحه مطفأ ⇒ صفر أمر", actions.length === 0, actions);

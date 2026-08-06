@@ -414,3 +414,19 @@ label{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:600;let
   border-inline-start:3px solid var(--accent);border-radius:8px;color:#cdd7e3;font-size:13px}
 .helpBody code{background:#161c24;padding:1px 5px;border-radius:5px;font-size:12px;direction:ltr;display:inline-block}
 .rename{align-items:center}
+
+/* ── #118 — محرِّرُ شريط الأزرار ───────────────────────────────────────────── */
+.vzBarList{ display:flex; flex-direction:column; gap:8px; }
+.vzBarRow{
+  display:flex; align-items:center; gap:10px;
+  padding:10px 12px; border-radius:10px; cursor:grab;
+  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.12);
+}
+/* ⚠️ **حلقةُ تركيزٍ ظاهرة**: الصفُّ يصله `Tab` ويُحرَّك بالسهمين، فإخفاءُ الحلقة
+   يجعل مسارَ لوحة المفاتيح موجوداً ولا يُرى — وهو استبدالُ الوضوح بإخفاء. */
+.vzBarRow:focus-visible{ outline:2px solid #6ea8fe; outline-offset:2px; }
+.vzBarRow.vzBarOff{ opacity:.55; }
+.vzBarGrip{ opacity:.6; font-size:15px; line-height:1; }
+.vzBarName{ flex:1; }
+.vzBarState{ font-size:12px; opacity:.75; }
+.vzBarLive{ margin:8px 0 0; font-size:12px; opacity:.8; min-height:1em; }

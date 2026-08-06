@@ -71,7 +71,13 @@ console.log("[1] ضابطٌ واحد ⇒ حقلٌ واحد");
   // أخرى بالشكل نفسِه (#79 · #113) عدَّ 21 والمطلوب 8.** ⇒ ⭐ **مطابقةٌ نصّية
   // تقيس جارَ المطلوب** (قرار 81): السؤالُ «كم ضابطَ توقيت؟» لا «كم إعلانَ ضابط؟».
   // ⇒ **فيُقرأ السجلُّ المقصود بعينه من المُولِّد.**
-  const uiCount = (require("../settings-ui.js").VZ_UI_TIMING || []).length;
+  // ⚠️ **ومنذ #118 يُقرأ السجلّان**: `speedButtonPreset` **انتقل إلى قسم يوتيوب**
+  // (نقلُ موضعٍ لا هجرة) — **والمطلوبُ «لكلّ حقلٍ ضابطٌ ولكلّ ضابطٍ حقل»، لا
+  // «كلُّ الضوابط في سجلٍّ واحد»**. ⇒ **فيتبع المقياسُ الضابطَ حيث انتقل.**
+  const _ui = require("../settings-ui.js");
+  const uiIdsAll = [...(_ui.VZ_UI_TIMING || []).map((c) => c.id),
+                    ...(_ui.VZ_UI_HOSTS || []).flatMap((h) => h.controls).map((c) => c.id)];
+  const uiCount = uiIdsAll.filter((id) => ids.includes(id)).length;
   check(`[1] وفيه ضوابطُ التوقيت (${uiCount})`, ids.length === uiCount && ids.length > 0, { ids: ids.length, uiCount });
   // ⚠️ **مرساةٌ صُحّحت لا تأكيدٌ أُضعف (قرار 33، #77):** الربط انتقل إلى
   // **المُولِّد الواحد** — فلا سطرَ ربطٍ مكتوبٌ بيدٍ لكل ضابط. **والنيّة نفسها
@@ -86,7 +92,9 @@ console.log("[1] ضابطٌ واحد ⇒ حقلٌ واحد");
   check("[1] ولا سطرَ ربطٍ مكتوبٌ بيدٍ لضابط توقيت",
     !/\$\("(gridDuration|volumeDuration|idleDuration|zoneHintEnabled|speedBadgeEnabled|hideProgressBar|speedButtonEnabled|speedButtonPreset)"\)\.addEventListener/.test(OPTIONS));
   // ⭐ وبالعدّ لا بالنظر: لكل حقلٍ ضابطٌ، ولكل ضابطٍ حقل
-  const uiIds = (require("../settings-ui.js").VZ_UI_TIMING || []).map((c) => c.id);
+  // **الطرفان: كلُّ حقلٍ في `TIMING_CONTROLS` وكلُّ ضابطٍ يخصّه في السجلّين.**
+  const uiIds = uiIdsAll.filter((id) => ids.includes(id) ||
+    (_ui.VZ_UI_TIMING || []).some((c) => c.id === id));
   check("[1] ⭐ ولكل حقلٍ ضابطٌ ولكل ضابطٍ حقل",
     ids.every((i) => uiIds.includes(i)) && uiIds.every((i) => ids.includes(i)), { ids, uiIds });
 }
