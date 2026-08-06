@@ -78,9 +78,18 @@ const check = (name, cond, extra) => abstains(name)
     : (fail++, console.log("  ❌ " + name, extra ?? ""));
 
 // صفحةٌ محليّة بفيديو حيّ (canvas ⇒ captureStream) — بلا شبكة ولا مضيف
+// ⚠️⚠️ **شريطٌ مُفتعَلٌ ضيّق، وحدُّه يُكتب قبل أن يُقرأ نتيجةً** (2026-08-07):
+// `.ytp-right-controls` **هو الحقلُ الوحيد الذي يطلبه `speedBtnHostSlot`** —
+// **فنُعطيه إيّاه ولا ندّعي شجرةَ يوتيوب.** ⇒ **وهو ما يجعل مسارَ الحقن في شريطٍ
+// قابلاً للقياس أصلاً**، **و#112 يبقى مفتوحاً: لا مشغّلَ حقيقيّ ولا أنماطَ مضيف.**
+// ⛔ **ولولاه لبقي العطبُ #121 غيرَ مقيسٍ عندنا** — **فقد وقع في الشريط وحدَه،
+// والطبقةُ لا تُرتَّب أصلاً.**
 const PAGE = `<!doctype html><meta charset=utf8><style>
   html,body{margin:0;background:#111} video{width:100vw;height:100vh;object-fit:cover;display:block}
-</style><video id=v autoplay muted playsinline></video><script>
+  #movie_player{position:fixed;inset:0} .ytp-right-controls{position:absolute;right:0;bottom:0;height:40px;display:flex;align-items:center}
+  .ytp-right-controls .fake{width:40px;height:40px}
+</style><div id=movie_player class="html5-video-player"><video id=v autoplay muted playsinline></video>
+<div class="ytp-chrome-bottom"><div class="ytp-right-controls"><button class="fake ytp-button">A</button><button class="fake ytp-button">B</button></div></div></div><script>
   const c=document.createElement("canvas");c.width=960;c.height=540;const x=c.getContext("2d");
   let t=0;(function d(){t++;x.fillStyle="hsl("+(t%360)+",50%,35%)";x.fillRect(0,0,960,540);
   requestAnimationFrame(d);})();document.getElementById("v").srcObject=c.captureStream(30);
@@ -317,6 +326,76 @@ try {
     const v = verdict(mine, other);
     check(`[6] ⭐ «${f.key}» مُشغَّلٌ ⇒ موجودٌ ومرئيٌّ (مقارَناً بجاره)`,
       v.موجود && v.مرئيّ, { mine, other });
+  }
+
+  // ── [٩] ⭐⭐ #121 — **نقرةٌ تُنتج أثرَها بعد إعادة ترتيب** ───────────────
+  // ⛔ **تأكيدُ الحضور لا يكفي** (شرط المالك 2026-08-07، **خامسُ غيابٍ صامت**):
+  // **الزرُّ حاضرٌ ومرئيٌّ ولا يفعل شيئاً عند النقر، بلا رميةٍ ولا تحذير** —
+  // **فمرّ من [3] و[5] و[6] كلِّها.** ⇒ **يلزمه تأكيدُ تفاعل**، **وهو قرار 109
+  // مطبَّقاً على الحدث لا على العنصر.**
+  //
+  // ⛔⭐⭐ **والأثرُ المقيس هو اللوحة لا السرعة — والسببُ مقيسٌ لا اختيار:**
+  // **فيديو هذي الصفحة مصدرُه `MediaStream`** (`canvas.captureStream`)،
+  // **وكروم يتجاهل `playbackRate` عليه** — **مقيسٌ مباشرةً: `v.playbackRate = 2`
+  // تبقى `1`.** ⇒ **فأوّلُ صياغةٍ لهذا الشرط كانت تقيس السرعة فتُحمّر دائماً**،
+  // **وكانت ستتّهم المنتَجَ بخاصيّةٍ في سندها** — **وهي عائلةُ «أداةٌ تُثبت عطباً
+  // لا وجود له»، وأمسكها الشاهدُ الموجب قبل أن تُنشر.**
+  //
+  // ⚠️ **والحالُ تُنتَج بحروفها:** يُعاد الترتيب · **ثمّ يُحرَّك المؤشّر** (فيدور
+  // مسارُ السكون، وهو المُطلِق) · ثمّ يُنقَر. **وبلا الحركة بينهما لا يقع العطب.**
+  if (!WITNESS) {
+    const shot = async (sel) => await evalIn(c, `(() => { const b = document.querySelector(${JSON.stringify(sel)});
+      if (!b) return null; const r = b.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2),
+               w: Math.round(r.width), في_الشريط: b.classList.contains("vzInBar"),
+               أب: (b.parentElement.className || "").slice(0, 24) }; })()`);
+    const panelOpen = async () => await evalIn(c, `!!document.querySelector(".vzFilterPanel:not(.vzHidden)")`);
+    const clickAt = async (p) => {
+      await c.send("Input.dispatchMouseEvent", { type: "mousePressed", x: p.x, y: p.y, button: "left", clickCount: 1 });
+      await sleep(120);
+      await c.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: p.x, y: p.y, button: "left", clickCount: 1 });
+      await sleep(500);
+    };
+    const f0 = await shot(".vzFilterBtn");
+    check("[٩] الزرُّ محقونٌ في شريط المضيف (وإلا لم يُقس مسارُ الترتيب)",
+      f0?.في_الشريط === true, f0);
+
+    // ⭐ **الشاهدُ الموجب قبل أيّ ترتيب** — بلا هذا يكون الأحمرُ عن أداةٍ عمياء
+    // ⚠️ **ويُقاس الانقلابُ لا الفتح**: القسم [7] يترك اللوحةَ مفتوحة، **فشرطٌ
+    // يقول «تُفتح» يقرأ إغلاقاً صحيحاً فشلاً** — **وهو قياسُ حالٍ لم تُنتَج،
+    // وأمسكه الشاهدُ الموجب في أوّل تشغيلة.**
+    let before0 = null;
+    if (f0 && f0.w > 0) {
+      before0 = await panelOpen();
+      await clickAt(f0);
+      const after0 = await panelOpen();
+      check("[٩] ⭐ شاهدٌ موجب: نقرةٌ قبل أيّ ترتيب تقلب اللوحة",
+        after0 !== before0, { before0, after0 });
+      if (after0) await clickAt(f0);   // تُترك مغلقةً قبل الترتيب
+    }
+
+    // إعادةُ ترتيب حقيقيّة: تُقلب القائمةُ في التخزين فيدور مسارُ القراءة
+    await configure(PORT, h.extensionId, { settings: { ...SETTINGS.settings,
+      overlay: { ...SETTINGS.settings.overlay,
+        barButtons: [{ id: "filter", on: true }, { id: "speed", on: true }] } } });
+    await sleep(1200);
+    const f1 = await shot(".vzFilterBtn");
+    if (f1 && f1.w > 0) {
+      // **حركةٌ حقيقيّة بين الترتيب والنقر** — فمسارُ السكون يدور عندها
+      for (let i = 0; i < 6; i++) {
+        await c.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: f1.x + (i % 3), y: f1.y + (i % 2) });
+        await sleep(90);
+      }
+      await clickAt(f1);
+      // ⛔ **فشلُ هذا التأكيد يعني عودةَ #121**: العقدةُ تُنزع وتُعاد بين ضغطتَي
+      // الفأرة فلا يُولَّد `click` — **راجِع `applyBarOrder` ولا تُصلح الاختبار.**
+      const before1 = false;   // تُركت مغلقةً أعلاه، ويُتحقَّق منه لا يُفترض
+      const state = await panelOpen();
+      check("[٩] ⭐⭐ ونقرةٌ عليه بعد إعادة الترتيب تقلب اللوحة فعلاً",
+        state !== before1, { before1, بعد: state });
+    } else {
+      check("[٩] مستطيلُ الزرّ غيرُ صفريّ (وإلا لا يُقاس نقر)", false, f1);
+    }
   }
 
   if (WITNESS) {
