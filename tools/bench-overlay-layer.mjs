@@ -57,7 +57,8 @@ const SETTINGS = {
     overlay: {
       autoHideMs: 900, volumeAutoHideMs: 900, enabled: true, hintEnabled: true,
       speedBadge: false, hideProgressBar: false,
-      speedButton: true, speedButtonPreset: PRESET
+      // ⛔⭐ **الشكلُ المشحون وحدَه — بلا المفتاح القديم** (قرار 121، 2026-08-07)
+      barButtons: [{ id: "speed", on: true }], speedButtonPreset: PRESET
     },
     zones: {
       enabled: true, fullscreenOnly: false,
@@ -237,7 +238,7 @@ async function runOn(label, url, { withExtension = true, asHost = null } = {}) {
     // ── م7: إطفاء المفتاح ⇒ هل يزول؟ (الخطوة 8 في أختها، وشكوى المالك) ──────
     await configure(PORT, h.extensionId, {
       settings: { ...SETTINGS.settings,
-        overlay: { ...SETTINGS.settings.overlay, speedButton: false } }
+        overlay: { ...SETTINGS.settings.overlay, barButtons: [{ id: "speed", on: false }] } }
     });
     await sleep(1200);
     await wiggle(page, Math.round(vr.x + vr.w / 2), Math.round(vr.y + vr.h * 0.8), 2);
@@ -266,7 +267,7 @@ async function runOn(label, url, { withExtension = true, asHost = null } = {}) {
       })()`;
       await configure(PORT, h.extensionId, {
         settings: { ...SETTINGS.settings,
-          overlay: { ...SETTINGS.settings.overlay, hideProgressBar: true, speedButton: false } }
+          overlay: { ...SETTINGS.settings.overlay, hideProgressBar: true, barButtons: [{ id: "speed", on: false }] } }
       });
       await sleep(1200);
       // ── #97 — **المنصّة تُنتج حالها وتتحقّق منها** (قرار 22) ────────────────
@@ -295,7 +296,7 @@ async function runOn(label, url, { withExtension = true, asHost = null } = {}) {
       barIdle.snap = await evalIn(page, SNAP, out.world?.id);
       await configure(PORT, h.extensionId, {          // إطفاء المفتاح والشريط مخفيّ
         settings: { ...SETTINGS.settings,
-          overlay: { ...SETTINGS.settings.overlay, hideProgressBar: false, speedButton: false } }
+          overlay: { ...SETTINGS.settings.overlay, hideProgressBar: false, barButtons: [{ id: "speed", on: false }] } }
       });
       await sleep(1500);
       const barOff = await evalIn(page, BAR);
@@ -315,7 +316,7 @@ async function runOn(label, url, { withExtension = true, asHost = null } = {}) {
       // ── م22 — **ثقبُ صفّ الأزرار**: و#70 مطفأ، أيغيب زرُّنا وجيرانه حاضرون؟
       await configure(PORT, h.extensionId, {
         settings: { ...SETTINGS.settings,
-          overlay: { ...SETTINGS.settings.overlay, hideProgressBar: false, speedButton: true } }
+          overlay: { ...SETTINGS.settings.overlay, hideProgressBar: false, barButtons: [{ id: "speed", on: true }] } }
       });
       await sleep(1200);
       await wiggle(page, Math.round(vr.x + vr.w / 2), Math.round(vr.y + vr.h * 0.75), 3);

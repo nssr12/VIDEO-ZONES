@@ -142,16 +142,6 @@ const VZ_UI_TIMING = [
     مدى: "متفاوت", أين: "مستهلكوه كلُّهم يوتيوبيّون اليوم (شريطُ التقدّم والزرّان)، فخارج يوتيوب لا أثرَ له.",
     label: "كم ينتظر قبل الإخفاء بعد أن تتوقّف الفأرة",
     help: "تُشارَك بين «إخفاء شريط تقدّم يوتيوب» و«زرّ السرعة». ⚠️ وأقلّها عُشر ثانية، ولا تُطفئ شيئاً — الإطفاء بمفتاح الميزة وحده." },
-  { id: "speedButtonEnabled", kind: "toggle", مدى: "مضيف", أين: "يوتيوب و youtube-nocookie (#116).",
-    label: "إظهار زرّ السرعة داخل مشغّل يوتيوب",
-    help: "زرٌّ في طبقتنا لا في شريط يوتيوب: عجلةٌ فوقه تغيّر السرعة ±0.25، ونقرةٌ تنقلك إلى سرعة النقرة. ⚠️ ونقرة اليمين مؤجَّلة حتى يُقاس مسارها (S9)." },
-  { id: "filterButtonEnabled", kind: "toggle", مدى: "مضيف", أين: "يوتيوب و youtube-nocookie (#116).",
-    label: "إظهار زرّ فلاتر الصورة داخل مشغّل يوتيوب",
-    help: "زرٌّ يفتح لوحةَ فلاتر (إضاءة · تباين · تشبّع · جاما · وغيرها). ⚠️ والجاما ليست الإضاءة: الإضاءةُ ترفع كلَّ شيء فتبهت الصورة، والجاما ترفع الظلالَ وحدها ويبقى الأبيضُ مكانه — وهي لتوضيح المقاطع المظلمة. ⚠️ ولا تُحفظ قيمُ الفلاتر: تزول مع كلّ فيديو." },
-  { id: "speedButtonPreset", kind: "range", min: 0.25, max: 4, step: 0.25, unit: "x",
-    مدى: "مضيف", أين: "يتبع زرَّ السرعة، فيوتيوب و youtube-nocookie (#116).",
-    label: "سرعة نقرة الزرّ",
-    help: "نقرةٌ على زرّ السرعة تنقلك إلى هذه السرعة، ونقرةٌ ثانية تُعيد 1x. والعجلة فوقه تتدرّج ±0.25 بلا نقر." }
 ];
 
 // ── البناء ──────────────────────────────────────────────────────────────────
@@ -308,6 +298,11 @@ const VZ_UI_HOSTS = [
         label: "أخفِ الترجمة في معاينات الصفحة الرئيسية",
         help: "تُخفى الترجمة نفسها لا تنسيقها فقط، وفي المعاينات وحدها — صفحة المشاهدة " +
               "ووضع المسرح وملء الشاشة لا تتأثر. ويعمل حتى لو كان تنسيق الترجمة مطفأً." },
+
+    { id: "speedButtonPreset", kind: "range", min: 0.25, max: 4, step: 0.25, unit: "x",
+      مدى: "مضيف", أين: "يتبع زرَّ السرعة، فيوتيوب و youtube-nocookie (#116).",
+      label: "سرعة نقرة الزرّ",
+      help: "نقرةٌ على زرّ السرعة تنقلك إلى هذه السرعة، ونقرةٌ ثانية تُعيد 1x. والعجلة فوقه تتدرّج ±0.25 بلا نقر." },
 
       { id: "cleanPlayerEnabled", kind: "toggle", مدى: "مضيف",
         أين: "يوتيوب — صفحة المشاهدة.",
@@ -475,6 +470,168 @@ function vzUiBuildList(doc, root, list, onChange) {
   return map;
 }
 
+// ── #118 — **محرِّرُ شريط الأزرار: سحبٌ ولوحةُ مفاتيح، وسجلٌّ واحد** ────────
+//
+// ⭐ **الشكل بقرار المالك:** القائمةُ تحمل **كلَّ** الأزرار **ولكلٍّ `on`** ⇒
+// **«الوجودُ في القائمة» ليس التشغيل، والإطفاءُ يحفظ الموضع.** ⇒ **فيسقط فقدُ
+// الحالة** (زرٌّ يُطفأ فيعود إلى الذيل حين يُشغَّل)، **ويبقى مفتاحٌ مخزَّنٌ واحد.**
+//
+// ⛔⭐ **ومسارُ لوحة المفاتيح شرطُ قبولٍ لا تحسين** (#77): **السحبُ إضافةٌ فوقه
+// لا بديلٌ عنه** — **وواجهةٌ لا تُدرَك إلا بالفأرة تستبدل الوضوحَ بإخفاء.**
+// **والحركة `↑`/`↓`، والحال تُقال في منطقةٍ حيّة** (`aria-live`) **لا بالرسم وحده.**
+//
+// ⚠️⚠️ **وحدُّ الترتيب مكتوبٌ في الوسم لأنه مقيس (2026-08-07):** **الترتيبُ يقع
+// في شريط يوتيوب وحدَه.** **وفي طبقتنا الزرّان يتراكبان** — `.vzBtn` كلاهما
+// `position:absolute; right:10px; bottom:10px` ⇒ **مقيسٌ: `سرعة x=682 w=64` و
+// `فلاتر x=702 w=44` وحافّتُهما اليمنى واحدة.** ⇒ **فلا يُوعَد بترتيبٍ هناك**،
+// **وهو بندٌ مسجَّل (#119) لا حالةٌ تُرتَّب.**
+const VZ_BAR_BUTTONS = [
+  { id: "speed",  label: "زرّ السرعة",
+    help: "عجلةٌ فوقه تغيّر السرعة ±0.25، ونقرةٌ تنقلك إلى «سرعة النقرة» أدناه ونقرةٌ ثانية تُعيد 1x. ⚠️ ونقرة اليمين مؤجَّلة حتى يُقاس مسارها (S9)." },
+  { id: "filter", label: "زرّ فلاتر الصورة",
+    help: "يفتح لوحةَ فلاتر (إضاءة · تباين · تشبّع · جاما · وغيرها). ⚠️ والجاما ليست الإضاءة: الإضاءةُ ترفع كلَّ شيء فتبهت الصورة، والجاما ترفع الظلالَ وحدها ويبقى الأبيضُ مكانه. ⚠️ ولا تُحفظ قيمُ الفلاتر: تزول مع كلّ فيديو." }
+];
+
+// يبني المحرِّر. `get()` يُرجع القائمة الحاليّة، و`set(list)` يحفظها.
+function vzUiBuildBarEditor(doc, root, { get, set } = {}) {
+  root.textContent = "";
+  const live = doc.createElement("p");
+  live.className = "vzBarLive";
+  live.setAttribute("aria-live", "polite");
+  live.setAttribute("role", "status");
+  const listEl = doc.createElement("div");
+  listEl.className = "vzBarList";
+  listEl.setAttribute("role", "listbox");
+  listEl.setAttribute("aria-label", "ترتيب أزرار الشريط");
+  root.appendChild(listEl);
+  root.appendChild(live);
+
+  const meta = (id) => VZ_BAR_BUTTONS.find((b) => b.id === id) || { id, label: id, help: "" };
+  const say = (msg) => { live.textContent = msg; };
+
+  function render() {
+    const list = (get && get()) || [];
+    listEl.textContent = "";
+    list.forEach((it, i) => {
+      const m = meta(it.id);
+      const row = doc.createElement("div");
+      row.className = it.on ? "vzBarRow" : "vzBarRow vzBarOff";
+      row.setAttribute("role", "option");
+      row.setAttribute("data-vz-bar-id", it.id);
+      row.setAttribute("aria-selected", String(!!it.on));
+      row.tabIndex = 0;
+      row.draggable = true;
+      // **الوصفُ يقول الموضعَ والحال معاً** — فقارئُ الشاشة لا يرى الرسم
+      row.setAttribute("aria-label",
+        `${m.label} — الموضع ${i + 1} من ${list.length}، ${it.on ? "ظاهر" : "مخفيّ"}. ` +
+        `السهمان للأعلى والأسفل يحرّكانه، والمسافة تُظهره أو تُخفيه.`);
+
+      const grip = doc.createElement("span");
+      grip.className = "vzBarGrip";
+      grip.setAttribute("aria-hidden", "true");
+      grip.textContent = "⠿";
+
+      const name = doc.createElement("span");
+      name.className = "vzBarName";
+      name.textContent = m.label;
+
+      const state = doc.createElement("span");
+      state.className = "vzBarState";
+      state.textContent = it.on ? "ظاهر" : "مخفيّ";
+
+      row.appendChild(grip);
+      row.appendChild(name);
+      row.appendChild(state);
+      row.appendChild(vzUiHelpButton(doc, `help_bar_${it.id}`, m.label));
+      const body = doc.createElement("p");
+      body.className = "vzHelpBody";
+      body.id = `help_bar_${it.id}`;
+      body.hidden = true;
+      body.textContent = m.help;
+
+      listEl.appendChild(row);
+      listEl.appendChild(body);
+    });
+    vzUiWireHelp(doc, listEl);
+  }
+
+  const move = (id, delta) => {
+    const list = (get && get()) || [];
+    const i = list.findIndex((x) => x.id === id);
+    const j = i + delta;
+    if (i === -1 || j < 0 || j >= list.length) return;
+    const next = list.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    set && set(next);
+    render();
+    const el = listEl.querySelector(`[data-vz-bar-id="${id}"]`);
+    if (el) el.focus();
+    say(`${meta(id).label}: الموضع ${j + 1} من ${next.length}`);
+  };
+
+  const toggle = (id) => {
+    const list = (get && get()) || [];
+    const next = list.map((x) => (x.id === id ? { id: x.id, on: !x.on } : x));
+    set && set(next);
+    render();
+    const el = listEl.querySelector(`[data-vz-bar-id="${id}"]`);
+    if (el) el.focus();
+    const now = next.find((x) => x.id === id);
+    // ⭐ **الإطفاءُ يقلب `on` ولا يمحو الترتيب** — ويُقال صريحاً
+    say(`${meta(id).label}: ${now.on ? "ظاهر" : "مخفيّ"} — وموضعُه محفوظ`);
+  };
+
+  listEl.addEventListener("keydown", (e) => {
+    const row = e.target && e.target.closest && e.target.closest("[data-vz-bar-id]");
+    if (!row) return;
+    const id = row.getAttribute("data-vz-bar-id");
+    if (e.key === "ArrowUp") { e.preventDefault(); move(id, -1); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); move(id, +1); }
+    else if (e.key === " " || e.key === "Spacebar") { e.preventDefault(); toggle(id); }
+  });
+
+  // ── السحب: يُعيد الترتيب داخل القائمة، والإفلاتُ خارجَها يقلب `on` ─────────
+  let dragId = null;
+  listEl.addEventListener("dragstart", (e) => {
+    const row = e.target && e.target.closest && e.target.closest("[data-vz-bar-id]");
+    if (!row) return;
+    dragId = row.getAttribute("data-vz-bar-id");
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+  });
+  listEl.addEventListener("dragover", (e) => { if (dragId) e.preventDefault(); });
+  listEl.addEventListener("drop", (e) => {
+    const row = e.target && e.target.closest && e.target.closest("[data-vz-bar-id]");
+    if (!dragId || !row) return;
+    e.preventDefault();
+    const overId = row.getAttribute("data-vz-bar-id");
+    if (overId === dragId) { dragId = null; return; }
+    const list = (get && get()) || [];
+    const from = list.findIndex((x) => x.id === dragId);
+    const to = list.findIndex((x) => x.id === overId);
+    if (from === -1 || to === -1) { dragId = null; return; }
+    const next = list.slice();
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    set && set(next);
+    render();
+    say(`${meta(dragId).label}: الموضع ${to + 1} من ${next.length}`);
+    dragId = null;
+  });
+  // **الإفلاتُ خارج القائمة يقلب `on` ولا يمحو الترتيب** (قرار المالك)
+  root.addEventListener("dragover", (e) => {
+    if (dragId && !(e.target && e.target.closest && e.target.closest(".vzBarList"))) e.preventDefault();
+  });
+  root.addEventListener("drop", (e) => {
+    if (!dragId) return;
+    if (e.target && e.target.closest && e.target.closest(".vzBarList")) return;
+    e.preventDefault();
+    const id = dragId; dragId = null;
+    toggle(id);
+  });
+
+  render();
+  return { render };
+}
+
 // ── التلميح: **الظهور يُشتقّ ولا يُخزَّن** (البند #84، قرار المالك 2026-08-03) ──
 //
 //        ظاهر = (المؤشّر فوقه) **أو** (التركيز عليه)
@@ -519,7 +676,7 @@ function vzUiWireHelp(doc, root) {
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { VZ_IDLE_MIN_MS, VZ_UI_GROUPS, VZ_UI_CLEAN, VZ_UI_TIMING,
-    VZ_UI_HOSTS, VZ_UI_SUBS, VZ_SCOPE,
+    VZ_UI_HOSTS, VZ_UI_SUBS, VZ_SCOPE, VZ_BAR_BUTTONS, vzUiBuildBarEditor,
     vzUiBuildClean, vzUiBuildTiming, vzUiBuildList, vzUiControl,
     vzUiWireHelp, vzUiRow, vzUiHelpButton };
 }

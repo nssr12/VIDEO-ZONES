@@ -52,7 +52,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 //     لماذا.** ⛔ **ولا يرث الشاهدُ حالَ الرِكاز صامتاً، ولا يُعدَّل الرِكازُ
 //     ليُشبه الشاهد** — فذاك يُفرغ #111 من معناه.
 const WITNESS_STATE = {
-  overlay: { filterButton: false },
+  // ⚠️ **وبالشكل المشحون كذلك** (قرار 121): `filterButton: false` **صار لا يعمل**
+  // — `barButtonsOf` **تُرجّح القائمةَ حيث وُجدت**، فمفتاحٌ قديمٌ بجوارها لا يُقرأ.
+  // ⇒ **وحالُ الشاهد تُعلَن بالشكل الذي يعيش فيه المستخدم، وإلا أعلنّا حالاً لا تقع.**
+  overlay: { barButtons: [{ id: "speed", on: true }, { id: "filter", on: false }] },
   لماذا:
     "عطبُ #108 دورةٌ تعيش **داخل `onDisabled`**، و`applyIdleState` لا تناديها " +
     "إلا لمستهلكٍ `!enabled()` ⇒ **المفتاحُ مُشغَّلاً يمنع الدورةَ من الوقوع أصلاً**. " +
@@ -134,9 +137,15 @@ try {
       // إلى هذا السطر يومَ تُشحن، وإلا فحصنا الإطفاء لا الميزة** (قرار 102).
       // ⭐ **وحالُ الشاهد تُطبَّق فوقها ولا تُبدّلها** — `WITNESS_STATE` أعلاه:
       // **الرِكازُ يُشغّل، والشاهدُ يُعلن ما يحتاج إطفاءه وحدَه بسببٍ مكتوب.**
+      // ⛔⭐⭐ **الشكلُ المشحون وحدَه — بلا القديمين** (قرار 121، 2026-08-07):
+      // كان هنا `speedButton: true` و`filterButton: true` ⇒ **فقاس الرِكازُ
+      // مسارَ السقوط إلى القديم، لا الحالَ التي يعيش فيها المستخدم بعد الهجرة**
+      // ⇒ **ومرّ عطبٌ كسر الميزة كسراً كاملاً والبوّابةُ التسعة خضراء.**
+      // ⚠️ **و«بلا القديمين» شرطٌ لا زينة:** كتابتُهما معاً **تُبقي مسارَ السقوط
+      // حيّاً فيستر العطب** — **وهو ما ستره أسبوعاً في رِكازين خضراوين.**
       overlay: { autoHideMs: 900, volumeAutoHideMs: 900, enabled: true, hintEnabled: true,
-        speedBadge: true, speedButton: true, speedButtonPreset: 2,
-        progressBarMode: "idle", filterButton: true,
+        speedBadge: true, speedButtonPreset: 2, progressBarMode: "idle",
+        barButtons: [{ id: "speed", on: true }, { id: "filter", on: true }],
         ...(WITNESS ? WITNESS_STATE.overlay : {}) },
       zones: { enabled: true, fullscreenOnly: false,
         wheel: { map: { "5": { up: ["ACTION:SPEED:+0.25"], down: ["ACTION:SPEED:-0.25"] } } } }

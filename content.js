@@ -1103,6 +1103,50 @@ function progressBarModeOf(overlay) {
 }
 // ---- END progressBarMode ----
 
+// ---- BEGIN barButtons ----
+// #118 — **قائمةٌ مرتَّبة تحمل كلَّ الأزرار، ولكلٍّ `on`.**
+// ⭐⭐ **والوجودُ في القائمة ليس التشغيل** (قرار المالك 2026-08-07): لو كان
+// الوجودُ هو التشغيل **لَمَحا الإطفاءُ الموضعَ** فيعود الزرُّ إلى الذيل حين
+// يُشغَّل ⇒ **فقدُ حالةٍ صامت**. **والحقلان معاً يُسقطانه، ويبقى مفتاحٌ مخزَّنٌ واحد.**
+//
+// ⚠️ **مفتاحٌ جديد لا مُعادُ تصنيف** — وهو درسُ #107 بنصّه: قلبُ نوعِ مفتاحٍ قائم
+// **يُشغّل ميزةً لمن أطفأها على جهازٍ آخر**، لأن نسخةً أقدم تقرأ الشكل القديم.
+// ⇒ **الجديدُ يفوز حيث وُجد، والقديمان يُقرآن ولا يُكتبان.**
+//
+// ⚠️ **والقراءةُ تحتمل الشكلين ولا تنتظر الهجرة:** `content.js` تعمل عند
+// `document_start` **وقد تسبق أيّ مُهاجر**.
+// ⚠️ **وسجلٌّ ناقص يُكمَّل بالترتيب المُعلَن ولا يُسقط زرّاً:** زرٌّ يُشحن غداً
+// **يجده مستخدمُ اليوم غائباً من قائمته** — **فيُلحق بالذيل مُطفأً**، ولا يظهر
+// بلا طلب. ⇒ **وميزةٌ تُفقَد أهونُ من ميزةٍ تُشغَّل على من لم يطلبها.**
+const BAR_BUTTON_IDS = ["speed", "filter"];
+function barButtonsOf(overlay) {
+  const o = overlay || {};
+  const raw = Array.isArray(o.barButtons) ? o.barButtons : null;
+  const seen = new Set();
+  const out = [];
+  if (raw) {
+    for (const it of raw) {
+      const id = it && typeof it === "object" ? it.id : null;
+      if (!BAR_BUTTON_IDS.includes(id) || seen.has(id)) continue;   // قيمةٌ لا نعرفها لا تُقرأ
+      seen.add(id);
+      out.push({ id, on: it.on === true });
+    }
+  }
+  for (const id of BAR_BUTTON_IDS) {
+    if (seen.has(id)) continue;
+    // **بلا سجلٍّ جديد يُقرأ القديمان** — ولا `!!` على قيمةٍ نصّية: كلاهما منطقيّ
+    // بالبناء، والشرطُ `=== true` كي لا تُقرأ قيمةٌ غريبة تشغيلاً.
+    const legacy = id === "speed" ? o.speedButton === true : o.filterButton === true;
+    out.push({ id, on: raw ? false : legacy });
+  }
+  return out;
+}
+function barButtonOn(overlay, id) {
+  const it = barButtonsOf(overlay).find((x) => x.id === id);
+  return !!it && it.on === true;
+}
+// ---- END barButtons ----
+
 let gridAppearance = resolveGridAppearance(null);
 
 function applyGridVars(el) {
@@ -2297,7 +2341,7 @@ const VZ_SPEED_STEP = 0.25;
 
 function speedButtonActive() {
   if (!extensionActive()) return false;   // #64: الرئيسي ثم الحظر
-  return overlaySettings.speedButton === true;
+  return barButtonOn(overlaySettings, "speed");   // #118 — من القائمة لا من مفتاحٍ مفرد
 }
 
 function speedBtnVideo() {
@@ -2384,7 +2428,36 @@ function placeInHostBar(el, video) {
 
 function placeSpeedBtn(video) {
   if (!vzSpeedBtn) return "none";
-  return placeInHostBar(vzSpeedBtn, video);
+  const r = placeInHostBar(vzSpeedBtn, video);
+  applyBarOrder();
+  return r;
+}
+
+// ── #118 — **السجلُّ الواحد للأزرار، والترتيبُ يقع على الحقن لا في معاينة** ──
+// ⭐ **زرٌّ ثالث مدخلٌ واحد هنا** — لا قائمةٌ في المحرِّر وأخرى في الحقن تتباعدان
+// (وهو درسُ `CLEAN_PLAYER_ITEMS`/`CLEAN_PLAYER_OPTIONS` وحارسِهما).
+const BAR_BUTTONS = {
+  speed:  { el: () => vzSpeedBtn,  label: "زرّ السرعة" },
+  filter: { el: () => vzFilterBtn, label: "زرّ الفلاتر" }
+};
+
+// ⛔⭐ **الترتيبُ يُطبَّق على العناصر المحقونة نفسِها** (شرط المالك): معاينةٌ
+// تُظهر ترتيباً والشريطُ يُظهر غيرَه **وعدٌ بما لا يقع**.
+// **والآليّة:** يُمشى على القائمة **بالعكس**، وكلٌّ يُدرَج عند رأس الحاوية ⇒
+// **فأوّلُ القائمة يستقرّ أوّلاً في الشريط**. ⚠️ **ولا يُلمس عنصرٌ ليس في
+// حاويتنا ولا في الشريط** — التحريكُ يقع بين إخوةٍ نملكهم.
+// ⚠️⚠️ **وحدُّه مقيسٌ ومكتوب: في طبقتنا لا يقع ترتيب** — `.vzBtn` كلاهما
+// `position:absolute; right:10px; bottom:10px` ⇒ **يتراكبان** (مقيسٌ 2026-08-07:
+// `سرعة x=682 w=64` و`فلاتر x=702 w=44`، **والحافّة اليمنى واحدة**).
+// ⇒ **فالترتيبُ للشريط وحدَه، وهو بندٌ مسجَّل (#119) لا حالةٌ تُرتَّب.**
+function applyBarOrder() {
+  const list = barButtonsOf(overlaySettings);
+  for (let i = list.length - 1; i >= 0; i--) {
+    const el = BAR_BUTTONS[list[i].id]?.el?.();
+    if (!el || !el.classList.contains("vzInBar")) continue;   // الطبقةُ لا تُرتَّب
+    const slot = el.parentElement;
+    if (slot && slot.firstChild !== el) slot.insertBefore(el, slot.firstChild);
+  }
 }
 
 // #108 — والزرُّ الثاني يمرّ بالمسار نفسِه
@@ -2400,7 +2473,7 @@ function setFilterBtnShown(on) {
     else ensureVideoOverlay(video);
   }
   if (!vzFilterBtn) return;
-  if (on) placeInHostBar(vzFilterBtn, video);
+  if (on) { placeInHostBar(vzFilterBtn, video); applyBarOrder(); }
   vzFilterBtn.classList.toggle("vzHidden", !on);
   if (!on) setFilterPanelOpen(false);            // زرٌّ يختفي ⇒ لوحتُه تُغلق معه
   if (on) startOverlayTracking();
@@ -2547,7 +2620,7 @@ let vzFilteredVideo = null;
 
 function filterButtonActive() {
   if (!extensionActive()) return false;   // #64: الرئيسي ثمّ الحظر
-  return overlaySettings.filterButton === true;
+  return barButtonOn(overlaySettings, "filter");  // #118
 }
 
 function vzFilterDefaults() {
@@ -3054,11 +3127,23 @@ async function loadOverlaySettings(pre) {
     // #70 · #107 — **وضعٌ ثلاثيّ لا مفتاح**، والافتراض `off` بالبناء (الكتلة
     // المتناظرة تُرجعه حين لا مفتاحَ ولا قديم). ⛔ **ولا `!!` هنا**: القيمةُ نصٌّ.
     progressBarMode: progressBarModeOf(o),
-    // #72 — الزرّ ومفتاحه وسرعته المفضّلة (والقصّ للمفضّلة في `runAction` نفسها)
-    speedButton: !!o.speedButton,
     speedButtonPreset: Number(o.speedButtonPreset) > 0 ? Number(o.speedButtonPreset) : 2,
-    // #108 — ميزةٌ جديدة، افتراضها مطفأ بالشكل نفسه (`!!` لا `!== false`)
-    filterButton: !!o.filterButton
+    // ── ⛔⭐⭐ #120 — **الإسقاطُ يحمل القائمةَ محسوبةً مرّةً، ولا مفتاحَ زرٍّ مفرد**
+    // **العطبُ الذي وُلد منه هذا السطر (2026-08-07، عند المالك):** كان هنا
+    // `speedButton: !!o.speedButton` و`filterButton: !!o.filterButton`،
+    // **وهذا الإسقاطُ يُنسَخ حقلاً حقلاً فلم يحمل `barButtons` قط** ⇒
+    // **فبعد أن حذفت الهجرةُ المفتاحين القديمين قرأ المنتَجُ `undefined`** ⇒
+    // **`!!undefined = false` ⇒ لا زرَّ إطلاقاً، والمحرِّرُ يقول «ظاهر»** لأنه
+    // يقرأ التخزينَ مباشرةً. ⇒ ⭐ **«موضعان لحقيقةٍ واحدة» في لحظة الهجرة نفسِها.**
+    //
+    // ⇒ ⛔ **ولم يُعالَج بنسخ المفتاح إلى الإسقاط** (وهو أقربُ سطرٍ إلى اليد):
+    // **ذاك يُصلح العَرَض ويترك كلَّ مفتاحٍ جديدٍ بعده معلَّقاً على سطرٍ يسقط
+    // صامتاً** — **وقد سقط الآن.** ⇒ **بل يُحسب هنا مرّةً من `settings.overlay`
+    // الحقيقيّ، ويقرأ الجميعُ مصدراً واحداً** (قرار 16ج: موضعٌ واحد يجعل الخطأ
+    // مستحيلاً بدل أن يُحصى في قائمة).
+    // ⚠️ **و`barButtonsOf` مُتَحايدة**: تُرجع القائمة كما هي إن وُجدت، **وتبذرها
+    // من القديمين إن غابت** — **فالاستدعاءُ عليها ثانيةً لا يغيّر شيئاً.**
+    barButtons: barButtonsOf(o)
   };
 
   if (!overlaySettings.enabled) hideOverlayNow();

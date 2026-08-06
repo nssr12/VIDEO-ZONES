@@ -61,7 +61,7 @@ function pairedBlock(name) {
   return SRC.slice(a, b);
 }
 
-const SOURCE = [pairedBlock("progressBarMode"), extract("settingsRead"),
+const SOURCE = [pairedBlock("progressBarMode"), pairedBlock("barButtons"), extract("settingsRead"),
   ...LOADERS.map((l) => extract(l.fn)), extract("ensureZonesDefaults")].join("\n\n");
 
 // A populated store: defaults would hide a loader that reads the wrong key.

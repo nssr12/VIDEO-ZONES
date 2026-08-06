@@ -250,6 +250,50 @@ function progressBarModeOf(overlay) {
 }
 // ---- END progressBarMode ----
 
+// ---- BEGIN barButtons ----
+// #118 — **قائمةٌ مرتَّبة تحمل كلَّ الأزرار، ولكلٍّ `on`.**
+// ⭐⭐ **والوجودُ في القائمة ليس التشغيل** (قرار المالك 2026-08-07): لو كان
+// الوجودُ هو التشغيل **لَمَحا الإطفاءُ الموضعَ** فيعود الزرُّ إلى الذيل حين
+// يُشغَّل ⇒ **فقدُ حالةٍ صامت**. **والحقلان معاً يُسقطانه، ويبقى مفتاحٌ مخزَّنٌ واحد.**
+//
+// ⚠️ **مفتاحٌ جديد لا مُعادُ تصنيف** — وهو درسُ #107 بنصّه: قلبُ نوعِ مفتاحٍ قائم
+// **يُشغّل ميزةً لمن أطفأها على جهازٍ آخر**، لأن نسخةً أقدم تقرأ الشكل القديم.
+// ⇒ **الجديدُ يفوز حيث وُجد، والقديمان يُقرآن ولا يُكتبان.**
+//
+// ⚠️ **والقراءةُ تحتمل الشكلين ولا تنتظر الهجرة:** `content.js` تعمل عند
+// `document_start` **وقد تسبق أيّ مُهاجر**.
+// ⚠️ **وسجلٌّ ناقص يُكمَّل بالترتيب المُعلَن ولا يُسقط زرّاً:** زرٌّ يُشحن غداً
+// **يجده مستخدمُ اليوم غائباً من قائمته** — **فيُلحق بالذيل مُطفأً**، ولا يظهر
+// بلا طلب. ⇒ **وميزةٌ تُفقَد أهونُ من ميزةٍ تُشغَّل على من لم يطلبها.**
+const BAR_BUTTON_IDS = ["speed", "filter"];
+function barButtonsOf(overlay) {
+  const o = overlay || {};
+  const raw = Array.isArray(o.barButtons) ? o.barButtons : null;
+  const seen = new Set();
+  const out = [];
+  if (raw) {
+    for (const it of raw) {
+      const id = it && typeof it === "object" ? it.id : null;
+      if (!BAR_BUTTON_IDS.includes(id) || seen.has(id)) continue;   // قيمةٌ لا نعرفها لا تُقرأ
+      seen.add(id);
+      out.push({ id, on: it.on === true });
+    }
+  }
+  for (const id of BAR_BUTTON_IDS) {
+    if (seen.has(id)) continue;
+    // **بلا سجلٍّ جديد يُقرأ القديمان** — ولا `!!` على قيمةٍ نصّية: كلاهما منطقيّ
+    // بالبناء، والشرطُ `=== true` كي لا تُقرأ قيمةٌ غريبة تشغيلاً.
+    const legacy = id === "speed" ? o.speedButton === true : o.filterButton === true;
+    out.push({ id, on: raw ? false : legacy });
+  }
+  return out;
+}
+function barButtonOn(overlay, id) {
+  const it = barButtonsOf(overlay).find((x) => x.id === id);
+  return !!it && it.on === true;
+}
+// ---- END barButtons ----
+
 const SP_PREFIX = "sp:";
 const SYNC_ITEM_LIMIT = 8192;    // chrome.storage.sync.QUOTA_BYTES_PER_ITEM
 const SYNC_TOTAL_LIMIT = 102400; // chrome.storage.sync.QUOTA_BYTES
@@ -528,6 +572,45 @@ async function migrateProgressBarMode(pre) {
   return { ok: true, migrated: 1 };
 }
 
+// ── #118 — بذرةُ قائمة الأزرار من المفتاحين المنطقيّين ──────────────────────
+// ⭐⭐ **بوّابتُها الوجودُ لا القيمة** (قرار 97): `barButtons` **موجودٌ ⇒ لا يُبذَر
+// ثانيةً مهما كان القديمان حاضرين** — **وقائمةٌ كلُّها مطفأةٌ اختيارُ مستخدم**،
+// **وشرطٌ على القيمة يخلط الاختيارَ بالغياب فيُعيد البذر على من أطفأ الزرّين.**
+//
+// ⛔⭐ **والقديمان لا يُحذفان إلا بعد بذرٍ ناجحٍ مُتحقَّقٍ منه** (شرط المالك):
+// **الكتابةُ تُقرأ نتيجتُها، وعلى الفشل يُترك القديمان كما هما** ⇒ **جهازٌ
+// بنسخةٍ أقدم يبقى عاملاً بهما، ولا يُفقد اختيارُ المستخدم في نصف هجرة.**
+// ⚠️ **وهي عكسُ ما فعلته هجرةُ #107** (تحذف ثمّ تكتب): هناك القديمُ منطقيٌّ واحد
+// **وانحدارُه إلى «مطفأ» مقبولٌ مُعلَن**، وهنا **يُفقَد الترتيبُ والتشغيلُ معاً**.
+//
+// **والترتيبُ المبذور هو الترتيبُ الذي كان يراه المستخدم**: `placeInHostBar`
+// كانت تُدرج بـ`insertBefore(el, slot.firstChild)` **فالأخيرُ إدراجاً أوّلٌ**،
+// **ومُرتَّبُ المستهلكين `speed` ثمّ `filter`** ⇒ **فالمرئيّ `filter` ثمّ `speed`.**
+async function migrateBarButtons(pre) {
+  const settings = pre !== undefined ? pre : (await chrome.storage.sync.get({ settings: null })).settings;
+  if (!settings || typeof settings !== "object") return { ok: true, migrated: 0 };
+  const o = settings.overlay;
+  if (!o || typeof o !== "object") return { ok: true, migrated: 0 };
+  // **الوجودُ وحدَه يمنع البذر** — ولا يُنظر إلى قيمةٍ ولا إلى القديمين.
+  if (Object.prototype.hasOwnProperty.call(o, "barButtons")) return { ok: true, migrated: 0 };
+  const hadOld = Object.prototype.hasOwnProperty.call(o, "speedButton") ||
+                 Object.prototype.hasOwnProperty.call(o, "filterButton");
+  if (!hadOld) return { ok: true, migrated: 0 };   // لا قديمَ ⇒ لا شيء يُبذَر، والافتراضُ يكفي
+  o.barButtons = [
+    { id: "filter", on: o.filterButton === true },
+    { id: "speed",  on: o.speedButton === true }
+  ];
+  const written = await safeSyncSet({ settings });
+  if (!written.ok) return { ok: false, reason: "write", message: written.message };
+  // ⭐ **الحذفُ بعد التحقّق من البذر لا معه** — وكتابةٌ ثانية، فإن فشلت بقي
+  // القديمان **مع الجديد**، و`barButtonsOf` تُرجّح الجديد فلا يتناقضان.
+  delete o.speedButton;
+  delete o.filterButton;
+  const cleaned = await safeSyncSet({ settings });
+  if (!cleaned.ok) return { ok: true, migrated: 1, note: "بُذر ولم يُنظَّف القديمان" };
+  return { ok: true, migrated: 1 };
+}
+
 // مدخل الهجرة الوحيد. يستدعيه background.js عند التثبيت والتحديث فيهاجر من لم
 // يفتح صفحة الإعدادات قط (البند #26)، وتستدعيه صفحة الإعدادات أيضاً — وأيّهما
 // جاء ثانياً وجد العمل منتهياً فلم يكتب شيئاً.
@@ -542,8 +625,10 @@ async function migrateAll() {
   const { settings } = await chrome.storage.sync.get({ settings: null });
   const zones = await migrateZoneActions(settings);
   const progressMode = await migrateProgressBarMode(settings);
+  const barButtons = await migrateBarButtons(settings);
   return {
-    ok: profiles.ok !== false && zones.ok !== false && progressMode.ok !== false,
-    profiles, zones, progressMode
+    ok: profiles.ok !== false && zones.ok !== false && progressMode.ok !== false &&
+        barButtons.ok !== false,
+    profiles, zones, progressMode, barButtons
   };
 }
