@@ -2450,13 +2450,38 @@ const BAR_BUTTONS = {
 // `position:absolute; right:10px; bottom:10px` ⇒ **يتراكبان** (مقيسٌ 2026-08-07:
 // `سرعة x=682 w=64` و`فلاتر x=702 w=44`، **والحافّة اليمنى واحدة**).
 // ⇒ **فالترتيبُ للشريط وحدَه، وهو بندٌ مسجَّل (#119) لا حالةٌ تُرتَّب.**
+// ⛔⭐⭐ **العطبُ الذي وُلد منه هذا الشكل (#121، عطبٌ حيّ عند المالك 2026-08-07):**
+// كانت الحلقةُ تمشي بالعكس وتُدرج كلَّ عنصرٍ عند رأس الحاوية، **وحارسُها
+// `slot.firstChild !== el` يفحص الموضعَ الأوّل وحدَه لا موضعَ العنصر** ⇒
+// **فتُنقل كلُّ عقدةٍ في كلّ نداء، ولو كان الترتيبُ صحيحاً سلفاً.**
+// **والمقيس: عقدتان في كلّ نداء، في ثلاثة نداءاتٍ متتالية.**
+//
+// ⇒ ⭐⭐ **وأثرُه عند المستخدم كان في الحدث لا في الرسم:** هذي الدالّة تُنادى من
+// مسار السكون **عند كلّ نشاط** (حركةُ مؤشّرٍ مخنوقةٌ إلى عشر مرّاتٍ في الثانية)
+// ⇒ **فالعقدةُ تُنزع وتُعاد بين `mousedown` و`mouseup`** ⇒ **والمتصفّح لا يُولّد
+// `click` لعنصرٍ لم يبقَ موصولاً بين الضغطتين.** ⇒ **والعجلةُ تنجو لأنها حدثٌ
+// واحد بلا زوج** — **وهو الفاصلُ الذي وصفه المالك بحرفه.**
+// ⇒ ⛔ **ولم يكن فقدَ مستمعات**: `insertBefore` **ينقل ولا ينسخ**، **والمستمعان
+// على العقدة نفسِها** — **ففرضيّةُ النسخ سقطت بسندين مستقلَّين.**
+//
+// ⇒ **والشرط الآن: صفرُ تحويلٍ في الشجرة حين يستقيم الترتيب** — **ويحرسه
+// `tools/test-bar-order.js` بالعدّ لا بالنظر.**
 function applyBarOrder() {
   const list = barButtonsOf(overlaySettings);
-  for (let i = list.length - 1; i >= 0; i--) {
-    const el = BAR_BUTTONS[list[i].id]?.el?.();
-    if (!el || !el.classList.contains("vzInBar")) continue;   // الطبقةُ لا تُرتَّب
-    const slot = el.parentElement;
-    if (slot && slot.firstChild !== el) slot.insertBefore(el, slot.firstChild);
+  const mine = [];
+  for (const it of list) {
+    const el = BAR_BUTTONS[it.id]?.el?.();
+    if (el && el.classList.contains("vzInBar") && el.parentElement) mine.push(el);
+  }
+  if (mine.length < 2) return;              // **واحدٌ لا يُرتَّب، ولا يُلمس**
+  const slot = mine[0].parentElement;
+  if (mine.some((el) => el.parentElement !== slot)) return;   // حاويتان ⇒ لا حكم
+  // **الترتيبُ الحاليّ لعناصرنا وحدَها** — وأزرارُ المضيف بينها لا تُحصى ولا تُمسّ
+  const now = [...slot.children].filter((el) => mine.includes(el));
+  if (now.length === mine.length && now.every((el, i) => el === mine[i])) return;   // ⭐ لا تحويل
+  // ويقع النقلُ مرّةً واحدة حين يتغيّر الترتيب فعلاً: كلٌّ قبل تاليه
+  for (let i = mine.length - 2; i >= 0; i--) {
+    if (mine[i].nextSibling !== mine[i + 1]) slot.insertBefore(mine[i], mine[i + 1]);
   }
 }
 
