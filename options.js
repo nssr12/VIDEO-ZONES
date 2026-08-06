@@ -268,7 +268,12 @@ async function getSettings() {
   // ⚠️ **#71 — والافتراض هنا مطفأ، والشكل مقلوب عمداً:** ميزةٌ جديدة **لا تُشغَّل
   // بلا طلب**، فلا يرى من لم يطلبها حرفاً. الشكلان لا يُوحَّدان.
   if (typeof settings.overlay.speedBadge !== "boolean") settings.overlay.speedBadge = false;
-  if (typeof settings.overlay.speedButton !== "boolean") settings.overlay.speedButton = false;
+  // ⛔⭐ **كان هنا `settings.overlay.speedButton = false`** — **فيُعيد إنشاء
+  // المفتاح الذي حذفته الهجرةُ لتوّها، في كلّ `getSettings()`.** ⇒ **مفتاحٌ
+  // ميّتٌ يُبعث في تخزين المستخدم**، **وأمسكه `test-projection-keys` في أوّل
+  // تشغيلةٍ له** (2026-08-07). ⇒ **والملءُ يقع على المفتاح الحيّ وحدَه.**
+  // ⚠️ **ولا يُملأ بقائمةٍ افتراضية:** `barButtonsOf` **تُكمل الناقص بالبناء**،
+  // **وملءٌ هنا موضعٌ ثانٍ للحقيقة نفسِها** — وهو ما وُلد منه هذا البند كلُّه.
   if (!(Number(settings.overlay.speedButtonPreset) > 0)) settings.overlay.speedButtonPreset = 2;
   // #70 · #72 — مهلة السكون: الحدّ الأدنى صريح، و«صفر» ليست إطفاءً
   settings.idle ||= {};
