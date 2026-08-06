@@ -274,6 +274,68 @@ export async function serveTestPage(port, html = PAGE) {
   return { srv, url: `http://127.0.0.1:${port}/` };
 }
 
+// ── ⭐⭐ صفحتُنا تحت اسم مضيفٍ حقيقيّ — **بلا شبكةٍ ولا DNS** (2026-08-06) ────
+//
+// ⛔ **العلّة، وهي شرطُ بقاء البوّابة:** تضييقُ زرّي #72 و#108 إلى يوتيوب
+// **يُميت خمسةً وعشرين شرطَ قبولٍ في رِكازين من التسعة** — كلاهما يقيس على
+// `localhost`، **والبوّابةُ تفقد كلَّ ما تعرفه عن الزرّين في يومٍ واحد**،
+// **و#112 مفتوحٌ فلا بديلَ ينتظر.** ⇒ **فالاعتراضُ يسبق البوّابة** (قرار المالك).
+//
+// **الآليّة المقيسة:** `Fetch` يوقف الطلبَ **في مرحلة الطلب — قبل الشبكة وقبل
+// DNS** — ونُلبّيه بصفحتنا. ⇒ `location.hostname === "www.youtube.com"`،
+// **وسكربتُ المحتوى يعمل بعلمه**، **وفيديو حيّ**. ✅ **مقيسٌ أربعتُها.**
+//
+// ⛔⭐ **وحدُّه يُكتب في نصّه لأنه سيُقرأ بعد سنة:** **يُزيّف ما تقرؤه البوّابةُ
+// وحدَه — `location.hostname` — لا شجرةَ يوتيوب.** ⇒ **فالزرُّ يسقط إلى طبقتنا
+// كما يفعل محلياً اليوم**، **و#112 يبقى مفتوحاً ولا يُقرأ مغلقاً بهذا.**
+// ⭐ **وهذا ما يميّزه عن محاولات #112 الثلاث:** تلك **زيّفت المشغّل** فأنتجت
+// **ثلاثَ حالاتٍ مختلفة ولا واحدةَ منها حالُ المالك** ⇒ **وهذا يزيّف الحقلَ
+// الوحيد الذي يقرؤه الحكم**، **ولا يدّعي شيئاً عن بقيّة الشجرة.**
+//
+// ⚠️ **و`Runtime.enable` قبل التنقّل لا بعده:** أوّلُ مِجَسٍّ كتبتُه أخّرها
+// **فلم تُجمَع العوالم فطبع «عالمُ الإضافة غائب»** — **و«لا أرى» تطبع ما تطبعه
+// «لا يوجد»** (الشاهد الأوّل في قرار 26). **ولم يُنشر الرقم حتى أُصلح الترتيب.**
+// ⚠️ **والنمطُ مقصورٌ على المضيف المُزيَّف**: `urlPattern` عليه وحده، **فموارد
+// الإضافة تمرّ كما هي** ولا نعترض ما لا يخصّنا.
+export async function openPageAsHost(port, { host = "www.youtube.com", path = "/watch?v=vz",
+                                             html = PAGE } = {}) {
+  const url = `https://${host}${path}`;
+  const tab = await (await fetch(
+    `http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" })).json();
+  const c = await connect(tab.webSocketDebuggerUrl);
+  await c.send("Runtime.enable");                 // ⚠️ قبل التنقّل — انظر أعلاه
+  await c.send("Page.enable");
+  await c.send("Fetch.enable", { patterns: [{ urlPattern: `https://${host}/*`, requestStage: "Request" }] });
+  const body = Buffer.from(html, "utf8").toString("base64");
+  c.ws.addEventListener("message", (e) => {
+    const m = JSON.parse(e.data);
+    if (m.method !== "Fetch.requestPaused") return;
+    const id = m.params.requestId;
+    // **المستندُ ومورِدُ الصوت يُلبّيان، وما عداهما يُرفض** — فلا طلبَ يخرج
+    // إلى الشبكة بحال. ⚠️ **و`/tone.wav` ليس تفصيلاً:** صفحةُ المُساعد تُغذّي
+    // `<video>` منه، **ومنعُه يُنتج فيديو بلا بيانات** ⇒ **مستطيلٌ يُقرأ ولا
+    // يُشغَّل**، **فتُقاس حالٌ لم تُنتَج** (الشاهد الثاني في قرار 26).
+    // **وأُمسك بمِجَسّ القبول قبل أن يدخل رِكازاً** (`فيديو حيّ: false`).
+    if (m.params.resourceType === "Document") {
+      c.send("Fetch.fulfillRequest", { requestId: id, responseCode: 200,
+        responseHeaders: [{ name: "content-type", value: "text/html; charset=utf-8" }], body });
+    } else if (/\/tone\.wav/.test(m.params.request?.url || "")) {
+      c.send("Fetch.fulfillRequest", { requestId: id, responseCode: 200,
+        responseHeaders: [{ name: "content-type", value: "audio/wav" }],
+        body: WAV.toString("base64") });
+    } else {
+      // ⛔ **يُلبّى فارغاً ولا يُرفض** — `failRequest` **يطبع خطأ كونسول**
+      // (`ERR_BLOCKED_BY_CLIENT`) **فيُحمّر رِكازاً شرطُه «صفر خطأ كونسول»**،
+      // ⇒ **أداةُ القياس تُنتج العَرَضَ الذي تقيسه** (قرار 111 · 116).
+      // **وأُمسك في أوّل تشغيلةٍ للرِكاز لا بعد أسابيع.**
+      c.send("Fetch.fulfillRequest", { requestId: id, responseCode: 200,
+        responseHeaders: [{ name: "content-type", value: "text/plain" }], body: "" });
+    }
+  });
+  await c.send("Page.navigate", { url });
+  return { c, url };
+}
+
 // **الأثر الفعليّ**: عجلة فوق الفيديو ⇒ عناصر overlay في شجرة الصفحة **ومستوى
 // صوت يتغيّر**. الحدث يُرسَل **من الصفحة** لا بـ`Input.dispatchMouseEvent`:
 // سكربت المحتوى يستقبل أحداث الصفحة، والإرسال بـCDP بنوع `mouseWheel` كان أحد

@@ -29,7 +29,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
 import http from "node:http";
-import { launch, openPage, connect, evalIn, contentWorld, configure, killChrome, waitPortFree, ROOT, EXT_NAME }
+import { launch, openPageAsHost, connect, evalIn, contentWorld, configure, killChrome, waitPortFree, ROOT, EXT_NAME }
   from "./ext-harness.mjs";
 
 const PORT = 9793, HTTP = 8893;
@@ -146,7 +146,12 @@ try {
   const seeded = await configure(PORT, h.extensionId, SETTINGS);
   check("[0] الإعدادات كُتبت قبل الفتح", seeded.ok !== false, seeded);
 
-  const c = await openPage(PORT, `http://localhost:${HTTP}/`);
+  // ⛔⭐ **تحت اسم يوتيوب، لا على `localhost`** (2026-08-06، قبل بوّابة الزرّين):
+  // زرّا #72 و#108 صارا يوتيوبيَّين، **وشرطُ حضورٍ يقيس على مضيفٍ لا يظهران عليه
+  // شرطٌ ميّت** — **وخمسةٌ منها هنا.** ⇒ **الاعتراضُ يسبق البوّابة** (قرار المالك).
+  // ⚠️ **والمُزيَّفُ الاسمُ وحدَه**: الصفحةُ صفحتُنا، **ولا شجرةَ يوتيوب** ⇒
+  // **الزرُّ يسقط إلى طبقتنا كما اليوم، و#112 يبقى مفتوحاً ولا يُقرأ مغلقاً بهذا.**
+  const { c } = await openPageAsHost(PORT, { html: PAGE });
 
   // **كلُّ رميةٍ وكلُّ خطأ كونسول، من العوالم كلِّها** — لا من عالمٍ نختاره
   // **الأحداث تُقرأ من `c.events` — واجهةُ السند القائمة**، ولا واجهةَ ثانية تُخترع.
