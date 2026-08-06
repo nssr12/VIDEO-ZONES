@@ -1425,7 +1425,22 @@ function applyCleanPlayerCSS() {
     cleanPlayerStyleEl.remove();
     cleanPlayerStyleEl = null;
   }
-  if (!cleanPlayerSettings.enabled || !isYouTubeFamilyHost() || !extensionActive()) return;
+  // ── #114 — **بوّابةٌ واحدة للجودة و Clean Player، بعد قياسٍ لا قبله** ──────
+  // ⛔ **كان هنا `isYouTubeFamilyHost()`** والجودةُ على `isYouTubeHost()` —
+  // **بوّابتان متفاوتتان لسلوكٍ واحد**، وكشفه جردُ 2026-08-06.
+  // ⇒ **والقاعدة (قرار المالك): لا تُوحَّد قبل القياس** — فقِيس أوّلاً **أثمّة
+  // حالٌ يفترقان فيها فعلاً؟** والفرقُ كلُّه في `youtube-nocookie.com`:
+  //   · `youtube-nocookie.com/watch?v=…` ⇒ **404** · و`/` ⇒ **404**
+  //   · و`/embed/…` ⇒ **200** ⇒ **فالنطاقُ لا يخدم إلا التضمين** (مقيس 2026-08-06).
+  //   · **وفي التضمين تُطابق هذي الورقةُ صفراً**: 52 محدِّداً `ytp-*` في السجلّ،
+  //     **ولا واحدَ منها يطابق `ytp-unmute*`** — وهي وحدَها ما يحمله ذلك المشغّل
+  //     (مقيسٌ في `bench-s10-embed` و#68).
+  // ⇒ ⭐ **فلا حالَ يفترقان فيها بأثرٍ مقيس** ⇒ **تُوحَّدان، والاتّجاه إلى الأضيق**:
+  //   **حقنُ ورقةٍ لا تطابق شيئاً كلفةٌ بلا مقابل**، **والوسمُ يَعِد بصفحة المشاهدة
+  //   وحدها** (`data-vz-embed="cleanPlayer"`) — **فالبوّابةُ تصير كما يَعِد الوسم.**
+  // ⛔ **ولا يُوسَّع في الاتّجاه الآخر:** بوّابةٌ تمرّ حيث لا يمكن أن يقع شيء
+  // **وعدٌ بما لا يُفعل**، وهو ما صُرف #66 و#67 في إزالته.
+  if (!cleanPlayerSettings.enabled || !isYouTubeHost() || !extensionActive()) return;
 
   // The caption-language automation drives YouTube's menu by CLICKING these two
   // buttons, and findVisibleYTMenuItem requires a non-zero rect — so hiding them

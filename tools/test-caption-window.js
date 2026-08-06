@@ -16,7 +16,11 @@ const fs = require("fs");
 const vm = require("vm");
 
 const SRC = fs.readFileSync("content.js", "utf8");
-const OPTS_HTML = fs.readFileSync("options.html", "utf8");
+// ⚠️ **الصفحةُ تُبنى من ملفّين منذ 2026-08-06** (#79 · #113): `options.html`
+// **والسجلّ `settings-ui.js`** — **فمن قرأ أحدهما وحدَه يقرأ نصفَ الصفحة**،
+// وهو الشكلُ الذي أحمرّ به سبعةُ حرّاسٍ يوم النقل. ⇒ **يُقرأ المصدران معاً.**
+const OPTS_HTML = fs.readFileSync("options.html", "utf8") +
+  "\n" + fs.readFileSync("settings-ui.js", "utf8");
 const head = SRC.indexOf("// YouTube's homepage/search hover preview");
 const tail = SRC.indexOf("function applySubtitleTrack");
 if (head === -1 || tail === -1) {
@@ -145,8 +149,14 @@ console.log("\n[5] الإطفاء لا يترك أثراً — لا شيء يُ�
 
 console.log("\n[6] الواجهة تشرح التجاوز");
 {
-  check("سطر توضيحي يذكر «لون النافذة»", /لون النافذة/.test(OPTS_HTML));
-  check("ويذكر أن الإطفاء يعيدها", /إطفاؤه يعيد لون النافذة/.test(OPTS_HTML));
+  // ⭐ **ويُقرأ الشرحُ من السجلّ لا من نصّ الملفّ** (2026-08-06): جملةٌ مقطوعةٌ
+  // بين سلسلتين (`"…يعيد " + "لون النافذة…"`) **لا تُطابَق في المصدر وهي متّصلةٌ
+  // عند المستخدم** ⇒ **فالمطابقةُ النصّية تقيس صياغتَنا لا ما يقرؤه هو** — وهو
+  // الحدُّ نفسُه الذي حذّرنا منه في مسح «المُتحفَّظ عليه».
+  const ui = require("../settings-ui.js");   // نسبةً إلى الملفّ لا إلى مجلَّد التشغيل
+  const subsHelp = (ui.VZ_UI_SUBS || []).map((c) => `${c.label} ${c.help || ""}`).join("\n");
+  check("سطر توضيحي يذكر «لون النافذة»", /لون النافذة/.test(subsHelp + OPTS_HTML));
+  check("ويذكر أن الإطفاء يعيدها", /إطفاؤه يعيد لون النافذة/.test(subsHelp));
 }
 
 console.log(`\nالنتيجة: ${pass} ناجحة · ${fail} فاشلة`);

@@ -24,6 +24,11 @@ function slice(file, from, to) {
   return t.slice(a, b);
 }
 const CLEAN = slice("content.js", "const CLEAN_PLAYER_ITEMS", "function isBlockedHost");
+// ⚠️ **بوّابةُ Clean Player صارت `isYouTubeHost` بـ#114** (توحيدُ nocookie)،
+// **وتعريفُها خارج الشريحة** (`content.js:755`). ⇒ **يُدخَل تعريفُ المنتَج نفسُه
+// لا نسخةٌ منه**: نسخةٌ في حارسٍ تتباعد عن أصلها فتُخضِّر على عطبٍ حيّ
+// (وهو ما يحرسه `test-migration` و`test-fs-report-sync` في مواضعهما).
+const YT_HOST_FN = slice("content.js", "function isYouTubeHost", "// Common language names");
 
 const SUB_BTN = ".ytp-subtitles-button";
 const SET_BTN = ".ytp-settings-button";
@@ -50,6 +55,7 @@ function makeWorld({ items = {}, enabled = true, subtitles = { enabled: false, d
     console
   };
   vm.createContext(ctx);
+  vm.runInContext(YT_HOST_FN, ctx);
   vm.runInContext(CLEAN, ctx);
   const read = (expr) => vm.runInContext(expr, ctx);
   read(`cleanPlayerSettings = ${JSON.stringify({ enabled, items })};`);
@@ -126,8 +132,17 @@ console.log("\n[5] لا يُفعّل ولا يُعطّل شيئاً لم يطل�
     makeWorld({ items: ALL_ON, enabled: false, subtitles: AUTO_ON }).css() === "");
   check("موقع محظور ⇒ لا CSS", makeWorld({ items: ALL_ON, blocked: true }).css() === "");
   check("خارج يوتيوب ⇒ لا CSS", makeWorld({ items: ALL_ON, host: "example.com" }).css() === "");
-  check("youtube-nocookie مشمول",
-    makeWorld({ items: ALL_ON, host: "www.youtube-nocookie.com" }).css().includes(SUB_BTN));
+  // ⛔⭐ **انقلب بـ#114 (2026-08-06) — بقياسٍ لا برأي، والتأكيدُ يُقلب ولا يُحذف:**
+  // ~~«youtube-nocookie مشمول»~~ **مسحوبٌ** (قرار 21). **والمقيس:**
+  //  · `youtube-nocookie.com/watch` و`/` ⇒ **404** · و`/embed/` ⇒ **200**
+  //    ⇒ **النطاقُ لا يخدم إلا التضمين.**
+  //  · **وفي التضمين تُطابق هذي الورقةُ صفراً** (52 محدِّداً `ytp-*`، ولا واحدَ
+  //    منها `ytp-unmute*` وهي وحدَها ما يحمله ذلك المشغّل — `bench-s10-embed` · #68).
+  // ⇒ **فالبوّابةُ صارت كما يَعِد وسمُها: صفحةُ المشاهدة وحدها.**
+  // ⚠️ **وفشلُ هذا التأكيد يعني أن البوّابة وُسِّعت ثانيةً — فراجِع #114 ولا
+  // تُصلح الاختبار** (قرار 20).
+  check("youtube-nocookie لا يُحقن فيه (#114 — لا يخدم إلا التضمين، والورقة تطابق صفراً)",
+    makeWorld({ items: ALL_ON, host: "www.youtube-nocookie.com" }).css() === "");
 }
 
 console.log("\n[6] تطابق المفاتيح بين content.js و options.js");

@@ -78,31 +78,43 @@ console.log("\n[3] ⭐ الشاهدان: يرى الوصل ويرى انقطاع
     [...touchedIds(badJs)].filter((i) => !controlIds(goodHtml).includes(i)).join() === "noSuchField");
 }
 
-// ── [4] #107 — الضابط الجديد موصولٌ بمساريه: يُملأ عند الفتح، ويُحفظ عند التغيير
+// ── [4] #107 **مُنقولاً** — الضابط موصولٌ بمساريه، في موضعه الجديد ──────────
 // ⚠️ **[1] يقول «ثمّة من يمسّه»، وهذا يقول «يُقرأ ويُكتب»** — ولمسةٌ واحدة في
 // مسارٍ واحد تمرّ على [1] **وتترك الضابط لا يُحفظ أو لا يُملأ**، وكلاهما وقع في
 // هذا المشروع (#69: يُعلن ولا يُرجِع · #78: يكتب ما لم يُرسم).
-console.log("\n[4] #107 — وضعُ شريط يوتيوب موصولٌ قراءةً وكتابةً");
+// ⛔⭐ **وانتقل من الـpopup إلى قسم YouTube 2026-08-06** (قرار المالك، **عكسُ
+// قراره في #107**) ⇒ **فالحارسُ يتبعه ولا يُحذف**: **حارسٌ يُحذف لأن ما يحرسه
+// انتقل يترك المسارين بلا حارسٍ ويُقرأ محروساً.**
+// ⚠️ **والشرطُ المقلوب باقٍ بعينه: «ولا نسخةَ منه في الموضع الآخر»** — فعلّةُ
+// القرار الأوّل (مرآةٌ تتباعد) **لم تسقط، وإنما تبدّل أيُّهما المرآة.**
+console.log("\n[4] #107 — وضعُ شريط يوتيوب موصولٌ قراءةً وكتابةً (في صفحة الإعدادات)");
 {
-  check("[4] الضابط مرسومٌ قائمةَ اختيارٍ واحدة", /<select id="progressBarMode"/.test(HTML));
-  const opts = [...HTML.matchAll(/<option value="(off|idle|near)"/g)].map((m) => m[1]);
-  check("[4] وبأوضاعه الثلاثة", JSON.stringify(opts) === JSON.stringify(["off", "idle", "near"]), opts);
-  check("[4] ⭐ ولا مفتاحَ ثانياً له في الصفحة (وضعٌ لا مفتاحان)",
-    !/id="hideProgressBar"/.test(HTML));
-  check("[4] يُملأ عند الفتح", /await loadProgressModeSelect\(\);/.test(JS));
-  check("[4] ويُحفظ عند التغيير",
-    /\$\("progressBarMode"\)\?\.addEventListener\("change", saveProgressModeSelect\)/.test(JS));
-  check("[4] ⭐ والكتابة عبر `safeSyncSet` وحدها",
-    /async function saveProgressModeSelect[\s\S]*?safeSyncSet\(\{ settings \}\)/.test(JS));
-  check("[4] ⭐ والقراءة من الكتلة المتناظرة لا من تطبيعٍ ثانٍ",
-    /progressBarModeOf\(\(data\.settings \|\| \{\}\)\.overlay\)/.test(JS));
-  check("[4] ⭐ وقيمةٌ خارج الأوضاع لا تُكتب",
-    /PROGRESS_BAR_MODES\.includes\(mode\)/.test(JS));
-  // **ولا نسخةَ منه في الإعدادات** (قرار المالك: مرآةٌ تتباعد)
   const UI = fs.readFileSync("settings-ui.js", "utf8");
   const OPTIONS = fs.readFileSync("options.js", "utf8");
-  check("[4] ⭐ ولا نسخةَ منه في صفحة الإعدادات",
-    !/hideProgressBar|progressBarMode/.test(UI) && !/hideProgressBar/.test(OPTIONS));
+  check("[4] الضابط مُعلَنٌ قائمةَ اختيارٍ واحدة في السجلّ",
+    /id: "progressBarMode", kind: "select"/.test(UI));
+  const i = UI.indexOf('id: "progressBarMode"');
+  const decl = i === -1 ? "" : UI.slice(i, i + 900);
+  const opts = [...decl.matchAll(/value: "(off|idle|near)"/g)].map((m) => m[1]);
+  check("[4] وبأوضاعه الثلاثة", JSON.stringify(opts) === JSON.stringify(["off", "idle", "near"]), opts);
+  check("[4] ⭐ ولا مفتاحَ ثانياً له (وضعٌ لا مفتاحان)",
+    !/id="hideProgressBar"|id: "hideProgressBar"/.test(UI + HTML + OPTIONS));
+  check("[4] يُملأ عند الفتح", /renderProgressBarMode\(s\.overlay\);/.test(OPTIONS));
+  check("[4] ويُحفظ عند التغيير",
+    /\$\("progressBarMode"\)\.addEventListener\("change", persistProgressBarMode\)/.test(OPTIONS));
+  check("[4] ⭐ والكتابة عبر مخرج الحفظ الواحد وحدَه",
+    /async function persistProgressBarMode[\s\S]*?await saveSettings\(s\)/.test(OPTIONS));
+  check("[4] ⭐ والقراءة من الكتلة المتناظرة لا من تطبيعٍ ثانٍ",
+    /progressBarModeOf\(overlay\)/.test(OPTIONS));
+  check("[4] ⭐ وقيمةٌ خارج الأوضاع لا تُكتب",
+    /PROGRESS_BAR_MODES\.includes\(mode\)/.test(OPTIONS));
+  // **ولا نسخةَ منه في الـpopup** — الاتّجاه انقلب والشرط لم ينقلب
+  // ⚠️ **ويُقاس الضابطُ لا ذكرُ اسمه:** السجلُّ المشطوب (قرار 21) يذكر الاسمَ
+  // في تعليقٍ **وهو الغرضُ منه** — **ومطابقةٌ على الاسم وحده تُحمّر على السجلّ
+  // الذي أمرنا بإبقائه**، وهي «مطابقةٌ أوسع من سؤالها» (قرار 93).
+  check("[4] ⭐ ولا نسخةَ منه في الـpopup — ضابطاً لا ذكراً",
+    !/id="progressBarMode"/.test(fs.readFileSync("popup.html", "utf8")) &&
+    !/\$\("progressBarMode"\)/.test(JS));
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);

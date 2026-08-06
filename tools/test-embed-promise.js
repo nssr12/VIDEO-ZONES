@@ -28,26 +28,38 @@ const check = (name, cond, extra) => cond
 
 // ── الأربعُ ومواضعُها — **الموضع الواحد لهذي الحقيقة** ─────────────────────
 // المفتاح ⇒ { الملفّ · مُرساةُ الضابط الذي يخصّه · ما يجب أن يُذكر }
+// ⚠️ **تنقّلت أربعةٌ منها 2026-08-06 من `options.html` إلى `settings-ui.js`**
+// (#79 · #113): الضوابطُ صارت تُولَّد من سجلّ، **فالوسمُ انتقل مع ضابطه**.
+// ⇒ ⭐ **والحارسُ يتبع الوسمَ حيث ذهب ولا يُلغى** — **حارسٌ يُحذف لأن ما يحرسه
+// انتقل هو نصفُ العطب**: يبقى الوعدُ بلا حارس ويظنّ القارئ أنه محروس.
+// ⚠️ **وشكلُ الوسم يختلف باختلاف موضعه ويُقال:** في HTML سمةٌ
+// (`data-vz-embed="quality"`)، **وفي السجلّ حقلٌ** (`embed: "quality"`) —
+// **والمعنى واحد: مفتاحٌ يجاور ضابطَه.** ⛔ **ولا شكلَ ثالث.**
 const PROMISES = {
-  quality:        { file: "options.html", anchor: 'id="ytQuality"' },
-  cleanPlayer:    { file: "options.html", anchor: 'id="cleanPlayerEnabled"' },
-  subtitles:      { file: "options.html", anchor: 'id="subEnabled"' },
-  subLang:        { file: "options.html", anchor: 'id="subLang"' },
-  popupSubtitles: { file: "popup.html",   anchor: 'id="subtitlesEnabled"' }
+  quality:        { file: "settings-ui.js", anchor: 'id: "ytQuality"' },
+  cleanPlayer:    { file: "settings-ui.js", anchor: 'id: "cleanPlayerEnabled"' },
+  subtitles:      { file: "settings-ui.js", anchor: 'id: "subEnabled"' },
+  subLang:        { file: "settings-ui.js", anchor: 'id: "subLang"' },
+  popupSubtitles: { file: "popup.html",     anchor: 'id="subtitlesEnabled"' }
 };
 const MUST_SAY = "المضمَّن";
 
-const html = { "options.html": read("options.html"), "popup.html": read("popup.html") };
+// **المطابقةُ تقبل الشكلين ولا تخترع ثالثاً** — سمةُ HTML أو حقلُ السجلّ.
+const tagRe = (key, g) => new RegExp(`(?:data-vz-embed="${key}"|embed: "${key}")`, g ? "g" : "");
+const anyTagRe = /(?:data-vz-embed="([^"]+)"|embed: "([^"]+)")/g;
+
+const html = { "options.html": read("options.html"), "popup.html": read("popup.html"),
+               "settings-ui.js": read("settings-ui.js") };
 
 console.log(`\n[1] كلُّ وعدٍ يحمل وسمَه — ${Object.keys(PROMISES).length} مفاتيح`);
 {
   for (const [key, p] of Object.entries(PROMISES)) {
-    const hits = (html[p.file].match(new RegExp(`data-vz-embed="${key}"`, "g")) || []).length;
+    const hits = (html[p.file].match(tagRe(key, true)) || []).length;
     check(`\`${key}\` في ${p.file} — مرّةً واحدة`, hits === 1, `وُجد ${hits}`);
   }
   // **ولا مفتاحَ زائدٌ بلا سجلّ** — فالسجلّ أعلاه هو الموضع الواحد، لا قائمةٌ
   // تُحصي ما في الملفّ. مفتاحٌ يُضاف في الوسم ولا يُضاف هنا **يُحمَّر**.
-  const all = [...Object.values(html).join("\n").matchAll(/data-vz-embed="([^"]+)"/g)].map((m) => m[1]);
+  const all = [...Object.values(html).join("\n").matchAll(anyTagRe)].map((m) => m[1] || m[2]);
   const orphan = all.filter((k) => !PROMISES[k]);
   check("ولا وسمَ بلا سجلّ في هذا الحارس", orphan.length === 0, orphan.join(" · "));
   check("ولا تكرارَ في الوسوم كلِّها", new Set(all).size === all.length, all.join(" · "));
@@ -57,7 +69,7 @@ console.log("\n[2] وكلُّ وسمٍ يقول أين لا يعمل — لا م
 {
   for (const [key, p] of Object.entries(PROMISES)) {
     // النصّ من فتحة الوسم إلى إغلاق عنصره — يكفي مدىً محافظاً
-    const i = html[p.file].indexOf(`data-vz-embed="${key}"`);
+    const i = html[p.file].search(tagRe(key));
     const span = i === -1 ? "" : html[p.file].slice(i, i + 460);
     check(`\`${key}\` يذكر «${MUST_SAY}»`, span.includes(MUST_SAY), span.slice(0, 80));
   }
@@ -70,13 +82,20 @@ console.log("\n[3] والوسمُ عند ضابطه لا في زاويةٍ من 
   for (const [key, p] of Object.entries(PROMISES)) {
     const src = html[p.file];
     const a = src.indexOf(p.anchor);
-    const tag = src.indexOf(`data-vz-embed="${key}"`);
+    const tag = src.search(tagRe(key));
     const end = p.file === "popup.html"
       ? (a === -1 ? -1 : src.indexOf("</div>", src.indexOf("toggleRow", a)))
       : (a === -1 ? -1 : src.indexOf("</section>", a));
-    const near = a !== -1 && tag !== -1 && Math.abs(tag - a) < 3000 &&
-                 (end === -1 || tag < end + 400);
-    check(`\`${key}\` قريبٌ من \`${p.anchor}\``, near, `مُرساة=${a} وسم=${tag}`);
+    // ⭐ **وفي السجلّ يُقاس الجوار بنيويّاً لا بالمسافة** (2026-08-06): أوّلُ
+    // صياغةٍ حدّت الإعلانَ بـ`indexOf("},")` **فوقعت داخل قائمة خيارات الجودة**
+    // ⇒ **مطابقةٌ نصّية تقيس جارَ المطلوب** (قرار 81)، **وطولُ الإعلان يتبع عددَ
+    // خياراته فلا يصلح حدّاً**. ⇒ **والمقياس: ألّا يفصل بينهما إعلانُ ضابطٍ آخر.**
+    const near = p.file === "settings-ui.js"
+      ? (a !== -1 && tag !== -1 && tag > a &&
+         !/\bid: "/.test(src.slice(a + p.anchor.length, tag)))
+      : (a !== -1 && tag !== -1 && Math.abs(tag - a) < 3000 &&
+         (end === -1 || tag < end + 400));
+    check(`\`${key}\` قريبٌ من \`${p.anchor}\` بلا إعلانٍ يفصل`, near, `مُرساة=${a} وسم=${tag}`);
   }
 }
 
@@ -97,8 +116,9 @@ console.log("\n[4] والتوثيق يقولها كما تقولها الواج�
 
 console.log("\n[5] شاهدا قرار 26 — على الحارس نفسه");
 {
-  const has = (s, k) => (s.match(new RegExp(`data-vz-embed="${k}"`, "g")) || []).length === 1;
+  const has = (s, k) => (s.match(tagRe(k, true)) || []).length === 1;
   check("موجب: نصٌّ فيه الوسم يُقبل", has('<p data-vz-embed="quality">x</p>', "quality"));
+  check("وموجبٌ ثانٍ: وشكلُ السجلّ يُقبل كذلك", has('{ id: "ytQuality", embed: "quality" }', "quality"));
   check("سالب: ونصٌّ بلا وسمٍ يُرفض", !has("<p>الجودة الافتراضية</p>", "quality"));
   check("وثالث: ووسمٌ بلا ذكر «المضمَّن» يُرفض في [2]",
     !'<p data-vz-embed="quality">صفحة المشاهدة</p>'.includes(MUST_SAY));

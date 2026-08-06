@@ -15,7 +15,11 @@
 const fs = require("fs");
 const vm = require("vm");
 
-const HTML = fs.readFileSync("options.html", "utf8");
+// ⚠️ **الصفحةُ تُبنى من ملفّين منذ 2026-08-06** (#79 · #113): `options.html`
+// **والسجلّ `settings-ui.js`** — **فمن قرأ أحدهما وحدَه يقرأ نصفَ الصفحة**،
+// وهو الشكلُ الذي أحمرّ به سبعةُ حرّاسٍ يوم النقل. ⇒ **يُقرأ المصدران معاً.**
+const HTML = fs.readFileSync("options.html", "utf8") +
+  "\n" + fs.readFileSync("settings-ui.js", "utf8");
 const OPTS_JS = fs.readFileSync("options.js", "utf8");
 const SRC = fs.readFileSync("content.js", "utf8");
 
@@ -43,11 +47,15 @@ console.log("\n[2] العناوين الأربعة تقول «تعتيم»");
 {
   for (const { id, label } of SLIDERS) {
     // العنوان هو الـ label الذي يحتوي المُنزلق
-    const i = HTML.indexOf(`id="${id}"`);
+    // **الضابطُ في HTML أو في السجلّ — والعنوانُ يسبقه في الأوّل ويليه في الثاني**
+    const inHtml = HTML.indexOf(`id="${id}"`);
+    const inReg = HTML.indexOf(`id: "${id}"`);
+    const i = inHtml !== -1 ? inHtml : inReg;
     check(`«${id}» موجود`, i !== -1);
-    const open = HTML.lastIndexOf("<label>", i);
-    const text = HTML.slice(open, i);
-    check(`  وعنوانه «${label}»`, text.includes(label), text.replace(/\s+/g, " ").slice(0, 70));
+    const text = inHtml !== -1
+      ? HTML.slice(HTML.lastIndexOf("<label>", i), i)
+      : HTML.slice(i, HTML.indexOf("help:", i) + 1 || i + 600);
+    check(`  وعنوانه يقول «${label}»`, text.includes(label), text.replace(/\s+/g, " ").slice(0, 70));
   }
 }
 

@@ -522,6 +522,28 @@ function renderYtShortsRedirect(enabled) {
   $("ytShortsRedirect").checked = enabled !== false;
 }
 
+// ── #107 مُنقولاً (2026-08-06) — **القراءة من `progressBarModeOf` وحدها** ───
+// ⚠️ **ولا تطبيعَ ثانٍ هنا** (النصّ منقولٌ من `popup.js` بحجّته): من رأى مفتاحاً
+// قديماً وحده **يجب أن يرى «يختفي بالسكون»** قبل أن تمرّ الهجرة — **وتطبيعان
+// يتباعدان، فيرى المستخدمُ اختياراً غير الذي يعمل.**
+function renderProgressBarMode(overlay) {
+  const el = $("progressBarMode");
+  if (el) el.value = progressBarModeOf(overlay);
+}
+
+async function persistProgressBarMode() {
+  const mode = $("progressBarMode")?.value;
+  // **قيمةٌ لا نعرفها لا تُكتب** — القائمةُ مصدرُنا، والتخزينُ ليس مسرحاً لقيمٍ حرّة
+  if (!PROGRESS_BAR_MODES.includes(mode)) return;
+  const s = await getSettings();
+  s.overlay = { ...(s.overlay || {}), progressBarMode: mode };
+  if (!(await saveSettings(s))) return;
+  const tabs = await chrome.tabs.query({});
+  for (const t of tabs) {
+    if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_OVERLAY_SETTINGS" }).catch(() => {});
+  }
+}
+
 let cleanPlayerSaving = 0; // guards the storage.onChanged re-render against reverting mid-save toggles
 
 // ── #78 — الكائن لا يُعاد بناؤه من أربعين ضابطاً ────────────────────────────
@@ -605,6 +627,24 @@ function buildTimingList() {
     persistTiming(id);
   });
   vzUiWireHelp(document, $("timingList"));
+}
+
+// ── #113 · #79 — قسمُ المضيف وقسمُ الترجمة من السجلّ نفسِه ─────────────────
+// ⛔ **ولا مستمعَ يُربط هنا**: البناءُ **هادمٌ** والربطُ في `DOMContentLoaded`
+// **بعده** — وهو الفصلُ الذي قِيس في #69 (بناءٌ داخل مسار الرسم يهدم الضابط
+// الذي ينقر عليه المستخدم). **والمعرّفات هي المعرّفات القديمة بحروفها**، فكلُّ
+// `$("subEnabled")` قائمٌ كما كان: **نقلُ موضعٍ لا هجرةُ بيانات.**
+function buildHostList() {
+  const host = VZ_UI_HOSTS[0];
+  $("hostSectionTitle").textContent = host.عنوان;
+  $("hostSectionDesc").textContent = host.وصف;
+  vzUiBuildList(document, $("hostList"), host.controls);
+  vzUiWireHelp(document, $("hostList"));
+}
+
+function buildSubsList() {
+  vzUiBuildList(document, $("subsList"), VZ_UI_SUBS);
+  vzUiWireHelp(document, $("subsList"));
 }
 
 
@@ -1000,9 +1040,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   // `zonesWereMissing` تسبقها.
   buildCleanPlayerList();
   buildTimingList();
+  buildHostList();
+  buildSubsList();
+  uiBuilt = true;         // **بعد الأربعة كلِّها لا بعد بعضها**
   await renderAllFromStorage();
 
   $("cleanPlayerEnabled").addEventListener("change", persistCleanPlayer);
+  $("progressBarMode").addEventListener("change", persistProgressBarMode);
 
   $("enabled").addEventListener("change", async () => {
     const s = await getSettings();
@@ -1294,7 +1338,18 @@ chrome.storage.onChanged.addListener((changes, area) => {
 //
 // **والحارسان يبقيان داخلها** — وهما خاويان عند `init` بالقياس: العدّاد `0`،
 // والمودال يحمل `hidden` في `options.html` ولا تُرفع إلا في `openZoneModal`.
+// ⛔⭐ **شرطُ البناء قبل الرسم — عطبٌ حيٌّ أمسكه `bench-options-page` (2026-08-06):**
+// `chrome.storage.onChanged` **مُسجَّلٌ في المستوى الأعلى**، فيقع **قبل أن ينتهي
+// `DOMContentLoaded` من بناء الضوابط المُولَّدة** ⇒ `TypeError: Cannot set
+// properties of null`. **ولم يظهر قبل اليوم لأن كلَّ الضوابط كانت في `options.html`
+// جاهزةً قبل أيّ سكربت** — **فالبناءُ أدخل نافذةً زمنيّةً لم تكن موجودة.**
+// ⇒ ⭐ **ولا يُصلَح بفحص `null` عند كلّ ضابط**: ذاك **يُسكت العَرَض ويترك نصفَ
+// الصفحة غيرَ مرسوم بلا أن يقول** (درس #57: نجاحٌ كاذب أسوأ من فشلٍ صامت).
+// **بل يُعلَن الشرط**: لا رسمَ قبل البناء، **والرسمُ واقعٌ بعده بالضرورة** —
+// `init` تبني ثمّ ترسم في السطر التالي، فلا حالَ تضيع.
+let uiBuilt = false;
 async function renderAllFromStorage() {
+  if (!uiBuilt) return;   // **تأجيلٌ لا إسقاط**: `init` ترسم بعد البناء مباشرةً
   const s = await getSettings();
   $("enabled").checked         = !!s.zones?.enabled;
   $("fullscreenOnly").checked  = !!s.zones?.fullscreenOnly;
@@ -1306,6 +1361,7 @@ async function renderAllFromStorage() {
   renderSubtitles(s.subtitles);
   renderYtAutoQuality(s.ytAutoQuality);
   renderYtShortsRedirect(s.ytShortsRedirect);
+  renderProgressBarMode(s.overlay);
   // Don't clobber checkboxes the user is toggling while a save is in flight
   if (!cleanPlayerBusy()) renderCleanPlayer(s.cleanPlayer);
   // Don't interrupt active zone editing
