@@ -125,27 +125,31 @@ const VZ_UI_CLEAN = {
 // الإخفاء» · «مدة ظهور رقم الصوت».
 const VZ_UI_TIMING = [
   { id: "gridDuration", kind: "range", min: 0, max: 3000, step: 100, unit: "ms",
+    مدى: "عامّ", أين: "طبقتُنا فوق أي فيديو.",
     label: "كم تبقى شبكة المربّعات ظاهرة بعد الأمر",
     help: "الشبكة التي تومض داخل الفيديو عند تنفيذ أمر مربّع. صفر = لا تظهر أصلاً." },
   { id: "volumeDuration", kind: "range", min: 0, max: 3000, step: 100, unit: "ms",
+    مدى: "عامّ", أين: "طبقتُنا فوق أي فيديو.",
     label: "كم يبقى رقم الصوت ظاهراً بعد تغييره",
     help: "⚠️ وشارة السرعة تأخذ المدّة نفسها. فالصفر يعني «لا شارة» للاثنتين — ولذلك يُعطَّل مفتاح شارة السرعة عنده بسببٍ مكتوب." },
-  { id: "zoneHintEnabled", kind: "toggle",
+  { id: "zoneHintEnabled", kind: "toggle", مدى: "عامّ", أين: "طبقتُنا فوق أي فيديو.",
     label: "إظهار سطر تلميح المربّع",
     help: "سطرٌ صغير أسفل الشبكة يقول أيّ مربّع نُفِّذ وأيّ أمر — مثل «Zone B1 • DOWN → ACTION:VOLUME:-4»." },
-  { id: "speedBadgeEnabled", kind: "toggle",
+  { id: "speedBadgeEnabled", kind: "toggle", مدى: "عامّ", أين: "طبقتُنا فوق أي فيديو.",
     label: "إظهار شارة سرعة التشغيل عند تغييرها",
     help: "تظهر في الزاوية المقابلة لرقم الصوت، وتأخذ مدّته ولونه وحجمه نفسها. ⚠️ ولا يومض لها يوتيوب — قِيس أن الكتابة المباشرة لا تُنتج وميضاً." },
   { id: "idleDuration", kind: "range", min: VZ_IDLE_MIN_MS, max: 6000, step: 100, unit: "ms",
+    مدى: "متفاوت", أين: "مستهلكوه كلُّهم يوتيوبيّون اليوم (شريطُ التقدّم والزرّان)، فخارج يوتيوب لا أثرَ له.",
     label: "كم ينتظر قبل الإخفاء بعد أن تتوقّف الفأرة",
     help: "تُشارَك بين «إخفاء شريط تقدّم يوتيوب» و«زرّ السرعة». ⚠️ وأقلّها عُشر ثانية، ولا تُطفئ شيئاً — الإطفاء بمفتاح الميزة وحده." },
-  { id: "speedButtonEnabled", kind: "toggle",
-    label: "إظهار زرّ السرعة داخل المشغّل",
+  { id: "speedButtonEnabled", kind: "toggle", مدى: "مضيف", أين: "يوتيوب و youtube-nocookie (#116).",
+    label: "إظهار زرّ السرعة داخل مشغّل يوتيوب",
     help: "زرٌّ في طبقتنا لا في شريط يوتيوب: عجلةٌ فوقه تغيّر السرعة ±0.25، ونقرةٌ تنقلك إلى سرعة النقرة. ⚠️ ونقرة اليمين مؤجَّلة حتى يُقاس مسارها (S9)." },
-  { id: "filterButtonEnabled", kind: "toggle",
-    label: "إظهار زرّ فلاتر الصورة داخل المشغّل",
+  { id: "filterButtonEnabled", kind: "toggle", مدى: "مضيف", أين: "يوتيوب و youtube-nocookie (#116).",
+    label: "إظهار زرّ فلاتر الصورة داخل مشغّل يوتيوب",
     help: "زرٌّ يفتح لوحةَ فلاتر (إضاءة · تباين · تشبّع · جاما · وغيرها). ⚠️ والجاما ليست الإضاءة: الإضاءةُ ترفع كلَّ شيء فتبهت الصورة، والجاما ترفع الظلالَ وحدها ويبقى الأبيضُ مكانه — وهي لتوضيح المقاطع المظلمة. ⚠️ ولا تُحفظ قيمُ الفلاتر: تزول مع كلّ فيديو." },
   { id: "speedButtonPreset", kind: "range", min: 0.25, max: 4, step: 0.25, unit: "x",
+    مدى: "مضيف", أين: "يتبع زرَّ السرعة، فيوتيوب و youtube-nocookie (#116).",
     label: "سرعة نقرة الزرّ",
     help: "نقرةٌ على زرّ السرعة تنقلك إلى هذه السرعة، ونقرةٌ ثانية تُعيد 1x. والعجلة فوقه تتدرّج ±0.25 بلا نقر." }
 ];
@@ -229,34 +233,13 @@ function vzUiBuildClean(doc, root, onChange) {
 }
 
 // يبني قسم التوقيت والسكون — ويُرجع خريطة مُعرّف ⇒ ضابط
+// ⛔⭐ **ولا مُولِّدان لشيءٍ واحد** (2026-08-06): كان هنا نسخةٌ ثانية من حلقة
+// البناء **تختلف عن `vzUiBuildList` في أنها لا تُعلن مدىً** ⇒ **فثمانيةُ ضوابطَ
+// بلا مدى بينما لثلاثةَ عشرَ غيرِها مدىً مُعلَن**. **ونسخةٌ محليّة من مُساعدٍ
+// مشترك داؤنا المسجَّل** (`evalIn` في `bench-options-page` — قرار: الأدواتُ لا
+// تُعفى من قواعد المنتج). ⇒ **فوُحِّدا، وكسب التوقيتُ المدى بالبناء لا بالتذكّر.**
 function vzUiBuildTiming(doc, root, onChange) {
-  root.textContent = "";
-  const map = {};
-  for (const c of VZ_UI_TIMING) {
-    const input = doc.createElement("input");
-    input.id = c.id;
-    if (c.kind === "toggle") {
-      input.type = "checkbox";
-    } else {
-      input.type = "range";
-      input.min = String(c.min); input.max = String(c.max); input.step = String(c.step);
-    }
-    if (onChange) input.addEventListener("change", () => onChange(c.id));
-    const { row, body } = vzUiRow(doc, {
-      inputId: c.id, label: c.label, help: c.help, measured: false, input
-    });
-    if (c.kind === "range") {
-      const v = doc.createElement("span");
-      v.className = "vzVal";
-      v.id = `${c.id}Value`;
-      row.appendChild(v);
-      if (onChange) input.addEventListener("input", () => onChange(c.id, true));
-    }
-    root.appendChild(row);
-    root.appendChild(body);
-    map[c.id] = input;
-  }
-  return map;
+  return vzUiBuildList(doc, root, VZ_UI_TIMING, onChange);
 }
 
 // ── #113 — **أقسامُ المضيفين: سجلٌّ لا شجرةُ HTML** ─────────────────────────

@@ -39,7 +39,7 @@
 //   node tools/bench-overlay-layer.mjs --json       # الخام (قرار 38)
 import fs from "node:fs";
 import path from "node:path";
-import { launch, openPage, configure, serveTestPage, contentWorld, evalIn, waitPortFree, ROOT } from "./ext-harness.mjs";
+import { launch, openPage, openPageAsHost, configure, serveTestPage, contentWorld, evalIn, waitPortFree, ROOT } from "./ext-harness.mjs";
 
 const PORT = 9761, HTTP = 8861;
 const WANT_YT = process.argv.includes("--youtube");
@@ -136,7 +136,7 @@ async function wiggle(c, x, y, n = 4) {
   for (let i = 0; i < n; i++) { await move(c, x + (i % 2), y + ((i + 1) % 2)); await sleep(120); }
 }
 
-async function runOn(label, url, { withExtension = true } = {}) {
+async function runOn(label, url, { withExtension = true, asHost = null } = {}) {
   const out = { label, url, steps: {} };
   let h = null, page = null;
   try {
@@ -148,7 +148,11 @@ async function runOn(label, url, { withExtension = true } = {}) {
       out.configured = cfg.ok;
       if (!cfg.ok) { out.why = "تعذّر ضبط التخزين: " + (cfg.why || cfg.error); return out; }
     }
-    page = await openPage(PORT, url);
+    // ⭐ **صفحتُنا تحت اسم يوتيوب حين يُطلب** — بلا شبكةٍ ولا DNS، والحدُّ في
+    // `ext-harness`: **يُزيّف ما تقرؤه البوّابةُ وحدَه لا شجرةَ يوتيوب.**
+    page = asHost
+      ? (await openPageAsHost(PORT, { host: asHost })).c
+      : await openPage(PORT, url);
     await sleep(withExtension ? 3000 : 1500);
 
     out.world = withExtension ? await contentWorld(page) : null;
@@ -358,8 +362,14 @@ function fingerprint() {
 // ── التشغيل ─────────────────────────────────────────────────────────────────
 const server = await serveTestPage(HTTP);
 const fp = fingerprint();
-const pos = await runOn("محليّ · مع الإضافة", server.url);
-const neg = await runOn("محليّ · بلا إضافة (شاهد سالب)", server.url, { withExtension: false });
+// ⛔⭐ **تحت اسم يوتيوب، لا على `localhost`** (2026-08-06، قبل بوّابة الزرّين):
+// الزرّان صارا يوتيوبيَّين، **وشرطُ قبولٍ يقيس على مضيفٍ لا يعملان عليه شرطٌ
+// ميّت**. ⇒ **الاعتراضُ يسبق البوّابة** (قرار المالك) — **فتعبر الخمسةُ
+// والعشرون بدل أن تموت.** ⚠️ **والصفحةُ صفحتُنا كما كانت: المُزيَّفُ الاسمُ وحدَه.**
+const AS_HOST = "www.youtube.com";
+const pos = await runOn("تحت اسم يوتيوب · مع الإضافة", server.url, { asHost: AS_HOST });
+const neg = await runOn("تحت اسم يوتيوب · بلا إضافة (شاهد سالب)", server.url,
+  { withExtension: false, asHost: AS_HOST });
 const yt = WANT_YT ? await runOn("يوتيوب · مع الإضافة", "https://www.youtube.com/watch?v=aqz-KE-bpKQ") : null;
 try { server.srv.close(); } catch {}
 
