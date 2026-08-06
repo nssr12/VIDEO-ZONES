@@ -20,9 +20,11 @@
 // المسار» لا «لا يرمي أبداً»**، ومسارٌ جديد يُضاف حين يُعرَف.
 //
 // ── ⭐ الشاهدان (قرار 26 · 47) — والموجبُ **عطبٌ حيّ من السجلّ لا مُفتعَل** ──
-//   `--witness` **يُركّب `content.js` من الكومِت المكسور بنصّه** (`85ac3cf`)
-//   ثمّ يُعيد ملفَّك مكانه. **وشرطُ القبول: أحمرُ هناك بـ`RangeError`، وأخضرُ هنا.**
+//   `--witness`           ⇒ `content.js` من `85ac3cf` **بحالِ الشاهد المُعلَنة** ⇒ **يجب أن يُحمّر**
+//   `--witness --control` ⇒ **البناءُ الحاليّ بالحالِ نفسِها** ⇒ **يجب أن يخضرّ**
 //   ⛔ **ولا يُصدَّق أخضرُ هذا الرِكاز حتى يُرى أحمرُه على ذاك البناء.**
+//   ⭐⭐ **والاثنان معاً مقارنةٌ مضبوطة: المتغيّرُ الوحيد هو البناء** — **وبلا
+//   الضبط يكون الأحمرُ محتمَلاً من الحالِ لا من البناء** (قرار 42 · 106).
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
@@ -33,12 +35,44 @@ import { launch, openPage, connect, evalIn, contentWorld, configure, killChrome,
 const PORT = 9793, HTTP = 8893;
 const BROKEN_COMMIT = "85ac3cf";
 const WITNESS = process.argv.includes("--witness");
+const CONTROL = process.argv.includes("--control");   // الحالُ نفسُها على البناء الحاليّ
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ── ⭐⭐ سابعةُ الحدّ المعماريّ — **في الرِكاز هذه المرّة** (قرار المالك 2026-08-06)
+// **الواقعة:** أوّلُ صياغةٍ لهذا الشاهد **لم ترَ العطبَ الحيّ** وهي تُركّب الملفَّ
+// المكسور بنصّه — **لأن الرِكاز يكتب `filterButton: true` بحكم #111**، ⇒
+// **فالمستهلكُ مُفعَّلٌ فلا تُنادى `onDisabled` فلا دورة.** ⭐ **القاعدةُ التي
+// أُدخلت ليرى الرِكازُ الميزاتِ هي التي أعمت شاهدَه.**
+//
+// ⇒ ⭐⭐ **وليسا متعارضين إذا صيغا بدقّة، وهذا هو الفصل:**
+//   · **#111 عن التغطية** — **ميزةٌ مطفأةٌ لا يمسّها أحد** ⇒ **الرِكازُ يُشغّل
+//     الميزاتِ افتراضاً**، وكلُّ ميزةٍ جديدة تُضاف إلى `SETTINGS` يومَ تُشحن.
+//   · **والشاهدُ عن حالٍ بعينها** ⇒ **يُعلن حالتَه هو بسببٍ مكتوب**، **كما يُعلن
+//     مستهلكُ السكون `target` و`nearPad` و`onDisabled` والمحرّكُ يسأل ولا يعرف
+//     لماذا.** ⛔ **ولا يرث الشاهدُ حالَ الرِكاز صامتاً، ولا يُعدَّل الرِكازُ
+//     ليُشبه الشاهد** — فذاك يُفرغ #111 من معناه.
+const WITNESS_STATE = {
+  overlay: { filterButton: false },
+  لماذا:
+    "عطبُ #108 دورةٌ تعيش **داخل `onDisabled`**، و`applyIdleState` لا تناديها " +
+    "إلا لمستهلكٍ `!enabled()` ⇒ **المفتاحُ مُشغَّلاً يمنع الدورةَ من الوقوع أصلاً**. " +
+    "⭐ وهو درسُ #108 بنصّه: «المفتاحُ المطفأ يُسكت الميزة ولا يمنع كودَها من أن يعمل».",
+  وكيف_تُنتَج_الحال:
+    "اللوحةُ تُبنى في `ensureVideoOverlay` **بلا شرطِ مفتاح** ⇒ **العجلةُ وحدها " +
+    "تكفي**: طبقةٌ تُبنى ⇒ `vzFilterPanel` غيرُ فارغ ⇒ ونداءُ `onDisabled` يجد " +
+    "`setFilterPanelOpen` تنادي المحرّكَ من جديد.",
+  // ⛔ **شروطٌ تشترط الزرَّ مرئيّاً — والمفتاحُ مطفأ بإعلانٍ لا بسهو.**
+  // **فتُعلَن ممتنعةً ولا تُطبع حمراء**: حمرةٌ متوقَّعة تُعلّم قارئَها أن يتخطّى.
+  ممتنعة: ["[3ب]", "[6]", "[7]"]
+};
+
 let pass = 0, fail = 0;
-const check = (name, cond, extra) => cond
-  ? (pass++, console.log("  ✅ " + name))
-  : (fail++, console.log("  ❌ " + name, extra ?? ""));
+const abstains = (name) => WITNESS && WITNESS_STATE.ممتنعة.some((p) => name.startsWith(p));
+const check = (name, cond, extra) => abstains(name)
+  ? console.log("  ⚪ " + name + "  ← يمتنع بإعلان الشاهد (المفتاح مطفأ)")
+  : cond
+    ? (pass++, console.log("  ✅ " + name))
+    : (fail++, console.log("  ❌ " + name, extra ?? ""));
 
 // صفحةٌ محليّة بفيديو حيّ (canvas ⇒ captureStream) — بلا شبكة ولا مضيف
 const PAGE = `<!doctype html><meta charset=utf8><style>
@@ -67,9 +101,16 @@ function restore() { if (saved !== null) { fs.writeFileSync(CONTENT, saved); sav
 let proc, code = 1;   // **الافتراض فشل**: خرْجٌ صفريّ يلزمه مسارٌ اكتمل
 try {
   console.log(`\n=== #110 — صفر رميةٍ في سكربت المحتوى ${WITNESS ? "(شاهدٌ: البناء المكسور)" : ""}===\n`);
-  if (WITNESS) {
+  if (WITNESS && !CONTROL) {
     const n = swapInBrokenBuild();
     console.log(`  ⚠️ رُكّب \`content.js\` من \`${BROKEN_COMMIT}\` (${n} حرفاً) — ويُعاد ملفُّك في النهاية.`);
+  } else if (CONTROL) {
+    console.log(`  ⚠️ **الضبط**: البناءُ الحاليّ بحالِ الشاهد نفسِها — **فالمتغيّرُ الوحيد هو البناء**.`);
+  }
+  if (WITNESS) {
+    console.log(`  ⚠️ حالُ الشاهد مُعلَنة: \`${JSON.stringify(WITNESS_STATE.overlay)}\``);
+    console.log(`     لماذا: ${WITNESS_STATE.لماذا}`);
+    console.log(`     وكيف تُنتَج: ${WITNESS_STATE.وكيف_تُنتَج_الحال}`);
   }
 
   await waitPortFree(PORT);
@@ -91,9 +132,12 @@ try {
       // ⭐ **والميزاتُ تُشغَّل هنا لا تُترك على افتراضها** (#111): **ميزةٌ لا
       // تُشغَّل لا تُقاس** — **وهو ما جعل #108 يمرّ**. **وكلُّ ميزةٍ جديدة تُضاف
       // إلى هذا السطر يومَ تُشحن، وإلا فحصنا الإطفاء لا الميزة** (قرار 102).
+      // ⭐ **وحالُ الشاهد تُطبَّق فوقها ولا تُبدّلها** — `WITNESS_STATE` أعلاه:
+      // **الرِكازُ يُشغّل، والشاهدُ يُعلن ما يحتاج إطفاءه وحدَه بسببٍ مكتوب.**
       overlay: { autoHideMs: 900, volumeAutoHideMs: 900, enabled: true, hintEnabled: true,
         speedBadge: true, speedButton: true, speedButtonPreset: 2,
-        progressBarMode: "idle", filterButton: true },
+        progressBarMode: "idle", filterButton: true,
+        ...(WITNESS ? WITNESS_STATE.overlay : {}) },
       zones: { enabled: true, fullscreenOnly: false,
         wheel: { map: { "5": { up: ["ACTION:SPEED:+0.25"], down: ["ACTION:SPEED:-0.25"] } } } }
     },
@@ -263,11 +307,22 @@ try {
 
   if (WITNESS) {
     // **في وضع الشاهد ينقلب الحكم**: الأحمرُ هو النجاح، وخضرتُه تعني أن المِجَسّ أعمى
+    // ⭐ **وفي الضبط ينقلب مرّةً ثانية**: **الخضرةُ هي النجاح** — **وهي التي تُثبت
+    // أن الأحمرَ من البناء لا من الحالِ المُعلَنة.** ⛔ **وبلا هذا الشوط يبقى
+    // الأحمرُ محتمَلاً من الحال** (قرار 42: عَرَضٌ واحد لا يدلّ على سببٍ واحد).
     const sees = stack.length > 0 || warned.length > 0;
-    console.log(`\n  ⇒ **حكم الشاهد:** ${sees
-      ? "✅ الرِكاز رأى العطب الحيّ بنصّه — فأخضرُه يُصدَّق"
-      : "❌ **لم يرَ العطب المعلوم — فلا يُصدَّق أخضرُه ولا يُبنى عليه**"}`);
-    code = sees ? 0 : 1;
+    console.log(`\n  رأى العطب: ${sees ? "نعم" : "لا"} · دورة=${stack.length} · تحذيرُنا=${warned.length}`);
+    if (CONTROL) {
+      console.log(`  ⇒ **حكم الضبط (البناءُ الحاليّ، الحالُ نفسُها):** ${!sees
+        ? "✅ **صفرٌ هنا** ⇒ **فأحمرُ الشاهد من البناء لا من الحال**"
+        : "❌ **رأى العطبَ على البناء الحاليّ** ⇒ **العطبُ قائمٌ أو الحالُ هي التي تُنتجه — ولا يُنسب شيء**"}`);
+      code = sees ? 1 : 0;
+    } else {
+      console.log(`  ⇒ **حكم الشاهد:** ${sees
+        ? "✅ الرِكاز رأى العطب الحيّ بنصّه — فأخضرُه يُصدَّق"
+        : "❌ **لم يرَ العطب المعلوم — فلا يُصدَّق أخضرُه ولا يُبنى عليه**"}`);
+      code = sees ? 0 : 1;
+    }
   } else {
     console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);
     code = fail ? 1 : 0;

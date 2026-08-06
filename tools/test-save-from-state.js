@@ -67,7 +67,11 @@ console.log("[1] ضابطٌ واحد ⇒ حقلٌ واحد");
   // ⚠️ **العددُ يُشتقّ من سجلّ المُولِّد لا يُكتب هنا** (قرار 34، ودرسُ #108:
   // رقمٌ بيدٍ سقط مرّتين في يومين — بانتقال ضابطٍ ثمّ بإضافة ضابط).
   // **والتطابق بين السجلّين محروسٌ في التأكيد التالي، وهذا يمنع الفراغ وحده.**
-  const uiCount = (fs.readFileSync("settings-ui.js", "utf8").match(/\{ id: "[A-Za-z]+", kind:/g) || []).length;
+  // ⛔ **كان يعدّ `{ id: "…", kind:` في نصّ الملفّ كلِّه** — **فلمّا دخلت سجلّاتٌ
+  // أخرى بالشكل نفسِه (#79 · #113) عدَّ 21 والمطلوب 8.** ⇒ ⭐ **مطابقةٌ نصّية
+  // تقيس جارَ المطلوب** (قرار 81): السؤالُ «كم ضابطَ توقيت؟» لا «كم إعلانَ ضابط؟».
+  // ⇒ **فيُقرأ السجلُّ المقصود بعينه من المُولِّد.**
+  const uiCount = (require("../settings-ui.js").VZ_UI_TIMING || []).length;
   check(`[1] وفيه ضوابطُ التوقيت (${uiCount})`, ids.length === uiCount && ids.length > 0, { ids: ids.length, uiCount });
   // ⚠️ **مرساةٌ صُحّحت لا تأكيدٌ أُضعف (قرار 33، #77):** الربط انتقل إلى
   // **المُولِّد الواحد** — فلا سطرَ ربطٍ مكتوبٌ بيدٍ لكل ضابط. **والنيّة نفسها
@@ -82,7 +86,7 @@ console.log("[1] ضابطٌ واحد ⇒ حقلٌ واحد");
   check("[1] ولا سطرَ ربطٍ مكتوبٌ بيدٍ لضابط توقيت",
     !/\$\("(gridDuration|volumeDuration|idleDuration|zoneHintEnabled|speedBadgeEnabled|hideProgressBar|speedButtonEnabled|speedButtonPreset)"\)\.addEventListener/.test(OPTIONS));
   // ⭐ وبالعدّ لا بالنظر: لكل حقلٍ ضابطٌ، ولكل ضابطٍ حقل
-  const uiIds = [...UI.matchAll(/\{ id: "([A-Za-z]+)", kind:/g)].map((r) => r[1]);
+  const uiIds = (require("../settings-ui.js").VZ_UI_TIMING || []).map((c) => c.id);
   check("[1] ⭐ ولكل حقلٍ ضابطٌ ولكل ضابطٍ حقل",
     ids.every((i) => uiIds.includes(i)) && uiIds.every((i) => ids.includes(i)), { ids, uiIds });
 }

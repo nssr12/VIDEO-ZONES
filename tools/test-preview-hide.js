@@ -16,7 +16,11 @@ const vm = require("vm");
 
 const SRC = fs.readFileSync("content.js", "utf8");
 const OPTS_JS = fs.readFileSync("options.js", "utf8");
-const OPTS_HTML = fs.readFileSync("options.html", "utf8");
+// ⚠️ **الصفحةُ تُبنى من ملفّين منذ 2026-08-06** (#79 · #113): `options.html`
+// **والسجلّ `settings-ui.js`** — **فمن قرأ أحدهما وحدَه يقرأ نصفَ الصفحة**،
+// وهو الشكلُ الذي أحمرّ به سبعةُ حرّاسٍ يوم النقل. ⇒ **يُقرأ المصدران معاً.**
+const OPTS_HTML = fs.readFileSync("options.html", "utf8") +
+  "\n" + fs.readFileSync("settings-ui.js", "utf8");
 
 const head = SRC.indexOf("// YouTube's homepage/search hover preview");
 const tail = SRC.indexOf("function applySubtitleTrack");
@@ -124,8 +128,11 @@ console.log("\n[5] الموقع المحظور يمنع كل شيء");
 
 console.log("\n[6] توصيل الواجهة");
 {
-  check("مربع الاختيار موجود في options.html", OPTS_HTML.includes('id="subHidePreviews"'));
-  check("ونصّه يذكر المعاينات", /إخفاء الترجمة في معاينات/.test(OPTS_HTML));
+  check("مربع الاختيار موجود في صفحة الإعدادات",
+    /id="subHidePreviews"|id: "subHidePreviews"/.test(OPTS_HTML));
+  // ⚠️ **والوسمُ فعلٌ منذ #77** («أخفِ…» لا «إخفاء…») — **فيُقاس المعنى الذي
+  // يحرسه هذا السطر (أنه يذكر المعاينات) لا صيغةٌ سقطت بقاعدةٍ أحدث.**
+  check("ونصّه يذكر المعاينات", /الترجمة في معاينات/.test(OPTS_HTML));
   check("ويُقرأ عند العرض", OPTS_JS.includes('$("subHidePreviews").checked = sub.hideOnPreviews !== false'));
   check("ويُحفظ عند التغيير", OPTS_JS.includes('hideOnPreviews: $("subHidePreviews").checked'));
   check("والتبديل يحفظ فوراً", OPTS_JS.includes('$("subHidePreviews").addEventListener("change", persistSubtitles)'));

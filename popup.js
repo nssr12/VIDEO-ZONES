@@ -737,31 +737,12 @@ async function saveSubtitlesToggle() {
   }
 }
 
-// ── #107 — وضعُ شريط يوتيوب: قراءةٌ تحتمل الشكلين، وكتابةُ حقلٍ واحد ─────────
-// ⚠️ **والقراءةُ من `progressBarModeOf` في `storage.js` لا من تطبيعٍ ثانٍ هنا**:
-// من رأى مفتاحاً قديماً وحده **يجب أن يرى «يختفي بالسكون» في القائمة** قبل أن
-// تمرّ الهجرة — **وتطبيعان يتباعدان، فيرى المستخدمُ اختياراً غير الذي يعمل.**
-async function loadProgressModeSelect() {
-  const data = await chrome.storage.sync.get({ settings: {} });
-  const el = $("progressBarMode");
-  if (el) el.value = progressBarModeOf((data.settings || {}).overlay);
-}
-
-async function saveProgressModeSelect() {
-  const data = await chrome.storage.sync.get({ settings: {} });
-  const settings = data.settings || {};
-  const mode = $("progressBarMode")?.value;
-  // **قيمةٌ لا نعرفها لا تُكتب** — القائمةُ مصدرُنا، والتخزينُ ليس مسرحاً لقيمٍ حرّة
-  if (!PROGRESS_BAR_MODES.includes(mode)) return;
-  settings.overlay = { ...(settings.overlay || {}), progressBarMode: mode };
-  const res = await safeSyncSet({ settings });
-  if (!res.ok) { setStatus("bad", `تعذّر الحفظ: ${res.message}`); return; }
-
-  const tabs = await chrome.tabs.query({});
-  for (const t of tabs) {
-    if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_OVERLAY_SETTINGS" }).catch(() => {});
-  }
-}
+// ⛔ #107 — **نُقل وضعُ شريط يوتيوب إلى قسم YouTube في صفحة الإعدادات**
+// (2026-08-06، قرار المالك، وهو **عكسُ قراره السابق** الذي جعل الـpopup موضعَه
+// الوحيد). ⛔ **والقديم يُشطب حيث كُتب ولا يُحذف** (قرار 21).
+// ⚠️ **ونُقل ولم يُنسَخ** — فلا مرآةَ تتباعد، وهي علّةُ القرار الأوّل نفسِها.
+// **والقراءةُ والكتابةُ صارتا في `options.js` بحجّتهما بنصّها**، ومفتاحُ التخزين
+// `overlay.progressBarMode` **لم يُمَسّ**: نقلُ موضعٍ لا هجرةُ بيانات.
 
 async function loadFullscreenOnlyToggle() {
   const data = await chrome.storage.sync.get({ settings: {} });
@@ -869,7 +850,6 @@ document.addEventListener("mousedown", (e) => {
   await loadBlockedSiteUI();
   await loadSubtitlesToggle();
   await loadFullscreenOnlyToggle();
-  await loadProgressModeSelect();
   await checkPageStatus();
   await loadBoostUI();
 
@@ -893,7 +873,6 @@ document.addEventListener("mousedown", (e) => {
   });
   $("subtitlesEnabled")?.addEventListener("change", saveSubtitlesToggle);
   $("fullscreenOnly")?.addEventListener("change", saveFullscreenOnlyToggle);
-  $("progressBarMode")?.addEventListener("change", saveProgressModeSelect);
   // كان `save().then(load)` بلا `.catch` (البند #36): رفضٌ من التخزين يبقى في
   // كونسول الـ popup وحده، **والزرّ يبقى على حالته القديمة** فيقرأها المستخدم
   // «لم يقع شيء» وهي «وقع خطأ لم يُقَل». والنجاح يبقى صامتاً (قرار 7): لا يظهر

@@ -105,8 +105,11 @@ console.log("\n[4] الـ popup يُخفيه متى غاب الفرق");
 
 console.log("\n[5] الأسماء المقروءة تطابق قائمة الإعدادات");
 {
-  const optionValues = [...fs.readFileSync("options.html", "utf8")
-    .matchAll(/<option value="(hd\d+|large|medium|small|tiny)">([^<]+)<\/option>/g)];
+  // ⚠️ **الصفحةُ تُبنى من ملفّين منذ 2026-08-06** (#79 · #113): `options.html`
+  // **والسجلّ `settings-ui.js`** — **فمن قرأ أحدهما وحدَه يقرأ نصفَ الصفحة**،
+  // وهو الشكلُ الذي أحمرّ به سبعةُ حرّاسٍ يوم النقل. ⇒ **يُقرأ المصدران معاً.**
+  const optionValues = [...fs.readFileSync("settings-ui.js", "utf8")
+    .matchAll(/\{ value: "(hd\d+|large|medium|small|tiny)", label: "([^"]+)" \}/g)];
   check("القائمة غير فارغة", optionValues.length >= 9, optionValues.length);
   for (const [, code, label] of optionValues) {
     const rendered = renderGap({ requested: code, applied: code }).textContent;
