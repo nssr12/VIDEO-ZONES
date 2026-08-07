@@ -2083,6 +2083,33 @@ function applyIdleState() {
 }
 let idleReentryWarned = false;
 
+// ── ⭐ #125 — **تغيّرُ تفعيلِ مستهلكٍ نشاطٌ له وحدَه** (قرار المالك 2026-08-07)
+//
+// ⛔ **وهو قرارُ تصميمٍ لا إصلاحُ عطب:** المقيس أن التبديل **يصل التبويبَ المفتوح
+// ويُطبَّق** — **والزرُّ يظهر بأوّل حركة**. ⇒ **والمطلوبُ أن يظهر فورَ التبديل.**
+//
+// ⛔⭐ **ولا يرسم المستهلكُ نفسَه من وراء المحرّك** (الحدّ المعماريّ، دفع أربع
+// مرّات): **يُعلَن للمحرّك فيُطبّق، ثمّ يعود المستهلكُ إلى قواعده** — فيظهر الآن،
+// **ويختفي بمهلة السكون كالمعتاد.**
+// ⛔ **ولا يوقظ التبديلُ المستهلكين الآخرين:** لا شيءَ وقع في ذلك التبويب،
+// **فإيقاظُ الشريط والشبكة معه أثرٌ لم يطلبه أحد** ⇒ **الإيقاظُ لهذا وحدَه.**
+//
+// ⭐⭐ **وقُرئ قبل أن يُكتب: أثمّة مستهلكٌ ثالثٌ يتضرّر؟ لا — والسببُ بنيويّ:**
+// **المحرّكُ يقول أيُّ حالٍ وقعت والمستهلكُ يفسّرها** (#107). ⇒ **فتمريرُ
+// `"active"` إلى `progressBar` في وضع `near` يُنتج `setYtProgressHidden(true)`**
+// (سياستُه: `why === "active"` ⇒ **يُخفي**) — **أي وعدَ الوضع بحرفه لا نقضَه.**
+// ⚠️ **ومع ذلك لا يُمرَّر إليه شيء**: الإيقاظُ **باسم المستهلك** — **فالسلامةُ
+// من بابين، والثاني يكفي وحدَه.**
+function applyIdleConsumerNow(name) {
+  const c = IDLE_CONSUMERS[name];
+  if (!c) return "لا مستهلك";
+  if (!idleWanted || !c.enabled()) { c.onDisabled(); return "مطفأ"; }
+  if (c.suspended?.()) { c.onActive("suspended"); return "ممتنع"; }
+  if (pointerInsideEl(c.target?.(), c.nearPad?.() ?? 0)) { c.onActive("pointer"); return "قرب"; }
+  c.onActive("active");                 // **الظهورُ الآن، والاختفاءُ بمهلته**
+  return "نشط";
+}
+
 function applyIdleStateOnce() {
   const engineOff = !idleWanted;     // المحرّك مطفأ ⇒ لا سكون على أحد
   for (const c of Object.values(IDLE_CONSUMERS)) {
@@ -3136,10 +3163,14 @@ window.addEventListener("mousedown", suppressMiddleClickDefault, true);
 // -------------------------------------------------------------------------
 let overlaySettings = { enabled: true, autoHideMs: 900, volumeAutoHideMs: 900, hintEnabled: true };
 
+let idleWakeQueue = new Set();          // #125 — من صار مُشغَّلاً في هذي القراءة
 async function loadOverlaySettings(pre) {
   const data = await settingsRead(pre);
   const s = data.settings || {};
   const o = s.overlay || {};
+  // **الحالُ قبل الكتابة** — فالمقارنةُ تحتاج طرفين، والقديمُ يزول بعد سطور
+  const wasOn = {};
+  for (const it of barButtonsOf(overlaySettings)) wasOn[it.id] = it.on === true;
   const grid = Number(o.autoHideMs ?? 900);
   const vol = Number(o.volumeAutoHideMs ?? grid);
   overlaySettings = {
@@ -3175,6 +3206,15 @@ async function loadOverlaySettings(pre) {
     // من القديمين إن غابت** — **فالاستدعاءُ عليها ثانيةً لا يغيّر شيئاً.**
     barButtons: barButtonsOf(o)
   };
+  // ── #125 — **من صار مُشغَّلاً الآن يُعامَل نشطاً، وحدَه** ────────────────────
+  // ⭐ **والمعرفةُ هنا لا عند المُنادي:** هذا الموضعُ يرى القديمَ والجديد معاً،
+  // **فلا يُمرَّر «ما تبدّل» في وسيطٍ يتباعد** (قرار 16د: الخطرُ يتناسب مع المسافة).
+  // ⚠️ **والمُطفأُ لا يُعامَل نشاطاً**: إخفاؤه يقع في `applyIdleState` بمساره
+  // المعتاد — **فالإيقاظُ للظهور وحدَه، ولا نُقحم أنفسنا في مسار الإخفاء.**
+  for (const it of overlaySettings.barButtons) {
+    const name = it.id === "speed" ? "speedButton" : "filterBtn";
+    if (it.on === true && wasOn[it.id] === false) idleWakeQueue.add(name);
+  }
 
   if (!overlaySettings.enabled) hideOverlayNow();
 }
@@ -4015,6 +4055,9 @@ async function flushReload() {
   ]);
   // #76: بعد اكتمال المُحمِّلات كلّها لا داخل أحدها — فالاشتقاق يقرأ حالةً تامّة
   refreshIdleConsumers();
+  // ⭐ **بعد التطبيق المعتاد لا قبله** — فلا يُلغيه، **ولمستهلكٍ بعينه لا للجميع**
+  for (const name of idleWakeQueue) applyIdleConsumerNow(name);
+  idleWakeQueue.clear();
   triggerYtQuality();
   maybeRedirectShorts();
   // ‏#64: إطفاء الرئيسي يُخفي الشبكة كما يفعل إطفاء الريماب.

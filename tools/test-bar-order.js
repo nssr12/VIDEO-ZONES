@@ -21,6 +21,7 @@ const vm = require("vm");
 
 const SRC = fs.readFileSync("content.js", "utf8");
 let pass = 0, fail = 0;
+const ok = (c, m) => check(m, c);
 const check = (name, cond, extra) => cond
   ? (pass++, console.log("  ✅ " + name))
   : (fail++, console.log("  ❌ " + name, extra ?? ""));
@@ -122,6 +123,32 @@ console.log("\n[4] وزرٌّ واحد في الشريط لا يُرتَّب و�
   vm.runInContext("applyBarOrder()", ctx);
   vm.runInContext("applyBarOrder()", ctx);
   check("[4] صفرُ نقل", moves() === 0, moves());
+}
+
+
+console.log("\n[5] ⭐ #125 — الإيقاظُ لمستهلكٍ واحد، ولا يرسم المستهلكُ نفسَه");
+{
+  const src = SRC;
+  // ⛔ **الحدُّ المعماريّ لا يُنقض**: الإظهارُ يمرّ بالمحرّك، **لا نداءَ مباشر
+  // لـ`setSpeedBtnShown` من مسار القراءة** — وإلا رسم المستهلكُ نفسَه من ورائه.
+  const fn = fnSource("function applyIdleConsumerNow(name)");
+  ok(/c\.onActive\("active"\)/.test(fn) && /c\.onDisabled\(\)/.test(fn),
+     "[5] الإيقاظُ يمرّ بسياسة المستهلك (`onActive`/`onDisabled`) لا برسمٍ مباشر");
+  ok(!/setSpeedBtnShown|setFilterBtnShown/.test(fn),
+     "[5] ⭐ ولا نداءَ مباشراً لرسم زرٍّ داخله");
+  // ⛔ **ولا يوقظ الآخرين**: يأخذ اسماً واحداً ولا يمشي على السجلّ
+  ok(/IDLE_CONSUMERS\[name\]/.test(fn) && !/Object\.values\(IDLE_CONSUMERS\)/.test(fn),
+     "[5] ⭐⭐ وباسمِ مستهلكٍ واحد — لا يمشي على السجلّ كلِّه");
+  // **والمُطفأُ لا يُوقَظ**: الشرطُ على `on === true` وحده
+  // ⚠️ **أُصلحت المرساةُ لا التأكيد** (قرار 33): الشريحةُ تنتهي عند نهاية المُحمِّل
+  const _a = src.indexOf("let idleWakeQueue");
+  const loader = src.slice(_a, src.indexOf("\n}", src.indexOf("for (const it of overlaySettings.barButtons)", _a)));
+  ok(/it\.on === true && wasOn\[it\.id\] === false/.test(loader),
+     "[5] ⭐ ولا يُوقَظ إلا من صار مُشغَّلاً الآن (لا المُطفأ ولا الثابت)");
+  // **وبعد التطبيق المعتاد لا قبله** — فلا يُلغيه
+  const flush = src.slice(src.indexOf("async function flushReload"), src.indexOf("function runStartupSteps"));
+  ok(flush.indexOf("refreshIdleConsumers()") < flush.indexOf("applyIdleConsumerNow"),
+     "[5] وبعد `refreshIdleConsumers` لا قبلها — فلا يُلغيه التطبيقُ المعتاد");
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);
