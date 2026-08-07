@@ -48,6 +48,10 @@ function extract(name) {
 const CODE = [
   "let startupBegun = true;",
   "let reloadScheduled = false;",
+  // #125 — طابورُ الإيقاظ يعيش مع المُحمِّل، **والسندُ يُعلنه كما يُعلن أخواته**
+  // (وغيابُه يرفع `ReferenceError` حقيقياً — وقد رفعه في أوّل تشغيلة).
+  "let idleWakeQueue = new Set();",
+  "function applyIdleConsumerNow() {}",
   "let lastAppliedSnapshot = null;",
   SRC.slice(SRC.indexOf("const RELOAD_MESSAGE_TYPES"), SRC.indexOf("let reloadScheduled")),
   SRC.slice(SRC.indexOf("const startupRead ="), SRC.indexOf("// ---- ONE applier")),
