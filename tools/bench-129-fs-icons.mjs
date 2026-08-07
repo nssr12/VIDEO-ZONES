@@ -54,10 +54,15 @@ const PULL = `(() => {
     const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
     const ps = ["::before", "::after"].map((p) => {
       const c2 = getComputedStyle(el, p);
+      // ⛔⭐⭐ وثالثةً في العنصر نفسِه (#132): قِيس المقبضُ ولم يُقَس ما فيه —
+      // فالرسمُ قد يكون صورةَ خلفيةٍ أو قناعاً أو محتوى، ولا يُخمَّن أيُّها.
       return { p, content: c2.content, bg: c2.backgroundColor, radius: c2.borderRadius,
                w: c2.width, h: c2.height, top: c2.top, left: c2.left, right: c2.right,
                bottom: c2.bottom, margin: c2.margin, box: c2.boxSizing,
                pos: c2.position, transform: c2.transform.slice(0, 46),
+               bgImg: c2.backgroundImage, bgSize: c2.backgroundSize,
+               mask: (c2.maskImage || "") + "|" + (c2.webkitMaskImage || ""),
+               clip: c2.clipPath, filter: c2.filter,
                border: c2.borderWidth + " " + c2.borderColor, op: c2.opacity };
     }).filter((p) => p.content !== "none");
     return { cls: cls(el).slice(0, 70), w: Math.round(r.width), h: Math.round(r.height),
@@ -66,7 +71,10 @@ const PULL = `(() => {
              border: cs.borderWidth + " " + cs.borderStyle + " " + cs.borderColor,
              shadow: cs.boxShadow.slice(0, 80), bgImg: cs.backgroundImage.slice(0, 60),
              transform: cs.transform.slice(0, 46), position: cs.position,
-             display: cs.display, margin: cs.margin, padding: cs.padding, ps };
+             display: cs.display, margin: cs.margin, padding: cs.padding,
+             bgImg: cs.backgroundImage, mask: (cs.maskImage || "") + "|" + (cs.webkitMaskImage || ""),
+             clip: cs.clipPath, html: el.innerHTML.slice(0, 200),
+             أبناء: [...el.children].map((k) => k.tagName + "." + cls(k).slice(0, 40)), ps };
   };
   const snapAutonav = () => {
     const an = document.querySelector(".ytp-autonav-toggle");

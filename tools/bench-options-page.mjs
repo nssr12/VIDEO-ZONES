@@ -354,12 +354,20 @@ async function run(label) {
         مفتاحُ_التلقائيّ: (() => {
           const t = q('[data-vz-yt="autoplay_toggle"] .vzSimSwitchTrack');
           if (!t) return null;
-          const cs = getComputedStyle(t), af = getComputedStyle(t, "::after");
+          const k = t.querySelector(".vzSimSwitchKnob");
+          const cs = getComputedStyle(t);
+          const ks = k && getComputedStyle(k);
           const r = t.getBoundingClientRect();
+          const g = k && k.querySelector("svg");
           return { w: Math.round(r.width), h: Math.round(r.height), radius: cs.borderRadius,
-                   bg: cs.backgroundColor, مقبض: af.content !== "none",
-                   مقبضٌ_قياس: af.width + "×" + af.height, مقبضٌ_لون: af.backgroundColor,
-                   مقبضٌ_إزاحة: af.transform };
+                   bg: cs.backgroundColor, مقبض: !!k,
+                   مقبضٌ_قياس: ks ? ks.width + "×" + ks.height : null,
+                   مقبضٌ_لون: ks ? ks.backgroundColor : null,
+                   مقبضٌ_إزاحة: ks ? ks.transform : null,
+                   // ⭐ ورسمُ المقبض (#132): الشاهدُ الذي اكتفى بوجود عنصرٍ كان
+                   // سيمرّ على مقبضٍ فارغ — فيُقرأ الرسمُ ومقاسُه المُعلَن.
+                   رسم: !!g, رسمٌ_مقاس: g ? g.getAttribute("viewBox") : null,
+                   رسمٌ_عرض: g ? Math.round(g.getBoundingClientRect().width) : 0 };
         })(),
         سينما: !!q('[data-vz-yt="size_button"]'),          // ⬅ يجب أن يكون false
         تقدّمٌ_مرسوم: !!rProg,
@@ -433,6 +441,8 @@ console.log("\n=== #77 — هل تحيا صفحة الإعدادات؟ ===\n");
 const { createRequire } = await import("node:module");
 const uiReg = createRequire(import.meta.url)(path.join(ROOT, "settings-ui.js"));
 const WANT_ACTIONS = ((uiReg.VZ_UI_CLEAN || {}).quick_actions || {}).شريط?.أيقونات?.length || 0;
+// ⛔ ومقاسُ رسم المقبض يُشتقّ من السجلّ كذلك — ولا يُكتب بيد (قرار 34 · 131)
+const WANT_KNOB_VB = ((uiReg.VZ_SIM_ICONS || {}).autonav_knob_play || {}).viewBox || null;
 
 const live = await run("حيّة");
 if (!live.ok) {
@@ -537,6 +547,11 @@ for (const v of sweepVerdicts(sw, live.drawn)) check(v.name, v.ok, v.extra);
     check("[٨هـ] ⭐ ومفتاحُ التشغيل التلقائيّ مرسومٌ مساراً", !!sw && sw.w === 30 && sw.h === 18, sw);
     check("[٨هـ] ⭐⭐ وفيه مقبضٌ (#130: رسمٌ صلبٌ بلا مقبضٍ يُحمّر هنا)",
       !!sw && sw.مقبض === true && sw.مقبضٌ_قياس === "14px×14px", sw);
+    // ⛔⭐⭐ #132 — **ورسمُ المقبض نفسُه**: مقبضٌ فارغ كان يمرّ من الشرط أعلاه
+    check("[٨هـ] ⭐⭐ وفي المقبض رسمُه — لا دائرةٌ خالية (#132)",
+      !!sw && sw.رسم === true && sw.رسمٌ_عرض === 9, sw);
+    check("[٨هـ] ⭐ ومقاسُ الرسم من السجلّ لا مفترَضاً",
+      !!sw && sw.رسمٌ_مقاس === WANT_KNOB_VB, { رُسم: sw && sw.رسمٌ_مقاس, السجلّ: WANT_KNOB_VB });
     check("[٨هـ] ⭐ والمقبضُ مزاحٌ كما قِيس في الحال المشغَّلة",
       !!sw && /matrix\(1, 0, 0, 1, 12, 0\)/.test(sw.مقبضٌ_إزاحة || ""), sw);
     // ⛔ **شاهدٌ سالبٌ من المنتَج نفسِه**: وضعُ السينما **مقيسٌ `display:none` في
