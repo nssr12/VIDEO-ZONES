@@ -98,5 +98,28 @@ console.log("\n[5] نسخةُ الإطار في `settings-ui.js` — لا تتب
   console.log(`  · ${inUi.length} مساراً في النسخة · ${known.size} في السجلّ · تاريخ يوتيوب ${reg.VZ_YT_ICONS_DATE}`);
 }
 
+
+// ── [6] ⭐ #127 — قسمُ ملفّ المالك مُولَّدٌ من السجلّ، لا نسخةٌ ثالثة ────────
+// **الملفُّ مرجعُ المالك البصريّ** — **وأيقوناتٌ في السجلّ لا يراها فيه موجودةٌ
+// ولا تُرى.** ⛔ **ونسخةٌ تُحرَّر بيدٍ هناك تصير ثالثةً تتباعد.**
+console.log("\n[6] قسمُ `icons (1).html` — مُولَّدٌ ومطابق");
+{
+  const reg = require("./icons.js");
+  const HTML = fs.readFileSync(path.join(ROOT, "tools", "icons (1).html"), "utf8");
+  const a = HTML.indexOf("<!-- VZ-YT-ICONS:START -->");
+  const b = HTML.indexOf("<!-- VZ-YT-ICONS:END -->");
+  ok(a !== -1 && b > a, "[6] القسمُ موجودٌ بعلامتيه");
+  const sec = a === -1 ? "" : HTML.slice(a, b);
+  const keys = [...Object.keys(reg.VZ_YT_ICONS), ...Object.keys(reg.VZ_YT_ICONS_ALL)];
+  const missing = keys.filter((k) => !sec.includes(`data-key="${k}"`));
+  // ⛔ **فشلُ هذا يعني أن السجلَّ نما ولم يُعَد التوليد** — `node tools/gen-yt-icons.js`
+  ok(missing.length === 0, "[6] ⭐⭐ وكلُّ مفتاحٍ في السجلّ له خليّةٌ فيه — الناقص: " + missing.slice(0, 3).join(","));
+  const strayCells = [...sec.matchAll(/data-key="([^"]+)"/g)].map((m) => m[1]).filter((k) => !keys.includes(k));
+  ok(strayCells.length === 0, "[6] ولا خليّةَ بلا مفتاحٍ في السجلّ — " + strayCells.slice(0, 3).join(","));
+  ok(new RegExp(reg.VZ_YT_ICONS_DATE).test(sec), "[6] وتاريخُ النسخ مكتوبٌ في القسم");
+  ok(/يوتيوب يُغيّر رسومَه/.test(sec), "[6] وحدُّ المراجعة مكتوبٌ فيه");
+  console.log(`  · ${keys.length} مفتاحاً في السجلّ · ${[...sec.matchAll(/data-key=/g)].length} خليّةً في القسم`);
+}
+
 console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);
 process.exit(fail ? 1 : 0);
