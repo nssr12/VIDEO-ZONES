@@ -15,18 +15,22 @@
 // ⇒ **فمن استبدل إحداهما بالأخرى فقدَ ما تمسكه.**
 //
 //   node tools/bench-112-host-snapshot.mjs
-//   node tools/bench-112-host-snapshot.mjs --red <commit>   # يُشغّله على content.js من السجلّ
+//   node tools/bench-112-host-snapshot.mjs --red <commit>      # على content.js من السجلّ
+//   node tools/bench-112-host-snapshot.mjs --red-file <ملفّ>   # بمتغيّرٍ واحد
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { launch, openPageAsHost, applyReplay, contentWorld, evalIn, killChrome, configure, waitPortFree, ROOT }
-  from "./ext-harness.mjs";
+import { launch, openPageAsHost, applyReplay, contentWorld, evalIn, killChrome, configure, waitPortFree,
+         refuseUnknownFlags, ROOT } from "./ext-harness.mjs";
 import { loadSnapshot, frozenVideoBox, REPLAY_ANCHORS, STATE_WINDOW } from "./snapshot-source.mjs";
 
 const PORT = 9799;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const RED = (() => { const i = process.argv.indexOf("--red"); return i > 0 ? process.argv[i + 1] : null; })();
+const argOf = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };
+const RED = argOf("--red");
+const RED_FILE = argOf("--red-file");
+refuseUnknownFlags(["--red", "--red-file"]);
 
 let pass = 0, fail = 0;
 const check = (name, cond, extra) => cond
@@ -47,14 +51,13 @@ if (!FROZEN) { console.log("❌ لا صندوقَ مُجمَّداً في `style
 
 // ── ⛔ نسخةُ إضافةٍ بـ`content.js` من السجلّ — لإثبات الحمرة على العطب نفسِه ──
 // **لا على شبيهٍ يُفتعَل** (قرار 47): **يُشغَّل على الملفّ السابق بنصّه.**
-function extAt(commit) {
+function extWith(source) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vz-red-"));
   for (const f of fs.readdirSync(ROOT)) {
     if ([".git", "node_modules", "tools", "docs"].includes(f)) continue;
     fs.cpSync(path.join(ROOT, f), path.join(dir, f), { recursive: true });
   }
-  const old = execFileSync("git", ["show", `${commit}:content.js`], { cwd: ROOT, maxBuffer: 64e6 });
-  fs.writeFileSync(path.join(dir, "content.js"), old);
+  fs.writeFileSync(path.join(dir, "content.js"), source);
   return dir;
 }
 
@@ -135,7 +138,9 @@ async function run(order) {
   // ⚠️ **يُنتظر تحرُّرُ المنفذ بين التشغيلتين** — وحارسُ المُساعد أمسكها في أوّل
   // تشغيلة: **كرومُ التشغيلة السابقة يردّ فيُقاس بناؤه هو** (وهو ما بُني الحارسُ له).
   await waitPortFree(PORT);
-  const extPath = RED ? extAt(RED) : ROOT;
+  const extPath = RED ? extWith(execFileSync("git", ["show", `${RED}:content.js`], { cwd: ROOT, maxBuffer: 64e6 }))
+    : RED_FILE ? extWith(fs.readFileSync(RED_FILE))
+    : ROOT;
   // ⚠️ **مقاسُ النافذة كمقاس الالتقاط** — **ولقطةٌ التُقطت في مقاسٍ تُقرأ في غيره
   // بمواضعَ خارج المنظور** ⇒ **`elementFromPoint` تُرجع `null` فتموت النقرةُ في
   // المِجَسّ لا في المنتَج** (أمسكه الشاهدُ الموجب قبل أن يُنشر).
@@ -199,7 +204,7 @@ async function run(order) {
     try { c.ws.close(); } catch {}
   } finally {
     killChrome(h);
-    if (RED) { try { fs.rmSync(extPath, { recursive: true, force: true }); } catch {} }
+    if (extPath !== ROOT) { try { fs.rmSync(extPath, { recursive: true, force: true }); } catch {} }
   }
   return report;
 }
@@ -208,6 +213,7 @@ console.log(`\n=== #112 — قياسٌ على لقطةٍ محفوظة ===`);
 console.log(`  اللقطة: ${snapFile}`);
 if (META) console.log(`  التُقطت ${META.capturedAt} · بناءُ المشغّل ${String(META.build).slice(0, 46)}`);
 if (RED) console.log(`  ⚠️ **شاهدُ حمرة**: content.js من \`${RED}\` — **يُنتظر منه أن يُحمّر**`);
+if (RED_FILE) console.log(`  ⚠️ **شاهدُ حمرة بمتغيّرٍ واحد**: ${RED_FILE}`);
 
 const r = await run(["filter", "speed"]);
 
@@ -284,7 +290,7 @@ console.log("\n[3] #118 — الترتيبُ يقع على الشريط لا ف�
     Array.isArray(o2.order) && o2.order.join() === "speed,filter", o2);
 }
 
-if (RED) {
+if (RED || RED_FILE) {
   console.log(`\n⇒ **شاهدُ الحمرة**: ${fail > 0
     ? `✅ احمرَّ بـ${fail} — فالرِكازُ يمسك ما بُني له`
     : "❌ **لم يُحمّر — ولا يُصدَّق أخضرُه بعد اليوم**"}`);

@@ -37,8 +37,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { launch, openPageAsHost, applyReplay, contentWorld, evalIn, killChrome, configure, ROOT }
-  from "./ext-harness.mjs";
+import { launch, openPageAsHost, applyReplay, contentWorld, evalIn, killChrome, configure,
+         refuseUnknownFlags, ROOT } from "./ext-harness.mjs";
 import { loadSnapshot, mergeCss, frozenVideoBox, REPLAY_ANCHORS, STATE_WINDOW, STATE_FULLSCREEN }
   from "./snapshot-source.mjs";
 
@@ -47,6 +47,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const argOf = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };
 const RED = argOf("--red");
 const RED_FILE = argOf("--red-file");
+refuseUnknownFlags(["--red", "--red-file"]);
 
 let pass = 0, fail = 0;
 const check = (name, cond, extra) => cond

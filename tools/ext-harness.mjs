@@ -178,6 +178,21 @@ export async function waitPortFree(port, timeoutMs = 8000) {
   }
 }
 
+// ── ⛔⭐ علمٌ لا يُعرَف يُرفض ولا يُبتلع (2026-08-08) ────────────────────────
+// **الواقعة:** مُرِّر `--red-file` إلى رِكازٍ لا يعرفه **فتجاهله وقاس المنتَجَ
+// وطبع «19/0» خضراء** — **وكانت ستُقرأ «الشاهدُ لم يُحمّر»**.
+// ⇒ ⭐ **وهي أخطرُ صور الإثبات الكاذب: تشغيلةُ شاهدٍ لم تقع تُقرأ نفياً** —
+// **والنفيُ هنا حكمٌ على حارسٍ لا على منتَج، فيُسقط الحارسَ وهو سليم.**
+// **وموضعُه واحد** (قرار 16ج) فلا ثلاثُ نسخٍ تتباعد.
+export function refuseUnknownFlags(known, argv = process.argv.slice(2)) {
+  for (const a of argv) {
+    if (a.startsWith("--") && !known.includes(a)) {
+      console.log(`❌ علمٌ لا يعرفه هذا الرِكاز: ${a} — **ولا يُقاس بعلمٍ مُبتلَع**`);
+      process.exit(1);
+    }
+  }
+}
+
 export async function openPage(port, url) {
   const tab = await (await fetch(
     `http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT" })).json();
