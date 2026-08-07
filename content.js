@@ -3431,11 +3431,11 @@ function buildOverlayElement() {
            ⛔ **وكانت «enhance» مؤقّتاً** لأن المطلوبةَ لم تكن في السجلّ ولا في
            أصله — **ثمّ نُقلت من ملفّ المالك (icons (1).html) مع أختها
            «filter-v»** (2026-08-06). ⛔ ولا علامةَ اقتباسٍ خلفية هنا: قالبٌ نصّيّ. -->
-      <svg class="vzFilterIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 5H9.65"/> <path d="M17.35 5H20.5"/> <path d="M3.5 12H5.55"/> <path d="M13.25 12H20.5"/> <path d="M3.5 19H11.45"/> <path d="M19.15 19H20.5"/> <circle cx="13.5" cy="5" r="2.2" fill="currentColor" stroke="none"/> <circle cx="9.4" cy="12" r="2.2" fill="currentColor" stroke="none"/> <circle cx="15.3" cy="19" r="2.2" fill="currentColor" stroke="none"/></svg></div>
+      ${vzSvg(VZ_OWN_ICONS["filter-h"], { cls: "vzFilterIcon" })}</div>
     <div class="vzBtn vzSpeedBtn vzHidden" role="button" tabindex="-1" data-vz-owns="wheel click">
       <!-- #89 — **أيقونة \`speed\` من سجلّ المالك \`tools/icons.js\`، منقولةٌ لا مرسومة.**
            ومسارُنا المرسوم في #88 **حُذف** فلا موضعان لأيقونةٍ واحدة. -->
-      <svg class="vzSpeedIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path stroke-linecap="butt" d="M19.63 9.23 A9.0 9.0 0 0 1 21 14 L21.0 17.4 A1.6 1.6 0 0 1 19.4 19.0 L4.6 19.0 A1.6 1.6 0 0 1 3.0 17.4 L3.0 14.0 A9.0 9.0 0 0 1 16.23 6.05"/> <path fill="currentColor" stroke="none" d="M18.79 7.21 L13.68 15.09 A2.0 2.0 0 1 1 10.91 12.32 Z"/></svg><span class="vzSpeedNum">1x</span></div>
+      ${vzSvg(VZ_OWN_ICONS["speed"], { cls: "vzSpeedIcon" })}<span class="vzSpeedNum">1x</span></div>
   `;
   applyGridVars(el); // يزرع الأرقام بـ textContent بعد بناء الخلايا
   return el;
@@ -3616,6 +3616,46 @@ function teardownOverlay() {
     vzTrackRafId = null;
   }
 }
+
+// ---- BEGIN vzSvg ----
+// ⛔⭐⭐ **الراسمُ الواحد لكلّ أيقونةٍ في المشروع** (#131) — **وكتلةٌ مُقترنةٌ
+// بحروفها في ثلاثة ملفّات**: هنا (السجلّ) · `settings-ui.js` · `content.js`،
+// **لأن `tools/` لا يُشحن فلا سبيل إلى استيرادها وقت التشغيل** — وهو النمطُ
+// نفسُه الذي يحمله `baseDomain`، **و`tools/test-viewbox-source.js` يُحمّر على
+// تباعدها.**
+//
+// ⛔⭐ **و`viewBox` حقلٌ إجباريٌّ بلا قيمةٍ افتراضية — يرمي ولا يُكمل:**
+// **القيمةُ الافتراضية هي بعينها ما يجعل الفرضيّةَ الخاطئة تعيش صامتة** —
+// أيقونةٌ بلا مقاسها كانت سترسم في مقاسٍ ليس مقاسَها **ولا يقول أحدٌ شيئاً**،
+// **وذاك هو «الصوابُ المُعار» يوم يزول مُعيرُه** (قرار 131).
+// ⇒ **فالفشلُ فوريٌّ وبصوتٍ عالٍ، لأن أيقونةً مرسومةً بمقاسٍ خطأ تُقرأ تصميماً.**
+function vzSvg(it, opts) {
+  const o = opts || {};
+  if (!it || !it.d) return "";                      // مفتاحٌ مجهول ⇒ فراغٌ صامت (عقدٌ قائم)
+  if (!it.viewBox) {
+    throw new Error("[VZ] أيقونةٌ بلا viewBox — لا مقاسَ افتراضيّ: " + (o.cls || o.key || "?"));
+  }
+  const style = o.mode === "fill"
+    ? 'fill="currentColor" aria-hidden="true"'
+    : 'fill="none" stroke="currentColor" stroke-width="1.7" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"';
+  return '<svg' + (o.cls ? ' class="' + o.cls + '"' : "") +
+    ' viewBox="' + it.viewBox + '"' +
+    (o.size ? ' width="' + o.size + '" height="' + o.size + '"' : "") +
+    ' ' + style + '>' + it.d + '</svg>';
+}
+// ---- END vzSvg ----
+
+// ── #131 — **سجلُّ أيقونتينا المشحونتين: المقاسُ حقلٌ لا وسمٌ مكتوب** ────────
+// ⛔⭐ **وكان `viewBox` مكتوباً بيدٍ في وسمَي SVG أدناه** — **وهو الموضعُ الذي
+// سمّاه قرار 131 خطراً مؤجَّلاً: من يكتبه بيده يرث الفرضيّةَ ولا يرث مُعيرَها.**
+// ⇒ **فصار حقلاً يقرؤه الراسمُ الواحد، ويرمي على غيابه.**
+// ⚠️ **والمساران منقولان بحروفهما من `tools/icons.js`** — و`tools/test-icons.js`
+// يُحمّر على تباعدهما عن السجلّ.
+const VZ_OWN_ICONS = {
+  "filter-h": { viewBox: "0 0 24 24", d: '<path d="M3.5 5H9.65"/> <path d="M17.35 5H20.5"/> <path d="M3.5 12H5.55"/> <path d="M13.25 12H20.5"/> <path d="M3.5 19H11.45"/> <path d="M19.15 19H20.5"/> <circle cx="13.5" cy="5" r="2.2" fill="currentColor" stroke="none"/> <circle cx="9.4" cy="12" r="2.2" fill="currentColor" stroke="none"/> <circle cx="15.3" cy="19" r="2.2" fill="currentColor" stroke="none"/>' },
+  "speed": { viewBox: "0 0 24 24", d: '<path stroke-linecap="butt" d="M19.63 9.23 A9.0 9.0 0 0 1 21 14 L21.0 17.4 A1.6 1.6 0 0 1 19.4 19.0 L4.6 19.0 A1.6 1.6 0 0 1 3.0 17.4 L3.0 14.0 A9.0 9.0 0 0 1 16.23 6.05"/> <path fill="currentColor" stroke="none" d="M18.79 7.21 L13.68 15.09 A2.0 2.0 0 1 1 10.91 12.32 Z"/>' }
+};
 
 function ensureVideoOverlay(video) {
   if (!video) return;

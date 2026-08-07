@@ -520,6 +520,35 @@ const VZ_BAR_BUTTONS = [
 // صامتةً وهي عينُ ما بُني الإطارُ لمنعه.**
 // ⭐ **وأزرارُنا تحمل أيقونتَيهما المشحونتين** (`speed` · `filter-h`) — **لا نسخةً
 // ثانية تُرسم للإطار، وإلا تباعد ما يراه في المعاينة عمّا يراه في المشغّل.**
+// ---- BEGIN vzSvg ----
+// ⛔⭐⭐ **الراسمُ الواحد لكلّ أيقونةٍ في المشروع** (#131) — **وكتلةٌ مُقترنةٌ
+// بحروفها في ثلاثة ملفّات**: هنا (السجلّ) · `settings-ui.js` · `content.js`،
+// **لأن `tools/` لا يُشحن فلا سبيل إلى استيرادها وقت التشغيل** — وهو النمطُ
+// نفسُه الذي يحمله `baseDomain`، **و`tools/test-viewbox-source.js` يُحمّر على
+// تباعدها.**
+//
+// ⛔⭐ **و`viewBox` حقلٌ إجباريٌّ بلا قيمةٍ افتراضية — يرمي ولا يُكمل:**
+// **القيمةُ الافتراضية هي بعينها ما يجعل الفرضيّةَ الخاطئة تعيش صامتة** —
+// أيقونةٌ بلا مقاسها كانت سترسم في مقاسٍ ليس مقاسَها **ولا يقول أحدٌ شيئاً**،
+// **وذاك هو «الصوابُ المُعار» يوم يزول مُعيرُه** (قرار 131).
+// ⇒ **فالفشلُ فوريٌّ وبصوتٍ عالٍ، لأن أيقونةً مرسومةً بمقاسٍ خطأ تُقرأ تصميماً.**
+function vzSvg(it, opts) {
+  const o = opts || {};
+  if (!it || !it.d) return "";                      // مفتاحٌ مجهول ⇒ فراغٌ صامت (عقدٌ قائم)
+  if (!it.viewBox) {
+    throw new Error("[VZ] أيقونةٌ بلا viewBox — لا مقاسَ افتراضيّ: " + (o.cls || o.key || "?"));
+  }
+  const style = o.mode === "fill"
+    ? 'fill="currentColor" aria-hidden="true"'
+    : 'fill="none" stroke="currentColor" stroke-width="1.7" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"';
+  return '<svg' + (o.cls ? ' class="' + o.cls + '"' : "") +
+    ' viewBox="' + it.viewBox + '"' +
+    (o.size ? ' width="' + o.size + '" height="' + o.size + '"' : "") +
+    ' ' + style + '>' + it.d + '</svg>';
+}
+// ---- END vzSvg ----
+
 const VZ_SIM_ICONS_DATE = "2026-08-07";
 const VZ_SIM_ICONS = {
   "play_button": { viewBox: "0 0 36 36", d: "<path d=\"M 12.75 4.5 L 9.75 4.5 C 9.15 4.5 8.58 4.73 8.15 5.15 C 7.73 5.58 7.5 6.15 7.5 6.75 L 7.5 29.25 C 7.5 29.84 7.73 30.41 8.15 30.84 C 8.58 31.26 9.15 31.5 9.75 31.5 L 12.75 31.5 C 13.34 31.5 13.91 31.26 14.34 30.84 C 14.76 30.41 15 29.84 15 29.25 L 15 6.75 C 15 6.15 14.76 5.58 14.34 5.15 C 13.91 4.73 13.34 4.5 12.75 4.5 Z M 26.25 4.5 L 23.25 4.5 C 22.65 4.5 22.08 4.73 21.65 5.15 C 21.23 5.58 21 6.15 21 6.75 V 29.25 C 21 29.84 21.23 30.41 21.65 30.84 C 22.08 31.26 22.65 31.5 23.25 31.5 L 26.25 31.5 C 26.84 31.5 27.41 31.26 27.84 30.84 C 28.26 30.41 28.5 29.84 28.5 29.25 V 6.75 L 28.5 6.75 C 28.5 6.15 28.26 5.58 27.84 5.15 C 27.41 4.73 26.84 4.5 26.25 4.5 Z\"/>" },
@@ -744,9 +773,8 @@ function vzUiBuildBarEditor(doc, root, opts = {}) {
       el.className = "vzSimYt";
       el.dataset.vzYt = part.key;
       const svg = (k) => {
-        const i = VZ_SIM_ICONS[k];
-        return i ? `<svg viewBox="${i.viewBox}" width="18" height="18" ` +
-          `fill="currentColor" aria-hidden="true">${i.d}</svg>` : "";
+        // ⭐ **الراسمُ الواحد** (#131) — ولا وسمَ يُبنى هنا بيد
+        return vzSvg(VZ_SIM_ICONS[k], { size: 18, mode: "fill", key: k });
       };
       const ico = VZ_SIM_ICONS[part.أيقونة || part.key];
       if (part.أيقونات) {
@@ -816,9 +844,7 @@ function vzUiBuildBarEditor(doc, root, opts = {}) {
       // هو النصُّ المرسوم لا المعنى**، **ومن لا يرى الرسمَ يقرؤه كما كان.**
       const ourIco = VZ_SIM_OUR_ICONS[it.id === "speed" ? "speed" : "filter-h"];
       if (ourIco) {
-        chip.innerHTML = `<svg viewBox="${ourIco.viewBox}" width="20" height="20" fill="none" ` +
-          `stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" ` +
-          `aria-hidden="true">${ourIco.d}</svg>`;
+        chip.innerHTML = vzSvg(ourIco, { size: 20, key: it.id });
         chip.title = m.label;
       } else {
         chip.textContent = m.label;
