@@ -1,0 +1,39 @@
+{
+ "at": null,
+ "sheets": {
+  "readable": 0,
+  "blocked": 0,
+  "blockedHrefs": []
+ },
+ "anchors": {
+  "ytp": 585,
+  "rightControls": 1,
+  "bottom": 1,
+  "settings": 1,
+  "leftControls": 1,
+  "video": 1,
+  "moviePlayer": 1
+ },
+ "build": "/s/player/854a788e/player_ias.vflset/ar_EG/base.js",
+ "htmlAttrs": {
+  "lang": "ar",
+  "dir": ""
+ },
+ "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+ "liveShape": {
+  "moviePlayerChildren": 36,
+  "barInsidePlayer": true
+ },
+ "produced": {
+  "ملءُ_شاشة": true,
+  "شريطٌ_سفليّ": true,
+  "عنوان": true,
+  "صفُّ_إجراءات": true,
+  "زرُّ_المزيد": true,
+  "وضعُ_السينما": false,
+  "قائمةُ_الإعدادات": false
+ },
+ "chrome": "Chrome/151.0.7922.108",
+ "state": "watch-fullscreen-controls-visible-signed-out-ar",
+ "capturedAt": "2026-08-07"
+}
