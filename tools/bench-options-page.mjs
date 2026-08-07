@@ -414,6 +414,12 @@ async function run(label) {
 
 console.log("\n=== #77 — هل تحيا صفحة الإعدادات؟ ===\n");
 
+// ⛔ **السجلُّ يُحمَّل قبل الأحكام لا بعدها** — فكلُّ عددٍ فيها مشتقٌّ منه
+// (قرار 34)، **ورقمٌ يُكتب بيدٍ يتخلّف عن تغييرٍ مقصود ويُقرأ انحداراً.**
+const { createRequire } = await import("node:module");
+const uiReg = createRequire(import.meta.url)(path.join(ROOT, "settings-ui.js"));
+const WANT_ACTIONS = ((uiReg.VZ_UI_CLEAN || {}).quick_actions || {}).شريط?.أيقونات?.length || 0;
+
 const live = await run("حيّة");
 if (!live.ok) {
   console.log("  ❌ تعذّر التشغيل:", live.why);
@@ -505,7 +511,11 @@ for (const v of sweepVerdicts(sw, live.drawn)) check(v.name, v.ok, v.extra);
     const f = b.fs129;
     console.log("\n[٨هـ] #129 — الإطارُ يحاكي ملءَ الشاشة");
     check("[٨هـ] شريطُ العنوان مرسومٌ أعلى الصورة", f.عنوان === true, f);
-    check("[٨هـ] ⭐ وصفُّ الإجراءات بخمس أيقونات (كما قِيست)", f.إجراءات === 5, f);
+    // ⛔ **العددُ يُشتقّ من السجلّ ولا يُكتب** (قرار 34): كُتب `5` يومَ القياس،
+    // **فلمّا دخلت أيقونةٌ سادسة بشهادة المالك احمرّ الشاهدُ على تغييرٍ مقصود** —
+    // وهو عينُ ما وقع في `probe-17` مع «توقيت=8».
+    check(`[٨هـ] ⭐ وصفُّ الإجراءات بـ${WANT_ACTIONS} أيقونات (كما في السجلّ)`,
+      f.إجراءات === WANT_ACTIONS, { رُسم: f.إجراءات, السجلّ: WANT_ACTIONS });
     check("[٨هـ] ⭐ وزرُّ «المزيد من الفيديوهات» وسطَ الشريط", f.وسط === true, f);
     check("[٨هـ] ⭐⭐ ووسطُه وسطٌ حقيقيّ لا طرفٌ ثالث", f.وسطُه_وسط === true, f);
     check("[٨هـ] ⭐ ومفتاحُ التشغيل التلقائيّ شكلٌ لا أيقونة", f.مفتاحُ_التلقائيّ === true, f);
@@ -546,8 +556,6 @@ check("[٦] وصفر خطأ فيها", live.panel?.runtime === 0, live.panel?.ms
 // **فاحمرّت البوّابةُ على تغييرٍ مقصود**. ⇒ **والسجلّ هو المصدر، والرسمُ يُقارَن به.**
 // **والسجلّ يُحمَّل كما يُحمّله `test-settings-ui.js` — لا مُحلِّلٌ نصّيٌّ ثانٍ**
 // (وهو درسُ `test-name-resolves`: الخصوصيّةُ تُبنى والعموميّةُ تُستعار).
-const { createRequire } = await import("node:module");
-const uiReg = createRequire(import.meta.url)(path.join(ROOT, "settings-ui.js"));
 const WANT_CLEAN = Object.keys(uiReg.VZ_UI_CLEAN || {}).length;
 const WANT_TIMING = (uiReg.VZ_UI_TIMING || []).length;
 
