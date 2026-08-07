@@ -453,6 +453,12 @@ label{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:600;let
   border:1px dashed rgba(255,255,255,.22); background:rgba(255,255,255,.03);
 }
 .vzSimTrayLbl{ font-size:12px; opacity:.6; }
+.vzSimNote{ direction:rtl; margin:0; font-size:12px; opacity:.75;
+  padding:6px 10px; border-radius:8px; background:rgba(255,255,255,.05); }
+.vzSimIco{ display:inline-flex; align-items:center; }
+.vzSimIco svg{ display:block; }
+.vzSimBtn{ display:inline-flex; align-items:center; gap:6px; }
+.vzSimChipLbl{ font-size:12px; }
 .vzSimBtn{
   font:inherit; color:#fff; cursor:grab;
   background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.28);
