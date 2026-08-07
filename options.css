@@ -431,8 +431,17 @@ label{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:600;let
 /* الشريطُ السفليّ — كشريط يوتيوب: خطُّ تقدّمٍ فوقه وأزرارٌ إلى يمينه */
 .vzSimBar{
   position:absolute; left:0; right:0; bottom:0; min-height:46px;
-  display:flex; align-items:center; justify-content:flex-end; gap:6px;
+  display:flex; align-items:center; justify-content:space-between; gap:6px;
   padding:0 10px 6px; background:linear-gradient(transparent,rgba(0,0,0,.75));
+}
+.vzSimGroup{ display:flex; align-items:center; gap:6px; min-height:34px; }
+/* ⛔⭐ **الفرقُ بنيويٌّ لا تلميح** (بوّابةُ قبولٍ من المالك): عنصرُ العرض
+   **لا يستقبل مؤشّراً أصلاً** — فلا يُسحب، ولا يتبدّل شكلُ المؤشّر فوقه ⇒
+   **لا يقع «سحبتُه فلم يحدث شيء»**. ومعه فرقٌ في المظهر: بلا إطارٍ وباهت. */
+.vzSimYt{
+  pointer-events:none; user-select:none; cursor:default;
+  font:600 12px/1 Arial, sans-serif; color:rgba(255,255,255,.62);
+  background:none; border:0; padding:0 4px; min-width:22px; text-align:center;
 }
 .vzSimBar::before{
   content:""; position:absolute; left:10px; right:10px; top:6px; height:3px;

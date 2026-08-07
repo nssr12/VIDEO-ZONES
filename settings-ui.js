@@ -71,25 +71,25 @@ const VZ_UI_CLEAN = {
 
   heatmap: { group: "progress", measured: true, label: "إخفاء الخريطة الحرارية على شريط التقدّم",
     help: "⚠️ مخفيّةٌ أصلاً في السكون: قِيس أن شفافيتها صفر حتى تُحوّم على الشريط. ومَن فعّل «إخفاء شريط التقدّم بالسكون» يجدها مخفيّةً معه كذلك." },
-  time_display: { group: "progress", label: "إخفاء الوقت المنقضي والمدّة",
+  time_display: { group: "progress", شريط: { جهة: "يسار", ترتيب: 3, رمز: "0:00" }, label: "إخفاء الوقت المنقضي والمدّة",
     help: "الرقمان على يسار الشريط السفلي. لا يُخفيهما إخفاءُ شريط التقدّم بالسكون — ذاك يُخفي الشريط وتوابعه وحدها." },
   chapter_button: { group: "progress", label: "إخفاء اسم الفصل الجاري",
     help: "اسم الفصل بجوار الوقت. لا يظهر إلا في فيديو له فصول." },
 
   prev_button: { group: "controls", label: "إخفاء زرّ السابق", help: "زرّ الانتقال إلى الفيديو السابق في قائمة التشغيل." },
-  play_button: { group: "controls", label: "إخفاء زرّ التشغيل والإيقاف", help: "الزرّ الأيسر في الشريط السفلي. ⚠️ إخفاؤه لا يمنع التشغيل بالنقر على الصورة أو بمفتاح المسافة." },
+  play_button: { group: "controls", شريط: { جهة: "يسار", ترتيب: 1, رمز: "▶" }, label: "إخفاء زرّ التشغيل والإيقاف", help: "الزرّ الأيسر في الشريط السفلي. ⚠️ إخفاؤه لا يمنع التشغيل بالنقر على الصورة أو بمفتاح المسافة." },
   next_button: { group: "controls", label: "إخفاء زرّ التالي", help: "زرّ الانتقال إلى الفيديو التالي." },
-  mute_button: { group: "controls", label: "إخفاء زرّ الكتم", help: "أيقونة السمّاعة. ⚠️ لا تمنع الكتم بمفتاح m ولا بأوامر الإضافة." },
+  mute_button: { group: "controls", شريط: { جهة: "يسار", ترتيب: 2, رمز: "🔊" }, label: "إخفاء زرّ الكتم", help: "أيقونة السمّاعة. ⚠️ لا تمنع الكتم بمفتاح m ولا بأوامر الإضافة." },
   volume_slider: { group: "controls", label: "إخفاء منزلق الصوت", help: "الشريط الذي يظهر بجوار أيقونة السمّاعة عند التحويم." },
-  subtitles_button: { group: "controls", label: "إخفاء زرّ الترجمة (CC)", help: "⚠️ يُستثنى تلقائياً ما دامت «أتمتة لغة الترجمة» مُفعَّلة، لأن الأتمتة تنقره لتعمل (#18) — فإخفاؤه كان يقتل ميزةً بميزة." },
-  settings_button: { group: "controls", label: "إخفاء زرّ الإعدادات (⚙)", help: "⚠️ يُستثنى تلقائياً مع «أتمتة لغة الترجمة» للسبب نفسه." },
+  subtitles_button: { group: "controls", شريط: { جهة: "يمين", ترتيب: 1, رمز: "CC" }, label: "إخفاء زرّ الترجمة (CC)", help: "⚠️ يُستثنى تلقائياً ما دامت «أتمتة لغة الترجمة» مُفعَّلة، لأن الأتمتة تنقره لتعمل (#18) — فإخفاؤه كان يقتل ميزةً بميزة." },
+  settings_button: { group: "controls", شريط: { جهة: "يمين", ترتيب: 2, رمز: "⚙" }, label: "إخفاء زرّ الإعدادات (⚙)", help: "⚠️ يُستثنى تلقائياً مع «أتمتة لغة الترجمة» للسبب نفسه." },
   autoplay_toggle: { group: "controls", label: "إخفاء مفتاح التشغيل التلقائي", help: "المفتاح الذي يقرّر تشغيل الفيديو التالي تلقائياً." },
   miniplayer_button: { group: "controls", measured: true, label: "إخفاء زرّ المشغّل المصغّر",
     help: "⚠️ حالُه غير محدَّدة: قِيس أنه غائب عن الحالات الإحدى عشرة كلّها — وقد يتعلّق بتسجيل الدخول. يتحقّق منه المالك قبل أن يُوعَد بأثر." },
   pip_button: { group: "controls", label: "إخفاء زرّ صورة داخل صورة", help: "زرّ فصل الفيديو في نافذة عائمة." },
-  size_button: { group: "controls", label: "إخفاء زرّ وضع السينما", help: "الزرّ الذي يوسّع المشغّل داخل الصفحة بلا ملء شاشة." },
+  size_button: { group: "controls", شريط: { جهة: "يمين", ترتيب: 3, رمز: "▭" }, label: "إخفاء زرّ وضع السينما", help: "الزرّ الذي يوسّع المشغّل داخل الصفحة بلا ملء شاشة." },
   remote_button: { group: "controls", label: "إخفاء زرّ البثّ إلى جهاز", help: "زرّ الإرسال إلى تلفاز أو جهاز متّصل." },
-  fullscreen_button: { group: "controls", label: "إخفاء زرّ ملء الشاشة", help: "⚠️ إخفاؤه لا يمنع ملء الشاشة بمفتاح f ولا بأوامر الإضافة." },
+  fullscreen_button: { group: "controls", شريط: { جهة: "يمين", ترتيب: 4, رمز: "⛶" }, label: "إخفاء زرّ ملء الشاشة", help: "⚠️ إخفاؤه لا يمنع ملء الشاشة بمفتاح f ولا بأوامر الإضافة." },
 
   large_play_button: { group: "overlays", label: "إخفاء زرّ التشغيل الكبير وسط الصورة", help: "الزرّ الكبير الذي يظهر قبل التشغيل أو بعد الإيقاف." },
   endscreen: { group: "overlays", label: "إخفاء شاشة النهاية ومقترحاتها", help: "المربّعات التي تغطّي الصورة في آخر الفيديو، وشبكة المقترحات في ملء الشاشة." },
@@ -513,7 +513,8 @@ const VZ_BAR_BUTTONS = [
 // المحرِّر والحقن** ⇒ **معاينةٌ تكذب، وهي ما بُني هذا كلُّه لمنعه.**
 const VZ_SIM_ZONES = { in: "داخل الشريط", out: "خارج الشريط" };
 
-function vzUiBuildBarEditor(doc, root, { get, set } = {}) {
+function vzUiBuildBarEditor(doc, root, opts = {}) {
+  const { get, set } = opts;
   root.textContent = "";
 
   const sim = doc.createElement("div");
@@ -528,6 +529,17 @@ function vzUiBuildBarEditor(doc, root, { get, set } = {}) {
   bar.dataset.vzZone = "in";
   bar.setAttribute("role", "listbox");
   bar.setAttribute("aria-label", "داخل الشريط — بترتيب الظهور");
+  // ── #123 (المرحلة ب) — **مجموعتان كما في يوتيوب، بترتيبٍ مقيس** ────────────
+  // **المقيس على `youtube.com/watch` 2026-08-07 بالموضع الأفقيّ لا ببنية الأبناء**
+  // (فالمجموعةُ تحوي أغلفة): **يسار `play@12 · mute@64 · time@104`** ·
+  // **يمين `subtitles@533 · settings@581 · size@629 · fullscreen@677`**.
+  // ⛔ **ومعاينةٌ بترتيبٍ لا وجود له معاينةٌ تكذب** — وهي ما بُني هذا كلُّه لمنعه.
+  const gLeft = doc.createElement("div");
+  gLeft.className = "vzSimGroup vzSimLeft";
+  const gRight = doc.createElement("div");
+  gRight.className = "vzSimGroup vzSimRight";
+  bar.appendChild(gLeft);
+  bar.appendChild(gRight);
   screen.appendChild(hint);
   screen.appendChild(bar);
 
@@ -559,8 +571,48 @@ function vzUiBuildBarEditor(doc, root, { get, set } = {}) {
   const list = () => (get && get()) || [];
   const posOf = (id) => list().findIndex((x) => x.id === id) + 1;
 
+  // ── #123 — **عناصرُ يوتيوب: عرضٌ لا تحكّم، والاتّجاه واحد** ────────────────
+  //
+  // ⛔⭐⭐ **الاتّجاه: Clean Player ⇒ الإطار، ولا عكس** (قرار المالك): أخفى عنصراً
+  // بمفتاحه ⇒ **اختفى من الإطار فوراً**. ⇒ **فالإطارُ معاينةٌ حيّةٌ لأثر Clean
+  // Player**، **والـ38 مفتاحاً تبقى المكانَ الوحيد للتغيير** — **مرآةٌ لا مصدر.**
+  // ⛔ **ولا اتّجاهَ عكسيّ ولو بدا مريحاً: موضعان لحقيقةٍ واحدة.**
+  //
+  // ⭐ **والقائمةُ تُشتقّ من `VZ_UI_CLEAN` نفسِه** — **لا قائمةَ ثانية تُكتب بيد**:
+  // مفتاحٌ يُضاف غداً **يظهر في الإطار بإعلان جهته وترتيبه**، ولا يُنسى في موضعين.
+  // ⚠️ **وما لم يثبت في القياس لا يُعلَن جهةً فلا يدخل** — **وعنصرٌ في الإطار لا
+  // يوجد عند المستخدم معاينةٌ تكذب، وهي أسوأ من غياب المعاينة.**
+  //
+  // ⛔⭐⭐ **والفرقُ عن أزرارنا بنيويٌّ لا تلميح** (بوّابةُ قبولٍ من المالك):
+  // **`pointer-events: none` على عناصر العرض** ⇒ **لا يمكن سحبُها أصلاً، ولا
+  // يتبدّل المؤشّرُ فوقها** — **فلا يقع «سحبتُه فلم يحدث شيء»**، وهو «لا أثرَ بلا
+  // خطأ» الذي أنفقنا فيه أسبوعاً. **ومعه فرقٌ في المظهر: بلا إطارٍ وباهتة.**
+  // ⚠️ **ولا تدخل حلقةَ التركيز** (`aria-hidden` وبلا `tabindex`): **ما لا
+  // يُتفاعل معه لا يُركَّز عليه**، **وإدخالُه يُطيل الحلقة بلا فائدة.**
+  const ytParts = () => Object.entries(VZ_UI_CLEAN)
+    .filter(([, v]) => v && v.شريط)
+    .map(([key, v]) => ({ key, ...v.شريط, label: v.label }))
+    .sort((a, b) => a.ترتيب - b.ترتيب);
+
+  function renderYouTube() {
+    for (const g of [gLeft, gRight]) g.querySelectorAll("[data-vz-yt]").forEach((e) => e.remove());
+    const cp = (opts && opts.cleanPlayer && opts.cleanPlayer()) || { enabled: false, items: {} };
+    for (const part of ytParts()) {
+      // **مخفيٌّ في Clean Player ⇒ مخفيٌّ هنا** — وهو الاتّجاه الوحيد
+      if (cp.enabled && cp.items && cp.items[part.key] === true) continue;
+      const el = doc.createElement("span");
+      el.className = "vzSimYt";
+      el.dataset.vzYt = part.key;
+      el.textContent = part.رمز;
+      el.setAttribute("aria-hidden", "true");   // خارج حلقة التركيز
+      el.title = `${part.label.replace(/^إخفاء /, "")} — عرضٌ فقط، ويُخفى من Clean Player`;
+      (part.جهة === "يسار" ? gLeft : gRight).appendChild(el);
+    }
+  }
+
   function render() {
     const l = list();
+    renderYouTube();
     bar.querySelectorAll("[data-vz-bar-id]").forEach((e) => e.remove());
     tray.querySelectorAll("[data-vz-bar-id]").forEach((e) => e.remove());
     helps.textContent = "";
@@ -579,7 +631,7 @@ function vzUiBuildBarEditor(doc, root, { get, set } = {}) {
       chip.setAttribute("aria-label",
         `${m.label} — ${it.on ? VZ_SIM_ZONES.in : VZ_SIM_ZONES.out}، الموضع ${posOf(it.id)} من ${l.length}. ` +
         `الأسهمُ تحرّكه، والمسافةُ تُدخله الشريطَ أو تُخرجه منه.`);
-      (it.on ? bar : tray).appendChild(chip);
+      (it.on ? gRight : tray).appendChild(chip);
 
       const hb = vzUiHelpButton(doc, `help_bar_${it.id}`, m.label);
       const body = doc.createElement("p");

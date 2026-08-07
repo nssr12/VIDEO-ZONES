@@ -622,7 +622,12 @@ async function persistCleanPlayer() {
 let cleanPlayerInputs = {};
 let timingInputs = {};
 function buildCleanPlayerList() {
-  cleanPlayerInputs = vzUiBuildClean(document, $("cleanPlayerList"), persistCleanPlayerItem);
+  // ⭐ **وتبدّلُ أيّ مربّع يُعيد رسمَ الإطار فوراً** — **وهو ما اشترى الميزة:**
+  // كان يقرأ ثمانيةً وثلاثين وسماً ويتخيّل، **وصار يرى**.
+  cleanPlayerInputs = vzUiBuildClean(document, $("cleanPlayerList"), (key) => {
+    persistCleanPlayerItem(key);
+    if (barEditor) barEditor.render();
+  });
   vzUiWireHelp(document, $("cleanPlayerList"));
 }
 
@@ -660,7 +665,15 @@ let barList = [];          // آخرُ ما رُسم — ومصدرُه التخ
 function buildBarEditor() {
   barEditor = vzUiBuildBarEditor(document, $("barEditor"), {
     get: () => barList,
-    set: (next) => { barList = next; persistBarButtons(); }
+    set: (next) => { barList = next; persistBarButtons(); },
+    // ⭐ **الاتّجاه واحد: Clean Player ⇒ الإطار** — والمحرِّرُ يقرأ ولا يكتب فيه.
+    // **والقراءةُ من الضوابط المرسومة لا من التخزين**: هي أحدثُ من قراءةٍ ثانية،
+    // **وتُطابق ما يراه المستخدم في اللحظة نفسِها** (فلا معاينةٌ متأخّرة).
+    cleanPlayer: () => ({
+      enabled: !!$("cleanPlayerEnabled")?.checked,
+      items: Object.fromEntries(Object.entries(cleanPlayerInputs)
+        .map(([k, el]) => [k, !!el?.checked]))
+    })
   });
 }
 
@@ -695,6 +708,7 @@ function renderCleanPlayer(cp) {
   $("cleanPlayerEnabled").checked = !!cp?.enabled;
   markRendered("cleanPlayerEnabled");
   syncCleanPlayerCaptionNote();
+  if (barEditor) barEditor.render();   // #123 — الإطارُ مرآةُ Clean Player
   for (const key of Object.keys(VZ_UI_CLEAN)) {
     const el = cleanPlayerInputs[key];
     if (!el) continue;
@@ -1106,7 +1120,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   uiBuilt = true;         // **بعد الأربعة كلِّها لا بعد بعضها**
   await renderAllFromStorage();
 
-  $("cleanPlayerEnabled").addEventListener("change", persistCleanPlayer);
+  $("cleanPlayerEnabled").addEventListener("change", () => {
+    persistCleanPlayer();
+    if (barEditor) barEditor.render();
+  });
   $("progressBarMode").addEventListener("change", persistProgressBarMode);
 
   $("enabled").addEventListener("change", async () => {

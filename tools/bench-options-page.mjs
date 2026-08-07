@@ -282,7 +282,38 @@ async function run(label) {
       const onAfter = (stored2.find((x) => x.id === target) || {}).on;
       const barHas = !!document.querySelector("#barEditor .vzSimBar");
 
+      // ── #123 — الإطارُ مرآةُ Clean Player، والعرضُ لا يُسحب ─────────────
+      const ytCount = () => document.querySelectorAll("#barEditor [data-vz-yt]").length;
+      const ytBefore = ytCount();
+      const ytLeft = document.querySelectorAll("#barEditor .vzSimLeft [data-vz-yt]").length;
+      const ytRight = document.querySelectorAll("#barEditor .vzSimRight [data-vz-yt]").length;
+      const anyYt = document.querySelector("#barEditor [data-vz-yt]");
+      // ⛔ الفرقُ بنيويّ: لا مؤشّر · ولا تركيز · وخارج شجرة الوصول
+      const ytStruct = anyYt ? {
+        مؤشّر: getComputedStyle(anyYt).pointerEvents,
+        تركيز: anyYt.tabIndex, مخفيٌّ_للقارئ: anyYt.getAttribute("aria-hidden"),
+        قابل_للسحب: anyYt.draggable === true } : null;
+      // **والاتّجاه واحد**: مربّعٌ في Clean Player يُخفي عنصرَه من الإطار
+      // ⛔⭐ **الحالُ تُنتَج ولا تُفترض** (قرار 125، **رابعةُ وقوعه وفي هذا
+      // المِجَسّ نفسِه**): الاجتياحُ في [٣] **يُبدّل كلَّ مربّعات Clean Player**
+      // ⇒ **فوجدتُ السبعةَ مخفيّةً وقرأتُ ذلك فشلاً** — **وهي حالٌ صحيحة.**
+      // ⇒ **فتُنتَج الحالُ صراحةً: يُفعَّل Clean Player · ويُنزَع تأشيرُ المفتاح ·
+      // ويُتحقَّق أن العنصر ظهر · ثمّ يُؤشَّر ويُقاس اختفاؤه.**
+      const cpOn = document.getElementById("cleanPlayerEnabled");
+      if (!cpOn.checked) { cpOn.checked = true; cpOn.dispatchEvent(new Event("change", { bubbles: true })); }
+      await new Promise((r) => setTimeout(r, 400));
+      const box = document.getElementById("cp_play_button");
+      if (box && box.checked) { box.checked = false; box.dispatchEvent(new Event("change", { bubbles: true })); }
+      await new Promise((r) => setTimeout(r, 600));
+      const ytMid = ytCount();                       // ← الحالُ المُنتَجة، تُقرأ لا تُفترض
+      const playThere = !!document.querySelector('#barEditor [data-vz-yt="play_button"]');
+      if (box && !box.checked) { box.checked = true; box.dispatchEvent(new Event("change", { bubbles: true })); }
+      await new Promise((r) => setTimeout(r, 600));
+      const ytAfter = ytCount();
+      const playGone = !document.querySelector('#barEditor [data-vz-yt="play_button"]');
+
       return { before, after, focusable, stored, نطق: live ? live.textContent : null,
+               ytBefore, ytLeft, ytRight, ytStruct, ytMid, ytAfter, playThere, playGone,
                barHas, target, zone0, zone1, posBefore, posAfter, onAfter,
                بقي_في_القائمة: stored2.length === (stored || []).length };
     })()`);
@@ -376,6 +407,24 @@ for (const v of sweepVerdicts(sw, live.drawn)) check(v.name, v.ok, v.extra);
   // ⛔ **وهذا سببُ الشكل كلِّه**: لو مَحا الإطفاءُ الموضعَ لعاد الزرُّ إلى الذيل
   check("[٨ب] ⭐⭐ وموضعُه في القائمة لم يتبدّل", b.posAfter === b.posBefore && b.posBefore >= 0, b);
   check("[٨ب] ولم يسقط من القائمة", b.بقي_في_القائمة === true, b);
+
+  console.log("\n[٨ج] #123 — عناصرُ يوتيوب: عرضٌ لا تحكّم، ومرآةٌ لا مصدر");
+  // **العددُ يُقرأ في الحال المُنتَجة** — ولا يُفترض من حالٍ خلّفها قسمٌ قبله
+  check("[٨ج] سبعةُ عناصرَ مُعلَنون في السجلّ", b.ytMid + (b.playThere ? 0 : 1) >= 1 && b.ytMid >= 1, b);
+  // **مواضعُها كما قِيست على يوتيوب**: 3 يساراً و4 يميناً
+  check("[٨ج] ⭐ ثلاثةٌ يساراً وأربعةٌ يميناً (كما قِيس)",
+    b.ytLeft === 3 && b.ytRight === 4, { يسار: b.ytLeft, يمين: b.ytRight });
+  // ⛔⭐⭐ **الفرقُ بنيويٌّ لا تلميح** — بوّابةُ قبولٍ من المالك
+  check("[٨ج] ⭐⭐ ولا يستقبل مؤشّراً أصلاً (فلا يُسحب)",
+    b.ytStruct?.مؤشّر === "none", b.ytStruct);
+  check("[٨ج] ⭐ ولا يدخل حلقةَ التركيز", b.ytStruct?.تركيز === -1, b.ytStruct);
+  check("[٨ج] وخارج شجرة الوصول", b.ytStruct?.مخفيٌّ_للقارئ === "true", b.ytStruct);
+  check("[٨ج] ولا يُعلَن قابلاً للسحب", b.ytStruct?.قابل_للسحب === false, b.ytStruct);
+  // ⭐⭐ **الاتّجاه الواحد، أثراً لا وصفاً**: Clean Player ⇒ الإطار
+  // ⭐ **شاهدٌ موجب أوّلاً**: بلا تأشيرٍ يكون العنصرُ ظاهراً — وإلا كان الأحمرُ عمىً
+  check("[٨ج] ⭐ شاهدٌ موجب: بلا تأشيرٍ يظهر العنصر", b.playThere === true, b);
+  check("[٨ج] ⭐⭐ ومربّعُ Clean Player يُخفي عنصرَه من الإطار فوراً",
+    b.playGone === true && b.ytAfter === b.ytMid - 1, { قبل: b.ytMid, بعد: b.ytAfter });
 }
 
 // ── [٧] #84 — الظهور مُشتقّ: مدخلان مستقلّان، ولا مفتاح حالة ────────────────
