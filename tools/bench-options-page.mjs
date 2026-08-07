@@ -289,6 +289,29 @@ async function run(label) {
       const ytRight = document.querySelectorAll("#barEditor .vzSimRight [data-vz-yt]").length;
       const anyYt = document.querySelector("#barEditor [data-vz-yt]");
       // ⛔ الفرقُ بنيويّ: لا مؤشّر · ولا تركيز · وخارج شجرة الوصول
+      // ── #126 — **الشكلُ كيوتيوب، والحدُّ وحدَه يفرّق** ─────────────────────
+      const ourChip = document.querySelector("#barEditor .vzSimRight [data-vz-bar-id]");
+      // ⚠️ **المرجعُ من المجموعة اليمنى لا من الصفحة كلِّها** — **وأوّلُ صياغةٍ
+      // قارنت بعنصرٍ في المجموعة اليسرى فقالت «ليس يسارَهم» وهو يسارَهم**:
+      // **المقيسُ جارُ المطلوب** (قرار 81) في مِجَسٍّ كُتب لهذا الشرط.
+      const ytRightFirst = document.querySelector("#barEditor .vzSimRight [data-vz-yt]");
+      const shape = (ourChip && ytRightFirst) ? (() => {
+        const a = ourChip.getBoundingClientRect(), b = ytRightFirst.getBoundingClientRect();
+        const sa = getComputedStyle(ourChip), sb = getComputedStyle(ytRightFirst);
+        return { مقاسٌ_واحد: Math.round(a.width) === Math.round(b.width) &&
+                             Math.round(a.height) === Math.round(b.height),
+                 حدُّنا: sa.borderTopWidth, حدُّهم: sb.borderTopColor,
+                 // **الشفافيةُ تُقاس بقيمتها لا بنصّها** — فالمتصفّح يكتبها بصيغٍ شتّى
+                 لهم_شفّاف: (() => { const m = /rgba?\(([^)]+)\)/.exec(sb.borderTopColor);
+                   if (sb.borderTopStyle === "none") return true;
+                   if (!m) return sb.borderTopColor === "transparent";
+                   const p = m[1].split(",").map((x) => parseFloat(x));
+                   return p.length < 4 ? false : p[3] === 0; })(),
+                 نصُّ_زرّنا: (ourChip.textContent || "").trim(),
+                 // **وأزرارُنا يسارَ عناصر يوتيوب** — كما يفعل الحقنُ الحقيقيّ
+                 يسارَهم: !!(ourChip.compareDocumentPosition(ytRightFirst) & Node.DOCUMENT_POSITION_FOLLOWING) };
+      })() : null;
+
       const ytStruct = anyYt ? {
         مؤشّر: getComputedStyle(anyYt).pointerEvents,
         تركيز: anyYt.tabIndex, مخفيٌّ_للقارئ: anyYt.getAttribute("aria-hidden"),
@@ -313,7 +336,7 @@ async function run(label) {
       const playGone = !document.querySelector('#barEditor [data-vz-yt="play_button"]');
 
       return { before, after, focusable, stored, نطق: live ? live.textContent : null,
-               ytBefore, ytLeft, ytRight, ytStruct, ytMid, ytAfter, playThere, playGone,
+               ytBefore, ytLeft, ytRight, ytStruct, shape, ytMid, ytAfter, playThere, playGone,
                barHas, target, zone0, zone1, posBefore, posAfter, onAfter,
                بقي_في_القائمة: stored2.length === (stored || []).length };
     })()`);
@@ -423,6 +446,14 @@ for (const v of sweepVerdicts(sw, live.drawn)) check(v.name, v.ok, v.extra);
   // ⭐⭐ **الاتّجاه الواحد، أثراً لا وصفاً**: Clean Player ⇒ الإطار
   // ⭐ **شاهدٌ موجب أوّلاً**: بلا تأشيرٍ يكون العنصرُ ظاهراً — وإلا كان الأحمرُ عمىً
   check("[٨ج] ⭐ شاهدٌ موجب: بلا تأشيرٍ يظهر العنصر", b.playThere === true, b);
+  if (b.shape) {
+    console.log("\n[٨د] #126 — الشكلُ كيوتيوب، والحدُّ وحدَه يفرّق");
+    check("[٨د] ⭐ المقاسُ واحدٌ لزرّنا ولعنصر يوتيوب", b.shape.مقاسٌ_واحد === true, b.shape);
+    check("[٨د] ⭐⭐ وحدُّ زرّنا مرئيّ", parseFloat(b.shape.حدُّنا) >= 1, b.shape);
+    check("[٨د] وحدُّ عنصرِ يوتيوب شفّاف", b.shape.لهم_شفّاف === true, b.shape);
+    check("[٨د] ⭐ ولا نصَّ في زرّنا (أيقونةٌ وحدها)", b.shape.نصُّ_زرّنا === "", b.shape);
+    check("[٨د] ⭐ وزرُّنا يسارَ عناصر يوتيوب — كالحقن الحقيقيّ", b.shape.يسارَهم === true, b.shape);
+  }
   check("[٨ج] ⭐⭐ ومربّعُ Clean Player يُخفي عنصرَه من الإطار فوراً",
     b.playGone === true && b.ytAfter === b.ytMid - 1, { قبل: b.ytMid, بعد: b.ytAfter });
 }

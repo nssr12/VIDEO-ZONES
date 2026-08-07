@@ -679,15 +679,15 @@ function vzUiBuildBarEditor(doc, root, opts = {}) {
       chip.setAttribute("role", "option");
       chip.setAttribute("aria-selected", String(!!it.on));
       // ⭐ **أيقونتُنا المشحونة نفسُها** — لا نسخةٌ ثانية تُرسم للمعاينة
+      // ── #126 — **أيقونةٌ بلا نصّ، كأيقونات يوتيوب** (قرار المالك) ──────────
+      // ⚠️ **والاسمُ لا يسقط: يبقى في `aria-label` وفي التلميح** — **فما حُذف
+      // هو النصُّ المرسوم لا المعنى**، **ومن لا يرى الرسمَ يقرؤه كما كان.**
       const ourIco = VZ_SIM_OUR_ICONS[it.id === "speed" ? "speed" : "filter-h"];
       if (ourIco) {
-        chip.innerHTML = `<svg viewBox="${ourIco.viewBox}" width="18" height="18" fill="none" ` +
+        chip.innerHTML = `<svg viewBox="${ourIco.viewBox}" width="20" height="20" fill="none" ` +
           `stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" ` +
           `aria-hidden="true">${ourIco.d}</svg>`;
-        const t = doc.createElement("span");
-        t.className = "vzSimChipLbl";
-        t.textContent = m.label;
-        chip.appendChild(t);
+        chip.title = m.label;
       } else {
         chip.textContent = m.label;
       }
@@ -695,7 +695,15 @@ function vzUiBuildBarEditor(doc, root, opts = {}) {
       chip.setAttribute("aria-label",
         `${m.label} — ${it.on ? VZ_SIM_ZONES.in : VZ_SIM_ZONES.out}، الموضع ${posOf(it.id)} من ${l.length}. ` +
         `الأسهمُ تحرّكه، والمسافةُ تُدخله الشريطَ أو تُخرجه منه.`);
-      (it.on ? gRight : tray).appendChild(chip);
+      // ⭐ **يسارَ عناصر يوتيوب في الحاوية نفسِها** — **وهو ما يفعله الحقنُ
+      // الحقيقيّ**: `placeInHostBar` تُدرج عند `slot.firstChild` ⇒ **فالمعاينةُ
+      // تُري الموضعَ الذي يقع، لا موضعاً نختاره لها.**
+      if (it.on) {
+        const firstYt = gRight.querySelector("[data-vz-yt]");
+        if (firstYt) gRight.insertBefore(chip, firstYt); else gRight.appendChild(chip);
+      } else {
+        tray.appendChild(chip);
+      }
 
       const hb = vzUiHelpButton(doc, `help_bar_${it.id}`, m.label);
       const body = doc.createElement("p");
