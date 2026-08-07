@@ -1,0 +1,32 @@
+{
+ "at": null,
+ "sheets": {
+  "readable": 18,
+  "blocked": 1,
+  "blockedHrefs": [
+   "https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=YouTube+Sans:wght@300..900&display=swap"
+  ]
+ },
+ "anchors": {
+  "ytp": 584,
+  "rightControls": 1,
+  "bottom": 1,
+  "settings": 1,
+  "leftControls": 1,
+  "video": 1,
+  "moviePlayer": 1
+ },
+ "build": "/s/player/854a788e/player_ias.vflset/ar_EG/base.js",
+ "htmlAttrs": {
+  "lang": "ar",
+  "dir": ""
+ },
+ "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+ "liveShape": {
+  "moviePlayerChildren": 36,
+  "barInsidePlayer": true
+ },
+ "chrome": "Chrome/151.0.7922.108",
+ "state": "watch-controls-visible-signed-out-ar",
+ "capturedAt": "2026-08-07"
+}

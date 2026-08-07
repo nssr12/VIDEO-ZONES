@@ -297,8 +297,18 @@ export async function serveTestPage(port, html = PAGE) {
 // «لا يوجد»** (الشاهد الأوّل في قرار 26). **ولم يُنشر الرقم حتى أُصلح الترتيب.**
 // ⚠️ **والنمطُ مقصورٌ على المضيف المُزيَّف**: `urlPattern` عليه وحده، **فموارد
 // الإضافة تمرّ كما هي** ولا نعترض ما لا يخصّنا.
+// ⛔⭐⭐ **و`contentType` أُضيف 2026-08-07 (#112) بقياسٍ لا براحة:** لقطةُ شجرة
+// يوتيوب المحفوظة **لا تنجو من محلِّل HTML** — **فيها `<button>` داخل `<button>`
+// (شارةُ «الإجراء المقترح»)، والمحلِّلُ يُغلق الخارجيَّ عندها** ⇒ **`#movie_player`
+// يُغلق مبكّراً فيخرج شريطُ التحكّم من نطاقه**: **10 أبناءٍ بدل 36، والشريطُ صار
+// أخاً لا ابناً** ⇒ **وحقنُنا يسقط إلى الطبقة، فيُقاس سلوكٌ غيرُ سلوك المضيف.**
+// ⭐ **والعلاج مقيسٌ ولا يُصلح المصدر بيد** (فذاك لقطةٌ تكذب): **تُسلسَل بـ
+// `XMLSerializer` وتُقدَّم `application/xhtml+xml`** — **ومحلِّلُ XML بلا قواعدِ
+// محتوىً فينجو التداخلُ كما هو** ⇒ **36 ابناً، والشريطُ داخل المشغّل، وصفرُ
+// `parsererror`.**
 export async function openPageAsHost(port, { host = "www.youtube.com", path = "/watch?v=vz",
-                                             html = PAGE } = {}) {
+                                             html = PAGE,
+                                             contentType = "text/html; charset=utf-8" } = {}) {
   const url = `https://${host}${path}`;
   const tab = await (await fetch(
     `http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" })).json();
@@ -318,7 +328,7 @@ export async function openPageAsHost(port, { host = "www.youtube.com", path = "/
     // **وأُمسك بمِجَسّ القبول قبل أن يدخل رِكازاً** (`فيديو حيّ: false`).
     if (m.params.resourceType === "Document") {
       c.send("Fetch.fulfillRequest", { requestId: id, responseCode: 200,
-        responseHeaders: [{ name: "content-type", value: "text/html; charset=utf-8" }], body });
+        responseHeaders: [{ name: "content-type", value: contentType }], body });
     } else if (/\/tone\.wav/.test(m.params.request?.url || "")) {
       c.send("Fetch.fulfillRequest", { requestId: id, responseCode: 200,
         responseHeaders: [{ name: "content-type", value: "audio/wav" }],
