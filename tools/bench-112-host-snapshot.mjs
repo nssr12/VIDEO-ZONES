@@ -20,8 +20,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { launch, openPageAsHost, contentWorld, evalIn, killChrome, configure, waitPortFree, ROOT }
+import { launch, openPageAsHost, applyReplay, contentWorld, evalIn, killChrome, configure, waitPortFree, ROOT }
   from "./ext-harness.mjs";
+import { loadSnapshot, frozenVideoBox, REPLAY_ANCHORS, STATE_WINDOW } from "./snapshot-source.mjs";
 
 const PORT = 9799;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -32,17 +33,17 @@ const check = (name, cond, extra) => cond
   ? (pass++, console.log("  ✅ " + name))
   : (fail++, console.log("  ❌ " + name, extra === undefined ? "" : JSON.stringify(extra).slice(0, 220)));
 
-// ── اللقطة: أحدثُ ملفٍّ في `tools/snapshots` ────────────────────────────────
-const SNAP_DIR = path.join(ROOT, "tools", "snapshots");
-const snapFile = fs.existsSync(SNAP_DIR)
-  ? fs.readdirSync(SNAP_DIR).filter((f) => f.endsWith(".xhtml")).sort().pop() : null;
-if (!snapFile) { console.log("❌ لا لقطةَ في tools/snapshots — `node tools/capture-yt-snapshot.mjs`"); process.exit(1); }
-const HTML = fs.readFileSync(path.join(SNAP_DIR, snapFile), "utf8");
-// **الوصفُ في ملفٍّ مجاور لا داخل الوثيقة** — فلا هروبَ في XML ولا كسرَ تحليل
-const META = (() => {
-  const p = path.join(SNAP_DIR, snapFile.replace(/\.xhtml$/, ".meta.json"));
-  return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;
-})();
+// ── اللقطة: **تُطلَب بحالها لا بترتيب الأسماء** ─────────────────────────────
+// ⛔⭐ **والعلّةُ مقيسة 2026-08-07:** كان الاختيارُ `sort().pop()`، **فيومَ وُلدت
+// لقطةُ ملء الشاشة انقلب هذا الرِكازُ إليها بلا أن يُمسّ سطرٌ فيه** — **شجرةٌ بلا
+// أنماط** ⇒ **ورفضت مرساتُه بحقّ**، ⛔ **و`م19` (المرفوعةُ عن المالك) لم تُقَس
+// منذ ذلك اليوم.** ⇒ **فالحالُ تُطلَب بالاسم، والملفُّ يُشتقّ منها.**
+const snap = loadSnapshot(STATE_WINDOW);
+const snapFile = snap.file;
+const HTML = snap.html;
+const META = snap.meta;
+const FROZEN = frozenVideoBox(HTML);
+if (!FROZEN) { console.log("❌ لا صندوقَ مُجمَّداً في `style` الفيديو — ولا مرجعَ يُحكم به على إعادة التشغيل"); process.exit(1); }
 
 // ── ⛔ نسخةُ إضافةٍ بـ`content.js` من السجلّ — لإثبات الحمرة على العطب نفسِه ──
 // **لا على شبيهٍ يُفتعَل** (قرار 47): **يُشغَّل على الملفّ السابق بنصّه.**
@@ -135,10 +136,13 @@ async function run(order) {
   // تشغيلة: **كرومُ التشغيلة السابقة يردّ فيُقاس بناؤه هو** (وهو ما بُني الحارسُ له).
   await waitPortFree(PORT);
   const extPath = RED ? extAt(RED) : ROOT;
-  // ⚠️ **مقاسُ النافذة كمقاس الالتقاط** — **ولقطةٌ التُقطت في 1600×1000 تُقرأ في
-  // 800×600 بمواضعَ خارج المنظور** ⇒ **`elementFromPoint` تُرجع `null` فتموت
-  // النقرةُ في المِجَسّ لا في المنتَج** (أمسكه الشاهدُ الموجب قبل أن يُنشر).
-  const h = await launch(PORT, { extPath, extra: ["--window-size=1600,1000"] });
+  // ⚠️ **مقاسُ النافذة كمقاس الالتقاط** — **ولقطةٌ التُقطت في مقاسٍ تُقرأ في غيره
+  // بمواضعَ خارج المنظور** ⇒ **`elementFromPoint` تُرجع `null` فتموت النقرةُ في
+  // المِجَسّ لا في المنتَج** (أمسكه الشاهدُ الموجب قبل أن يُنشر).
+  // ⛔ **والمقاسُ يُقرأ من ترويسة اللقطة ولا يُثبَّت هنا** (قرار 34): **رقمٌ يُكتب
+  // بيدٍ في رِكازٍ يتخلّف يومَ تُلتقط لقطةٌ بمقاسٍ آخر — وهو ما وقع بعينه.**
+  const h = await launch(PORT, { extPath,
+    extra: [`--window-size=${snap.replay.viewport.w},${snap.replay.viewport.h}`] });
   const report = {};
   try {
     await sleep(1200);
@@ -150,11 +154,15 @@ async function run(order) {
     const { c } = await openPageAsHost(PORT, { html: HTML,
       contentType: "application/xhtml+xml; charset=utf-8" });
     await sleep(2500);
+    // ⛔⭐ **تُنتَج شروطُ اللقطة المسجَّلة ثمّ يُقاس** — ولا يُقاس على حالٍ لم تُنتَج
+    report.أُنتج = await applyReplay(c, snap.replay);
+    await sleep(600);
     // ⚠️ **المعرّف لا الكائن** — وأوّلُ صياغةٍ مرّرت الكائنَ فأرجع المِجَسُّ
     // `undefined`، **و«لا أرى» تطبع ما تطبعه «لا يوجد»** (الشاهد الأوّل، قرار 26)
     const w = (await contentWorld(c))?.id;
     if (!w) throw new Error("عالمُ الإضافة غائب — ولا يُقاس بلا عالم");
     report.anchors = await evalIn(c, ANCHORS);
+    report.مرساة = await evalIn(c, REPLAY_ANCHORS, w);
     // إيقاظُ الزرّ: مؤشّرٌ فوق الفيديو (طبقتُنا تشتقّ الظهور منه)
     const v = await evalIn(c, `(() => { const el = document.querySelector("video");
       if (!el) return null; const r = el.getBoundingClientRect();
@@ -214,6 +222,17 @@ console.log("\n[0] المراسي — تُؤكَّد قبل أن يُقاس شي
   check("[0] ⭐⭐ وعددُ عناصر المشغّل يقارب المحفوظ",
     want.ytp ? Math.abs(a.ytp - want.ytp) <= Math.max(20, want.ytp * 0.1) : a.ytp > 100,
     { الآن: a.ytp, المحفوظ: want.ytp });
+  const m = r.مرساة || {};
+  check("[0] ⭐ والمنظورُ كما سُجّل في الترويسة",
+    m.منظور?.w === snap.replay.viewport.w && m.منظور?.h === snap.replay.viewport.h,
+    { الآن: m.منظور, المسجَّل: snap.replay.viewport });
+  // ⭐⭐ **وهذي هي التي تمنع الرقمَ المسجَّل من أن يتخلّف صامتاً**: مستطيلُ الفيديو
+  // الحيّ يوافق ما جمّده سكربتُ المضيف بيده، **فمنظورٌ خطأٌ يُخالفه فيحمرّ.**
+  check("[0] ⭐⭐ والفيديو يوافق ما جمّده المضيف بحرفه — لا تخطيطاً آخر باسمه",
+    m.فيديو?.w === FROZEN.w && m.فيديو?.h === FROZEN.h &&
+    m.فيديو?.left === FROZEN.left && m.فيديو?.top === FROZEN.top,
+    { الحيّ: m.فيديو, المُجمَّد: FROZEN });
+  check("[0] ⭐⭐ وهو **داخل المنظور** — لا موجودٌ وحسب", m.داخلَ_المنظور === true, m);
   if (fail) {
     console.log("\n⛔ **المراسي لم تُؤكَّد — ولا يُقرأ ما بعدها**: أصفارُها «لم أُحمّل» لا «سليم».");
     console.log(`\n${"❌"} نجح ${pass} / فشل ${fail}\n`);

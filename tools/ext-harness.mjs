@@ -346,6 +346,48 @@ export async function openPageAsHost(port, { host = "www.youtube.com", path = "/
   return { c, url };
 }
 
+// ── ⛔⭐⭐ إنتاجُ شروط اللقطة في المتصفّح — **الحالُ تُنتَج ولا تُفترض** (قرار 22 · 125) ──
+//
+// **اللقطةُ تُجمّد خرْجَ سكربتِ المضيف** (`style` الفيديو)، **وذاك الخرْجُ صحيحٌ
+// في شرطَي التقاطه لا في غيرهما.** والشرطان مقيسان 2026-08-07، **وكلاهما لازمٌ
+// وحدَه غيرُ كافٍ**:
+//
+// **(أ) المنظور** — يُقرأ من ترويسة اللقطة (`snapshot-source.mjs`)، ⛔ **ولا
+// يُثبَّت رقمٌ هنا ولو كان الصحيح**: **لقطةٌ ثالثة بمقاسٍ ثالث تُعيد العلّةَ بحرفها.**
+//
+// **(ب) ملءُ الشاشة الحقيقيّ على العنصر المُسجَّل** — ⭐⭐ **وهذا ما لا يُصنع
+// بصنفٍ ولا بمقاس، والسببُ مقيس: عرضُ سلسلة يوتيوب في ملء الشاشة يأتي من قواعد
+// `:fullscreen` في ورقة المتصفّح نفسِه** — **وأوراقُ يوتيوب تحوي `:fullscreen`
+// صفرَ مرّة** (وتحوي `[fullscreen]` 27 و`ytp-fullscreen` 532) ⇒ **فما يُعطي
+// العرضَ ليس فيها أصلاً، ولا يُلتقط بحال.**
+// **والمقيس بلا ملء شاشة (منظور 800×600):** `#movie_player` **عرضُه صفر** والفيديو
+// عند `x=800` — **خارجَ المنظور تماماً** ⇒ **لا طبقةَ ولا زرّ، فيُقرأ «امتناع».**
+// **وبملء الشاشة على `#movie_player`:** الفيديو `800x450@0,75` — **مطابقٌ لما
+// جمّده المضيف بحرفه.** ⚠️ **والعنصرُ ليس تفصيلاً: `ytd-app` و`html` جُرّبا فلم
+// يتغيّر شيء** ⇒ **مُجرَّبان ساقطان، لا مُهمَلان.**
+//
+// ⚠️ **و`userGesture: true` شرطُ الدخول**: `requestFullscreen` تُرفض بلا تفعيلٍ
+// عابر، **ورفضُها يُقال ولا يُبتلع** — **وعدٌ مرفوض يمرّ نجاحاً هو #93 بعينه.**
+export async function applyReplay(c, replay) {
+  const { viewport, fullscreenSelector } = replay;
+  await c.send("Emulation.setDeviceMetricsOverride",
+    { width: viewport.w, height: viewport.h, deviceScaleFactor: 1, mobile: false });
+  if (!fullscreenSelector) return { منظور: `${viewport.w}x${viewport.h}`, ملءُ_الشاشة: null };
+  const r = await c.send("Runtime.evaluate", {
+    expression: `(() => { const el = document.querySelector(${JSON.stringify(fullscreenSelector)});
+      if (!el) return Promise.resolve("لا عنصر");
+      return el.requestFullscreen().then(() => "دخل", (e) => "رفض: " + (e && e.name)); })()`,
+    awaitPromise: true, returnByValue: true, userGesture: true });
+  const ex = r?.result?.exceptionDetails;
+  if (ex) throw new Error("طلبُ ملء الشاشة رمى: " + String(ex.exception?.description || ex.text).split("\n")[0]);
+  const said = r?.result?.result?.value;
+  if (said !== "دخل") {
+    throw new Error(`لم تُنتَج حالُ اللقطة (${fullscreenSelector}): ${said} — ` +
+      "**ولا يُقاس على حالٍ لم تُنتَج** (الشاهد الثاني في قرار 26)");
+  }
+  return { منظور: `${viewport.w}x${viewport.h}`, ملءُ_الشاشة: fullscreenSelector };
+}
+
 // **الأثر الفعليّ**: عجلة فوق الفيديو ⇒ عناصر overlay في شجرة الصفحة **ومستوى
 // صوت يتغيّر**. الحدث يُرسَل **من الصفحة** لا بـ`Input.dispatchMouseEvent`:
 // سكربت المحتوى يستقبل أحداث الصفحة، والإرسال بـCDP بنوع `mouseWheel` كان أحد

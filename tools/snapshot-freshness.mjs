@@ -19,6 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { launch, openPage, evalIn, killChrome, ROOT } from "./ext-harness.mjs";
+import { loadSnapshot, listSnapshots, STATE_WINDOW } from "./snapshot-source.mjs";
 
 const PORT = 9807;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -40,15 +41,24 @@ if (process.argv.includes("--print-probe")) {
   process.exit(0);
 }
 
+// ⛔⭐ **اللقطةُ تُطلَب بحالها لا بترتيب الأسماء** (2026-08-07): كان الاختيارُ
+// `sort().pop()`، **فيومَ وُلدت لقطةُ ملء الشاشة صار هذا الكاشفُ يقارن مراسيَ
+// حالِ ملء الشاشة بصفحةِ نافذةٍ حيّة** ⇒ **فرقٌ سببُه الحالُ لا التقادم**،
+// **و«تقادمت» كاذبةٌ تدفع إلى تجديدٍ يُضيف خمسة ميغابايت بلا سبب.**
+// ⚠️ **والمِجَسُّ الحيُّ يُنتج حالَ النافذة، فبها يُقارَن** — **وحالُ ملء الشاشة
+// تُقارَن ببناء المشغّل وحدَه**، وهو ما يُشترك فيه الاثنان، **ويُقال ولا يُدّعى أكثر.**
 const SNAP_DIR = path.join(ROOT, "tools", "snapshots");
-const snapFile = fs.existsSync(SNAP_DIR)
-  ? fs.readdirSync(SNAP_DIR).filter((f) => f.endsWith(".xhtml")).sort().pop() : null;
-if (!snapFile) { console.log("❌ لا لقطةَ في tools/snapshots"); process.exit(1); }
-const META = JSON.parse(fs.readFileSync(
-  path.join(SNAP_DIR, snapFile.replace(/\.xhtml$/, ".meta.json")), "utf8"));
+const snap = loadSnapshot(STATE_WINDOW);
+const snapFile = snap.file;
+const META = snap.meta;
+const others = listSnapshots().filter((s) => s.meta.state !== STATE_WINDOW);
 
 console.log(`\n=== طزاجةُ اللقطة — ${snapFile} ===`);
 console.log(`  التُقطت: ${META.capturedAt} · بناءُ المشغّل المحفوظ: ${META.build}`);
+for (const o of others) {
+  console.log(`  وحالٌ أخرى: ${o.meta.state} — **يُقارَن بناؤها وحدَه** ` +
+    `(${o.meta.build === META.build ? "البناءُ نفسُه" : "**بناءٌ آخر — تُجدَّد معها**"})`);
+}
 
 let live = null, why = null;
 const pasted = argOf("--fingerprint");

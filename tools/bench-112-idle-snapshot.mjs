@@ -1,12 +1,11 @@
-// #112 — **إخفاءُ شريط المضيف بالسكون، على لقطةٍ محفوظة وصفحةٍ نظيفة** (م1 · م2 · م3 · م4 · م22).
+// #112 — **إخفاءُ شريط المضيف بالسكون، على لقطةٍ محفوظة وصفحةٍ نظيفة** (م1 · م2 · م3 · م4 · م5 · م22).
 //
 // ⛔ **خارج البوّابة — وسببُ تأجيله هو (لا سببُ مجموعته):** يحمّل لقطةً وزنُها نحوُ
 // خمسة ميغابايت **وينتظر مهلَ سكونٍ حقيقيّة**، فثمنُه في كلّ كومِت بلا مقابل.
 // **ومُطلِقُه: كلُّ مسٍّ لمحرّك السكون أو مستهلكيه، ورفعُ النسخة.**
 //
-//
 // ⭐ **السؤال الذي يجيبه (بلغة المستخدم):** *«حين أرفع يدي عن الفأرة — أيختفي شريطُ
-// يوتيوب كلُّه كما وعدتُ، ويعود بأوّل نقرةٍ أو عجلة؟»*
+// يوتيوب كلُّه كما وعدتُ، ويعود بأوّل نقرةٍ أو عجلة، ويبقى تحت يدي وأنا ماسكُه؟»*
 //
 // ⛔⭐⭐ **ولماذا رِكازٌ مستقلٌّ لا قسمٌ في `bench-112-host-snapshot`** (قرار 125
 // بحرفه، وقرارُ المالك 2026-08-07): **كلُّ قسمٍ يُنتج حالَه أو يقيسها، والوراثةُ
@@ -22,41 +21,51 @@
 // إخفاءٍ فيها إخفاؤنا بالبناء.** ⚠️ **وعلى الحيّ خلطَ هذا مِجَسَّ #70 نفسَه**
 // (قِيس `opacity === 0` فحُسب إخفاؤنا وهو إخفاءُ يوتيوب بعد ~3 ثوانٍ).
 //
+// ── ⛔⭐⭐ ومراسٍ قبل كلّ شيء — **وغيابُها كان يُنتج خضرةً كاذبة** (2026-08-07) ──
+// **هذا الرِكازُ لم يكن له قسمُ مراسٍ أصلاً**، ويومَ وُلدت لقطةٌ ثانية انقلب
+// اختيارُه إليها **بلا أن يُمسّ سطرٌ فيه** ⇒ **فقاس شجرةً بلا أنماط، والفيديو عند
+// `y=3697` خارجَ منظورٍ ارتفاعُه 1000** — ⛔ **وطبع `م4` و`م2` خضراوين**: لا شيء
+// يقع فلا شيء يُخفى، **فقُرئ غيابُ الأثر وفاءً بالوعد.** ⇒ **وهي «غيابُ الإشارة
+// يُقرأ إثباتاً» في رِكازٍ يحرس خمسَ خطواتٍ رُفعت عن المالك.**
+//
 // ⚠️ **وحدُّ كلّ شرطٍ هنا: حالٌ واحدة (صفحةُ مشاهدة · نافذة) · بلا تشغيلٍ حيّ ·
 // وبلا انتقال SPA** — **فلا يُقرأ أخضرُه خارج مداه.**
 //
 //   node tools/bench-112-idle-snapshot.mjs
-//   node tools/bench-112-idle-snapshot.mjs --red <commit>    # على `content.js` من السجلّ
+//   node tools/bench-112-idle-snapshot.mjs --red <commit>       # `content.js` من السجلّ
+//   node tools/bench-112-idle-snapshot.mjs --red-file <ملفّ>    # بمتغيّرٍ واحد
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { launch, openPageAsHost, contentWorld, evalIn, killChrome, configure, ROOT }
+import { launch, openPageAsHost, applyReplay, contentWorld, evalIn, killChrome, configure, ROOT }
   from "./ext-harness.mjs";
+import { loadSnapshot, frozenVideoBox, REPLAY_ANCHORS, STATE_WINDOW } from "./snapshot-source.mjs";
 
 const PORT = 9809;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const RED = (() => { const i = process.argv.indexOf("--red"); return i > 0 ? process.argv[i + 1] : null; })();
+const argOf = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };
+const RED = argOf("--red");
+const RED_FILE = argOf("--red-file");
 
 let pass = 0, fail = 0;
 const check = (name, cond, extra) => cond
   ? (pass++, console.log("  ✅ " + name))
   : (fail++, console.log("  ❌ " + name, extra === undefined ? "" : JSON.stringify(extra).slice(0, 200)));
 
-const SNAP_DIR = path.join(ROOT, "tools", "snapshots");
-const snapFile = fs.existsSync(SNAP_DIR)
-  ? fs.readdirSync(SNAP_DIR).filter((f) => f.endsWith(".xhtml")).sort().pop() : null;
-if (!snapFile) { console.log("❌ لا لقطةَ في tools/snapshots — `node tools/capture-yt-snapshot.mjs`"); process.exit(1); }
-const HTML = fs.readFileSync(path.join(SNAP_DIR, snapFile), "utf8");
+// **اللقطةُ تُطلَب بحالها لا بترتيب الأسماء** — انظر `snapshot-source.mjs`
+const snap = loadSnapshot(STATE_WINDOW);
+const HTML = snap.html;
+const FROZEN = frozenVideoBox(HTML);
+if (!FROZEN) { console.log("❌ لا صندوقَ مُجمَّداً في `style` الفيديو — ولا مرجعَ يُحكم به على إعادة التشغيل"); process.exit(1); }
 
-function extAt(commit) {
+function extWith(source) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vz-idle-red-"));
   for (const f of fs.readdirSync(ROOT)) {
     if ([".git", "node_modules", "tools", "docs"].includes(f)) continue;
     fs.cpSync(path.join(ROOT, f), path.join(dir, f), { recursive: true });
   }
-  fs.writeFileSync(path.join(dir, "content.js"),
-    execFileSync("git", ["show", `${commit}:content.js`], { cwd: ROOT, maxBuffer: 64e6 }));
+  fs.writeFileSync(path.join(dir, "content.js"), source);
   return dir;
 }
 
@@ -84,14 +93,13 @@ const STATE = `(() => {
            أزرار: vis(".ytp-right-controls"), تقدّم: vis(".ytp-progress-bar-container"),
            زرُّ_السرعة: vis(".vzSpeedBtn") }; })()`;
 
-const CENTER = `(() => { const el = document.querySelector("video");
-  if (!el) return null; const r = el.getBoundingClientRect();
-  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
-           w: Math.round(r.width), h: Math.round(r.height) }; })()`;
-
 async function run() {
-  const extPath = RED ? extAt(RED) : ROOT;
-  const h = await launch(PORT, { extPath, extra: ["--window-size=1600,1000"] });
+  const extPath = RED ? extWith(execFileSync("git", ["show", `${RED}:content.js`], { cwd: ROOT, maxBuffer: 64e6 }))
+    : RED_FILE ? extWith(fs.readFileSync(RED_FILE))
+    : ROOT;
+  // ⛔ **مقاسُ النافذة يُشتقّ من ترويسة اللقطة ولا يُكتب** (قرار 34 في رِكاز)
+  const h = await launch(PORT, { extPath,
+    extra: [`--window-size=${snap.replay.viewport.w},${snap.replay.viewport.h}`] });
   const R = {};
   try {
     await sleep(1200);
@@ -99,16 +107,21 @@ async function run() {
     const { c } = await openPageAsHost(PORT, { html: HTML,
       contentType: "application/xhtml+xml; charset=utf-8" });
     await sleep(2500);
+    // ⛔⭐⭐ **تُنتَج شروطُ اللقطة ثمّ يُقاس** — **ولا نلمس الصفحة بعدها**: `م4`
+    // تشترط صفحةً لم تُلمس، **وضبطُ المنظور ليس لمساً** (لا حدثَ مؤشّرٍ فيه).
+    R.أُنتج = await applyReplay(c, snap.replay);
+    await sleep(600);
     const w = (await contentWorld(c))?.id;
     if (!w) throw new Error("عالمُ الإضافة غائب — ولا يُقاس بلا عالم");
-    R.v = await evalIn(c, CENTER, w);
+    R.anchors = await evalIn(c, `(() => { const q = (s) => document.querySelectorAll(s).length;
+      const st = document.querySelector("style[data-vz-snapshot-css]");
+      return { ytp: q('[class*="ytp-"]'), bottom: q(".ytp-chrome-bottom"),
+               cssBytes: st ? st.textContent.length : 0, host: location.hostname }; })()`, w);
+    R.مرساة = await evalIn(c, REPLAY_ANCHORS, w);
+    // ⚠️ **الإحداثيّاتُ المطلقة للقيادة، والنسبيّةُ للمقارنة** — ولا يُخلط البابان
+    const f = R.مرساة.فيديو, abs = R.مرساة.مطلقٌ;
+    R.v = { x: abs.left + Math.round(f.w / 2), y: abs.top + Math.round(f.h / 2), w: f.w, h: f.h };
 
-    // ⭐ **ويُنشر الزمنُ مع الحال**: حكمٌ بلا زمنٍ يُخفي «وقع متأخّراً» في «لم يقع».
-    // ⛔⭐⭐ **يُنتظر الأثرُ لا السببُ وحدَه** (قرار 109: أموجود؟ · **أوقع الأثر؟**):
-    // **أوّلُ صياغةٍ انتظرت الصنفَ وحدَه فعادت عند 305ms والشريطُ ما زال مرئيّاً**
-    // ⇒ **فقرأت «صنفٌ مطبَّقٌ بلا أثر» — وهو أثرٌ لم يُنتظَر لا أثرٌ غائب**،
-    // **وقياسٌ مستقلٌّ بعد 1200ms أعطى شفافيةً صفراً ورؤيةً كاذبة.**
-    // ⇒ ⭐ **فالشرطُ يجمع الاثنين: سببُنا (الصنف) والأثرُ على الهدف.**
     const until = async (pred, ms = 12000) => {
       const t0 = Date.now();
       while (Date.now() - t0 < ms) {
@@ -148,20 +161,76 @@ async function run() {
     R.م3قبل = await until(مخفيّ);
     await c.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: R.v.x, y: R.v.y, deltaX: 0, deltaY: -40 });
     R.م3 = await until(ظاهر, 4000);
+
+    // ── م5: مسكُ شريط التقدّم بلا حركة ⇒ يبقى تحت اليد ─────────────────────
+    // ⛔⭐ **الحالُ تُنتَج ولا تُورَث**: يُظهَر الشريطُ أوّلاً **ثمّ** يُضغَط —
+    // **وقياسٌ على شريطٍ مخفيٍّ سلفاً يقيس الإخفاء لا الامتناع.**
+    // ⚠️ **والموضعُ شريطُ التقدّم بعينه لا مركزُ الصورة**: الخطوةُ تقول «اضغط
+    // شريط التقدّم»، **ومركزُ الصورة يُنتج امتناعاً بمسارٍ آخر** (`idlePointerHeld`
+    // يرتفع بأيّ ضغطٍ داخل المشغّل) ⇒ **فيصدق الشرطُ على غير ما وُعد به.**
+    await move(3);
+    R.م5موضع = await evalIn(c, `(() => { const el = document.querySelector(".ytp-progress-bar-container")
+        || document.querySelector(".ytp-progress-bar");
+      if (!el) return null; const r = el.getBoundingClientRect();
+      if (!(r.width > 0 && r.height > 0)) return null;
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
+               داخلَ_المنظور: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight }; })()`, w);
+    if (R.م5موضع?.داخلَ_المنظور) {
+      await c.send("Input.dispatchMouseEvent",
+        { type: "mousePressed", x: R.م5موضع.x, y: R.م5موضع.y, button: "left", clickCount: 1 });
+      // ⚠️ **يُنتظر أطولُ من المهلة بأضعاف** — «لم يُخفَ بعدُ» ليست «لا يُخفى»
+      await sleep(IDLE_MS * 6);
+      R.م5 = await evalIn(c, STATE, w);
+      // ⭐ **ويُقاس سببُنا لا أثرُه وحدَه** (قرار 48): للامتناع هنا **سببان
+      // مُعلَنان في الكود** — `idlePointerHeld` **و**`focusInside(".ytp-chrome-bottom")`،
+      // **والأثرُ واحدٌ فيهما** ⇒ **فقراءةُ الأثر لا تقول أيُّهما فعل** (قرار 42).
+      // ⚠️ **الغيابُ يُسمّى ولا يُبتلع ولا يُوقف التشغيلة**: `vzIdleSnapshot` وُلدت
+      // مع #86، **فبناءٌ أقدمُ منها لا يملكها** — **و«غائبة» خبرٌ لا رمية.**
+      R.م5حال = await evalIn(c, `(typeof vzIdleSnapshot === "function" ? vzIdleSnapshot() : { غائبة: true })`, w);
+      R.م5تركيز = await evalIn(c, `(() => { const a = document.activeElement;
+        return { داخلَ_الشريط: !!(a && a.closest && a.closest(".ytp-chrome-bottom")),
+                 عنصر: a ? (a.className || a.tagName).toString().slice(0, 40) : null }; })()`, w);
+      await c.send("Input.dispatchMouseEvent",
+        { type: "mouseReleased", x: R.م5موضع.x, y: R.م5موضع.y, button: "left", clickCount: 1 });
+      await sleep(IDLE_MS * 3);
+      R.م5بعد = await evalIn(c, `(typeof vzIdleSnapshot === "function" ? vzIdleSnapshot() : { غائبة: true })`, w);
+    }
     try { c.ws.close(); } catch {}
   } finally {
     killChrome(h);
-    if (RED) { try { fs.rmSync(extPath, { recursive: true, force: true }); } catch {} }
+    if (extPath !== ROOT) { try { fs.rmSync(extPath, { recursive: true, force: true }); } catch {} }
   }
   return R;
 }
 
 console.log(`\n=== #112 — السكونُ على لقطةٍ محفوظة (صفحةٌ نظيفة) ===`);
-console.log(`  اللقطة: ${snapFile} · مهلةُ السكون: ${IDLE_MS}ms`);
+console.log(`  اللقطة: ${snap.file} · مهلةُ السكون: ${IDLE_MS}ms`);
+console.log(`  الشروطُ المسجَّلة: منظور ${snap.replay.viewport.w}×${snap.replay.viewport.h}` +
+  ` · ملءُ الشاشة على ${snap.replay.fullscreenSelector || "لا شيء"}`);
+console.log(`  وصندوقُ المضيف المُجمَّد: ${FROZEN.w}x${FROZEN.h}@${FROZEN.left},${FROZEN.top}`);
 if (RED) console.log(`  ⚠️ **شاهدُ حمرة**: content.js من \`${RED}\` — **يُنتظر منه أن يُحمّر**`);
+if (RED_FILE) console.log(`  ⚠️ **شاهدُ حمرة بمتغيّرٍ واحد**: ${RED_FILE}`);
 
 const r = await run();
-console.log(`  الفيديو: ${JSON.stringify(r.v)}`);
+
+console.log("\n[0] المراسي — تُؤكَّد قبل أن يُقاس شيء");
+console.log(`  · أُنتج: ${JSON.stringify(r.أُنتج)} · الفيديو: ${JSON.stringify(r.v)}`);
+check("[0] الصفحةُ تحت اسم المضيف", r.anchors?.host === "www.youtube.com", r.anchors);
+check("[0] وأوراقُ الأنماط مُضمَّنةٌ وغيرُ فارغة", (r.anchors?.cssBytes || 0) > 100000, r.anchors);
+check("[0] وعناصرُ المشغّل حاضرة", (r.anchors?.ytp || 0) > 400 && r.anchors?.bottom === 1, r.anchors);
+check("[0] ⭐ والمنظورُ كما سُجّل في الترويسة",
+  r.مرساة?.منظور?.w === snap.replay.viewport.w && r.مرساة?.منظور?.h === snap.replay.viewport.h,
+  { الآن: r.مرساة?.منظور, المسجَّل: snap.replay.viewport });
+// ⭐⭐ **المرساةُ التي تجعل الرقمَ المسجَّل غيرَ قابلٍ للتخلّف صامتاً**
+check("[0] ⭐⭐ والفيديو يوافق ما جمّده المضيف بحرفه — لا تخطيطاً آخر باسمه",
+  r.مرساة?.فيديو?.w === FROZEN.w && r.مرساة?.فيديو?.h === FROZEN.h &&
+  r.مرساة?.فيديو?.left === FROZEN.left && r.مرساة?.فيديو?.top === FROZEN.top,
+  { الحيّ: r.مرساة?.فيديو, المُجمَّد: FROZEN });
+check("[0] ⭐⭐ وهو **داخل المنظور** — لا موجودٌ وحسب", r.مرساة?.داخلَ_المنظور === true, r.مرساة);
+if (fail) {
+  console.log("\n⛔ **المراسي لم تُؤكَّد — ولا يُقرأ ما بعدها**: أصفارُها «لم أُنتج الحال» لا «سليم».");
+  console.log(`\n❌ نجح ${pass} / فشل ${fail}\n`); process.exit(1);
+}
 
 console.log("\n[1] م4 — بلا أيّ نشاطٍ: لا يُخفى شيءٌ أبداً");
 check("[1] (م4) الصنفُ غيرُ مطبَّق والشريطُ ظاهر",
@@ -183,7 +252,35 @@ check("[4] (م2) نقرةٌ داخل الصورة تُعيده", r.م2 && r.م2.
 check("[4] (م3) ويختفي ثانيةً — حالٌ تُنتَج قبل القياس", r.م3قبل && r.م3قبل.صنفُنا === true, r.م3قبل);
 check("[4] ⭐ (م3) وعجلةٌ فوق المشغّل تُعيده", r.م3 && r.م3.صنفُنا === false && r.م3.شريط === true, r.م3);
 
-if (RED) {
+// ── ⚪⛔⭐⭐ م5 — **مقيسةٌ ولا تُرفع، والسببُ قياسٌ لا عجز** ──────────────────
+//
+// **وعدُ م5: «اضغط شريط التقدّم وأمسكه بلا حركة ⇒ الشريط باقٍ تحت يدك».**
+// **وهو أخضرُ هنا — ⛔ وأخضرُه غيرُ منسوب، فلا يصلح حارساً.**
+//
+// ⭐⭐ **والمقيس: ثلاثةُ أسبابٍ مُعلَنةٍ في الكود تُبقي الشريطَ في هذي الحال
+// بعينها، وكلٌّ منها يكفي وحدَه** ⇒ **فلا متغيّرَ واحدٌ يستطيع أن يُحمّرها:**
+//   **(١)** `idlePointerHeld` — الزرُّ ممسوك.
+//   **(٢)** `focusInside(".ytp-chrome-bottom")` — **و`.ytp-progress-bar` يحمل
+//        `tabindex="0"`** ⇒ **الضغطةُ تُركّزه**، مقيسٌ: `activeElement = ytp-progress-bar`.
+//   **(٣)** `pointerInsideEl(target)` (#95) — **المؤشّرُ مستقرٌّ على الشريط نفسِه**،
+//        **وهو موضعُ الضغط بالضرورة**.
+// ⇒ **ومُثبَتٌ بالتشغيل لا بالقراءة**: أُزيل (١) وحدَه ⇒ **لم يُحمّر**، ثمّ
+// أُزيل (١) و(٢) معاً ⇒ **لم يُحمّر**، **والمحرّكُ يقول `state:"idle"` و`wanted:true`**
+// — **أي أنه يريد الإخفاء ويمنعه (٣).**
+// ⇒ ⭐⭐ **فالخضرةُ هنا تقول «لم يُخفَ» ولا تقول «لأنّا امتنعنا»** (قرار 42 · 48)،
+// **وشرطٌ لا يستطيع أن يُحمّر ليس حارساً** (قرار 26 · 47). ⛔ **فتبقى م5 للمالك.**
+// ⚠️ **وهي المصيدةُ نفسُها التي وقعت فيها منصّة #70** (حوّمت على 80% من الارتفاع
+// فوقع المؤشّر داخل الشريط، **و#95 يمتنع بحقّ**) — **واقعةً في موضعٍ ثانٍ.**
+// 🔔 **ومُطلِقُ رفعِها: صياغةٌ يستطيع فيها الوعدُ أن يسقط** — ولم تُوجد بعد،
+// **فالثلاثةُ تقع معاً بحكم الفعل الذي تصفه الخطوة نفسُها.**
+console.log("\n[5] ⚪ م5 — مقيسةٌ ولا تُرفع (ثلاثةُ أسبابٍ تكفي كلُّ واحدةٍ منها)");
+console.log(`  ⚪ الشريطُ تحت اليد: شريط=${r.م5?.شريط} · صنفُنا=${r.م5?.صنفُنا}` +
+  `  ⇒ ${r.م5?.شريط === true && r.م5?.صنفُنا === false ? "موافقٌ للمتوقَّع" : "**مخالف — يُبلَّغ**"}`);
+console.log(`  ⚪ وحالُ المحرّك: ${JSON.stringify(r.م5حال)}`);
+console.log(`  ⚪ والتركيز بعد الضغط: ${JSON.stringify(r.م5تركيز)}` +
+  ` · و«held» بعد الإفلات: ${r.م5بعد?.held}`);
+
+if (RED || RED_FILE) {
   console.log(`\n⇒ **شاهدُ الحمرة**: ${fail > 0
     ? `✅ احمرَّ بـ${fail} — فالرِكازُ يمسك ما بُني له`
     : "❌ **لم يُحمّر — ولا يُصدَّق أخضرُه بعد اليوم**"}`);

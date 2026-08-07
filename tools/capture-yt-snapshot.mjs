@@ -88,6 +88,21 @@ const CAPTURE = (withCss) => `(() => {
   // **واللقطةُ تُجمّد ما كتبه سكربتُ المضيف في العنصر لحظتَها إلى الأبد.**
   const seen = (s) => { const e = document.querySelector(s);
     return e ? e.checkVisibility({ opacityProperty: true, visibilityProperty: true }) : null; };
+  // ⛔⭐⭐ **شروطُ إعادة التشغيل تُسجَّل هنا لا تُخمَّن هناك** (2026-08-07):
+  // **اللقطةُ تُجمّد خرْجَ سكربتِ المضيف، وذاك الخرْجُ صحيحٌ في شرطَي التقاطه
+  // وحدَهما** — **فالمنظورُ جزءٌ من الحال المُلتقَطة لا ظرفٌ حولها، وكذلك أن تكون
+  // في ملء الشاشة وعلى أيّ عنصر.** ⇒ **والرِكازُ يقرؤها من هنا ولا يُثبّت رقماً.**
+  // ⚠️ **والعنصرُ يُسجَّل محدِّداً لا علماً**: «movie_player» وحدَه أعاد التخطيط،
+  // **و«ytd-app» و«html» جُرّبا فلم يتغيّر شيء** ⇒ **فاسمُ العنصر خبرٌ لازم.**
+  // ⛔ **ولا علامةَ اقتباسٍ خلفية في هذي الكتلة: نحن داخل قالبٍ نصّيّ** — وقد
+  // أُغلق القالبُ بها فعلاً، **وأمسكه «lint-names» لا «node --check»** —
+  // ⭐ **ثمّ أُغلق ثانيةً في التحذير المكتوب ضدّه** (قرار 93: شرحُ خطأٍ يُعيد الخطأ).
+  meta.replay = { viewport: { w: innerWidth, h: innerHeight },
+    fullscreenSelector: document.fullscreenElement
+      ? (document.fullscreenElement.id ? "#" + document.fullscreenElement.id
+                                       : document.fullscreenElement.tagName.toLowerCase())
+      : null,
+    سند: "مسجَّلٌ عند الالتقاط" };
   meta.produced = { ملءُ_شاشة: !!document.fullscreenElement,
     شريطٌ_سفليّ: seen(".ytp-chrome-bottom"), عنوان: seen(".ytp-fullscreen-metadata"),
     صفُّ_إجراءات: seen(".ytp-fullscreen-quick-actions"),
@@ -194,6 +209,10 @@ try {
     `  أوراقُ الأنماط: ${meta.sheets.readable} مقروءة · ${meta.sheets.blocked} محجوبة` +
       (meta.sheets.blockedHrefs.length ? ` (${meta.sheets.blockedHrefs.join(" · ")})` : ""),
     `  المراسي: ${JSON.stringify(meta.anchors)}`,
+    `  شروطُ إعادة التشغيل: منظور ${meta.replay.viewport.w}×${meta.replay.viewport.h}` +
+      ` · ملءُ الشاشة على ${meta.replay.fullscreenSelector || "لا شيء"}`,
+    "  ⛔ **وهما شرطان لا ظرف**: الشجرةُ تحمل خرْجَ سكربتِ المضيف مُجمَّداً،",
+    "     **وهو صحيحٌ فيهما وحدَهما** — يقرؤهما الرِكازُ من `.meta.json`.",
     "",
     "  ── ⚠️ حدودٌ أربعةٌ تُقرأ قبل أي رقمٍ يُبنى عليها ──────────────────────",
     "  (١) **نسخةٌ تتقادم**: يوتيوب يُغيّر شجرتَه. الكشفُ: `node tools/snapshot-freshness.mjs`",
