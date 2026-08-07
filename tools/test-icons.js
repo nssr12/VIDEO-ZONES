@@ -72,5 +72,31 @@ ok(REG.vzIconSvg("speed", "x").includes('class="x"') && REG.vzIconSvg("speed", "
    "بناء الوسم من السجلّ لا يُنتج SVG صالحاً");
 ok(REG.vzIconSvg("لا-توجد") === "", "مفتاحٌ مجهول لم يُرجع فراغاً — **يُخترع ما لا يُعرف**");
 
+
+
+// ── [5] ⭐⭐ #124 — نسخةُ `settings-ui.js` لا تتباعد عن السجلّ ────────────────
+// **النمطُ نفسُه الذي يحمله `content.js`**: `tools/` لا يُشحن، **فالإطارُ يحمل
+// نسخةً** — ⛔ **ونسخةٌ بلا حارسٍ تتباعد عن أصلها فتُري المعاينةُ ما لا يقع.**
+console.log("\n[5] نسخةُ الإطار في `settings-ui.js` — لا تتباعد عن السجلّ");
+{
+  const UI = fs.readFileSync(path.join(ROOT, "settings-ui.js"), "utf8");
+  const reg = require("./icons.js");
+  const known = new Set();
+  for (const v of Object.values(reg.VZ_ICONS)) for (const m of v.d.matchAll(/d="([^"]+)"/g)) known.add(m[1]);
+  for (const v of Object.values(reg.VZ_YT_ICONS)) for (const m of v.d.matchAll(/d="([^"]+)"/g)) known.add(m[1]);
+  const inUi = [...UI.matchAll(/<path[^>]*?d=\\"([^\\"]+)\\"/g)].map((m) => m[1]);
+  ok(inUi.length > 0, `[5] النسخةُ تحمل مساراتٍ — وُجد ${inUi.length}`);
+  const stray = inUi.filter((d) => !known.has(d));
+  // ⛔ **فشلُ هذا يعني أن الإطارَ يرسم ما ليس في السجلّ** — راجِع `tools/icons.js`
+  // **ولا تُصلح الاختبار**، فالسجلُّ هو الموضع الواحد.
+  ok(stray.length === 0, "[5] ⭐⭐ ولا مسارَ فيها خارج السجلّ — " + stray.slice(0, 1).join("").slice(0, 40));
+  ok(new RegExp(`VZ_SIM_ICONS_DATE = "${reg.VZ_YT_ICONS_DATE}"`).test(UI),
+     "[5] ⭐ وتاريخُ نسخِ أيقونات يوتيوب واحدٌ في الطرفين");
+  const REG_SRC = fs.readFileSync(path.join(ROOT, "tools", "icons.js"), "utf8");
+  ok(/يوتيوب يُغيّر رسومَه/.test(REG_SRC) && /يوتيوب يُغيّر/.test(UI),
+     "[5] وحدُّ المراجعة مكتوبٌ في الطرفين");
+  console.log(`  · ${inUi.length} مساراً في النسخة · ${known.size} في السجلّ · تاريخ يوتيوب ${reg.VZ_YT_ICONS_DATE}`);
+}
+
 console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);
 process.exit(fail ? 1 : 0);
