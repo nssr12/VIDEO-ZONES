@@ -260,7 +260,31 @@ async function run(label) {
       const st = await chrome.storage.sync.get({ settings: {} });
       const stored = ((st.settings || {}).overlay || {}).barButtons || null;
       const live = document.querySelector("#barEditor .vzBarLive");
-      return { before, after, focusable, stored, نطق: live ? live.textContent : null };
+
+      // ── #122 — المحاكي: المنطقةُ تتبدّل بالمسافة، والموضعُ لا يتبدّل معها ──
+      // ⛔ الوجودُ في الشريط هو التشغيل عند المستخدم، **والموضعُ محفوظٌ عند
+      // الإطفاء** — **وهو سببُ الشكل كلِّه، فيُقاس أثراً لا يُوصف.**
+      const zoneOf = (id) => {
+        const el = document.querySelector('[data-vz-bar-id="' + id + '"]');
+        return el ? (el.closest("[data-vz-zone]") || {}).dataset?.vzZone || null : null;
+      };
+      const idAt = (i) => (stored && stored[i] ? stored[i].id : null);
+      const target = after[0];
+      const zone0 = zoneOf(target);
+      const posBefore = (stored || []).findIndex((x) => x.id === target);
+      const chip = document.querySelector('[data-vz-bar-id="' + target + '"]');
+      chip.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      await new Promise((r) => setTimeout(r, 500));
+      const zone1 = zoneOf(target);
+      const st2 = await chrome.storage.sync.get({ settings: {} });
+      const stored2 = ((st2.settings || {}).overlay || {}).barButtons || [];
+      const posAfter = stored2.findIndex((x) => x.id === target);
+      const onAfter = (stored2.find((x) => x.id === target) || {}).on;
+      const barHas = !!document.querySelector("#barEditor .vzSimBar");
+
+      return { before, after, focusable, stored, نطق: live ? live.textContent : null,
+               barHas, target, zone0, zone1, posBefore, posAfter, onAfter,
+               بقي_في_القائمة: stored2.length === (stored || []).length };
     })()`);
 
     try { c.ws.close(); } catch {}
@@ -335,6 +359,23 @@ for (const v of sweepVerdicts(sw, live.drawn)) check(v.name, v.ok, v.extra);
     JSON.stringify(b.stored.map((x) => x.id)) === JSON.stringify(b.after), b.stored);
   check("[٨] ⭐ والحالُ تُقال في منطقةٍ حيّة (لا بالرسم وحده)",
     typeof b.نطق === "string" && b.نطق.trim().length > 0, b.نطق);
+
+  console.log("\n[٨ب] #122 — محاكي المشغّل: المنطقةُ تتبدّل والموضعُ يبقى");
+  check("[٨ب] الشريطُ السفليّ مرسوم", b.barHas === true, b);
+  // ⛔⭐ **يُقاس الانقلابُ لا الاتّجاه** (2026-08-07): أوّلُ صياغةٍ اشترطت «كان
+  // داخل الشريط» — **والاجتياحُ في [٣] يُبدّل كلَّ ضابط فيتركهما مطفأين** ⇒
+  // **فقرأ المِجَسُّ حالاً صحيحةً فشلاً.** ⭐ **وهي ثالثةُ هذا الشكل في يومين**
+  // (لوحةُ الفلاتر · وهذي) ⇒ **والقاعدة: شرطٌ يفترض حالاً ابتدائيّة يقيسها أو
+  // يُنتجها — ولا يفترضها**، وحيث يكفي الانقلابُ فهو أمتنُ لأنه لا يفترض شيئاً.
+  check("[٨ب] والزرُّ في منطقةٍ معلومة قبل اللمس", b.zone0 === "in" || b.zone0 === "out", b);
+  // ⭐⭐ **الأثرُ لا الوصف**: المسافةُ تنقله فعلاً بين المنطقتين
+  check("[٨ب] ⭐⭐ والمسافةُ تنقله بين الشريط وخارجه فعلاً",
+    !!b.zone1 && b.zone1 !== b.zone0, b);
+  // **والتخزينُ يوافق المنطقةَ الجديدة** — فلا واجهةٌ تقول غيرَ ما يُحفظ
+  check("[٨ب] ⭐ والتخزينُ يوافق المنطقةَ الجديدة", b.onAfter === (b.zone1 === "in"), b);
+  // ⛔ **وهذا سببُ الشكل كلِّه**: لو مَحا الإطفاءُ الموضعَ لعاد الزرُّ إلى الذيل
+  check("[٨ب] ⭐⭐ وموضعُه في القائمة لم يتبدّل", b.posAfter === b.posBefore && b.posBefore >= 0, b);
+  check("[٨ب] ولم يسقط من القائمة", b.بقي_في_القائمة === true, b);
 }
 
 // ── [٧] #84 — الظهور مُشتقّ: مدخلان مستقلّان، ولا مفتاح حالة ────────────────
