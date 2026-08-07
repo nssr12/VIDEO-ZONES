@@ -316,6 +316,46 @@ async function run(label) {
         مؤشّر: getComputedStyle(anyYt).pointerEvents,
         تركيز: anyYt.tabIndex, مخفيٌّ_للقارئ: anyYt.getAttribute("aria-hidden"),
         قابل_للسحب: anyYt.draggable === true } : null;
+
+      // ── #129 — **تخطيطُ ملء الشاشة: مناطقُه الخمس، ورأسيّتُها كما قِيست** ──
+      // ⛔ **لا يُقاس الوجودُ وحدَه**: **الترتيبُ الرأسيّ** هو ما يجعل الإطارَ
+      // محاكياً — **العنوانُ أعلى · الإجراءاتُ فوق التقدّم · التقدّمُ فوق الشريط**.
+      // ⚠️ **ويُقرأ من المستطيلات لا من ترتيب العقد** (قرار 22: بعد استقرار
+      // التخطيط، وبمستطيلاتٍ غير صفرية) — **فترتيبُ العقد لا يقول أين رُسم.**
+      // ⛔⭐⭐ **الحالُ تُنتَج قبل أن تُقرأ — خامسةُ قرار 125، ووقعت في أوّل
+      // تشغيلة:** القسمُ الذي يحمل الإطارَ كان **مخفيّاً** (المِجَسّ تنقّل إلى
+      // قسمٍ آخر قبله) ⇒ **كلُّ مستطيلٍ صفرٌ**، **فطبع «شريطُ التقدّم غير مرسوم»
+      // وهو مرسوم**. ⇒ **فيُفتح قسمُه صراحةً ويُنتظر التخطيط.**
+      const secId = document.getElementById("barEditor")?.closest(".sectionPage")?.id;
+      if (secId) {
+        const navBtn = [...document.querySelectorAll(".navItem")]
+          .find((n) => n.dataset.section === secId);
+        if (navBtn) navBtn.click();
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      const q = (s) => document.querySelector("#barEditor " + s);
+      const rectOf = (s) => { const e = q(s); if (!e) return null;
+        const r = e.getBoundingClientRect();
+        return (r.width > 0 && r.height > 0) ? { y: Math.round(r.top), x: Math.round(r.left),
+                                                 w: Math.round(r.width) } : null; };
+      const rTitle = rectOf(".vzSimTitle"), rActs = rectOf(".vzSimActions");
+      const rProg = rectOf(".vzSimProgress"), rBar = rectOf(".vzSimBar");
+      const rCenter = rectOf(".vzSimCenter [data-vz-yt]");
+      const fs129 = {
+        عنوان: !!q('.vzSimTitle [data-vz-yt="top_titles"]'),
+        إجراءات: q('.vzSimActions [data-vz-yt="quick_actions"] svg')
+          ? q('.vzSimActions [data-vz-yt="quick_actions"]').querySelectorAll("svg").length : 0,
+        وسط: !!q('.vzSimCenter [data-vz-yt="fullscreen_scroll_arrow"]'),
+        مفتاحُ_التلقائيّ: !!q('[data-vz-yt="autoplay_toggle"] .vzSimSwitchKnob'),
+        سينما: !!q('[data-vz-yt="size_button"]'),          // ⬅ يجب أن يكون false
+        تقدّمٌ_مرسوم: !!rProg,
+        // **الرأسيّة**: عنوان < إجراءات < تقدّم < شريط
+        رأسيّةٌ_صحيحة: !!(rTitle && rActs && rProg && rBar &&
+          rTitle.y < rActs.y && rActs.y < rProg.y && rProg.y <= rBar.y),
+        حدود: document.querySelectorAll("#barEditor .vzSimLimits li").length,
+        وسطُه_وسط: (rCenter && rBar)
+          ? Math.abs((rCenter.x + rCenter.w / 2) - (rBar.x + rBar.w / 2)) <= 6 : false
+      };
       // **والاتّجاه واحد**: مربّعٌ في Clean Player يُخفي عنصرَه من الإطار
       // ⛔⭐ **الحالُ تُنتَج ولا تُفترض** (قرار 125، **رابعةُ وقوعه وفي هذا
       // المِجَسّ نفسِه**): الاجتياحُ في [٣] **يُبدّل كلَّ مربّعات Clean Player**
@@ -336,7 +376,7 @@ async function run(label) {
       const playGone = !document.querySelector('#barEditor [data-vz-yt="play_button"]');
 
       return { before, after, focusable, stored, نطق: live ? live.textContent : null,
-               ytBefore, ytLeft, ytRight, ytStruct, shape, ytMid, ytAfter, playThere, playGone,
+               ytBefore, ytLeft, ytRight, ytStruct, shape, ytMid, ytAfter, playThere, playGone, fs129,
                barHas, target, zone0, zone1, posBefore, posAfter, onAfter,
                بقي_في_القائمة: stored2.length === (stored || []).length };
     })()`);
@@ -456,6 +496,29 @@ for (const v of sweepVerdicts(sw, live.drawn)) check(v.name, v.ok, v.extra);
   }
   check("[٨ج] ⭐⭐ ومربّعُ Clean Player يُخفي عنصرَه من الإطار فوراً",
     b.playGone === true && b.ytAfter === b.ytMid - 1, { قبل: b.ytMid, بعد: b.ytAfter });
+
+  // ── [٨هـ] #129 — **تخطيطُ ملء الشاشة: كلُّ شرطٍ منه مقيسٌ على مشغّلٍ حيّ** ──
+  // ⛔ **ولا يحرس هذا القسمُ الشكلَ الجميل: يحرس أن ما رُسم هو ما قِيس** —
+  // **فالمعاينةُ التي تكذب أسوأ من غياب المعاينة**، وهي علّةُ الإطار كلِّه.
+  // ⚠️ **والأرقامُ خلفه في `tools/bench-129-fs-layout.mjs`** — ومن شكّ يُعيد سحبَه.
+  if (b.fs129) {
+    const f = b.fs129;
+    console.log("\n[٨هـ] #129 — الإطارُ يحاكي ملءَ الشاشة");
+    check("[٨هـ] شريطُ العنوان مرسومٌ أعلى الصورة", f.عنوان === true, f);
+    check("[٨هـ] ⭐ وصفُّ الإجراءات بخمس أيقونات (كما قِيست)", f.إجراءات === 5, f);
+    check("[٨هـ] ⭐ وزرُّ «المزيد من الفيديوهات» وسطَ الشريط", f.وسط === true, f);
+    check("[٨هـ] ⭐⭐ ووسطُه وسطٌ حقيقيّ لا طرفٌ ثالث", f.وسطُه_وسط === true, f);
+    check("[٨هـ] ⭐ ومفتاحُ التشغيل التلقائيّ شكلٌ لا أيقونة", f.مفتاحُ_التلقائيّ === true, f);
+    // ⛔ **شاهدٌ سالبٌ من المنتَج نفسِه**: وضعُ السينما **مقيسٌ `display:none` في
+    // ملء الشاشة** ⇒ **ظهورُه هنا يعني أن الإطارَ يَعِد بما لا يقع.**
+    check("[٨هـ] ⛔ ولا زرَّ سينما (مقيسٌ مخفيّاً في ملء الشاشة)", f.سينما === false, f);
+    check("[٨هـ] وشريطُ التقدّم مرسومٌ وإن كان بلا مفتاح", f.تقدّمٌ_مرسوم === true, f);
+    check("[٨هـ] ⭐⭐ والترتيبُ الرأسيّ كما قِيس: عنوان ⇐ إجراءات ⇐ تقدّم ⇐ شريط",
+      f.رأسيّةٌ_صحيحة === true, f);
+    check("[٨هـ] ⭐ والحدودُ الثلاثة مكتوبةٌ في الإطار نفسِه", f.حدود === 3, f);
+  } else {
+    fail++; console.log("  ❌ [٨هـ] لم يُقرأ مِجَسُّ #129 أصلاً — ولا يُقرأ غيابُه نجاحاً");
+  }
 }
 
 // ── [٧] #84 — الظهور مُشتقّ: مدخلان مستقلّان، ولا مفتاح حالة ────────────────

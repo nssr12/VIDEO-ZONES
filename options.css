@@ -420,7 +420,7 @@ label{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:600;let
    ينقلب معنى «قبل» و«بعد» بين المحرِّر والحقن، فتصير المعاينةُ تكذب.** */
 .vzSim{ direction:ltr; display:flex; flex-direction:column; gap:10px; }
 .vzSimScreen{
-  position:relative; aspect-ratio:16/9; max-height:220px;
+  position:relative; aspect-ratio:16/9; max-height:260px;
   background:linear-gradient(#1a1a1f,#0d0d10);
   border:1px solid rgba(255,255,255,.14); border-radius:10px; overflow:hidden;
 }
@@ -446,9 +446,44 @@ label{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:600;let
      **لا في المقاس**: مقاسان مختلفان يُنتجان فرقاً ثانياً لم يطلبه أحد. */
   background:none; border:1px solid transparent; text-align:center;
 }
-.vzSimBar::before{
-  content:""; position:absolute; left:10px; right:10px; top:6px; height:3px;
-  border-radius:2px; background:rgba(255,255,255,.28);
+/* ── #129 — **تخطيطُ ملء الشاشة، بمواضعَ مقيسة** ────────────────────────────
+   **المقيس على `watch` في ملء الشاشة (شاشة 800×600) 2026-08-07:**
+   العنوان `@8` أعلى · صفُّ الإجراءات `@480` · شريطُ التقدّم `@538` ·
+   الشريطُ السفليّ `@552` — **فالترتيبُ الرأسيّ ترتيبُه لا ترتيبٌ نختاره.**
+   ⚠️ **والمقاسُ مُصغَّرٌ بنسبة الإطار** (صناديقُنا `34` والمقيس `40`): **الأيقونات
+   منسوخةٌ بحروفها، والصناديقُ مُصغَّرةٌ مُعلَنةً** — ولا يُقال إنها مطابقةُ البكسل. */
+.vzSimTitle{
+  position:absolute; left:0; right:0; top:0; min-height:26px;
+  display:flex; align-items:center; justify-content:flex-end; padding:6px 10px;
+  background:linear-gradient(rgba(0,0,0,.75),transparent);
+}
+/* **العنوانُ نصٌّ يُحاذى إلى اليمين** — مقيسٌ `466×56@322` في شاشة `800`،
+   **وهي واجهةُ المالك العربية**؛ ولا يُعمَّم على واجهةٍ أخرى لم تُقَس. */
+.vzSimTitleText{ direction:rtl; font:600 12px/1.2 Arial, sans-serif; color:rgba(255,255,255,.82); }
+.vzSimActions{
+  position:absolute; left:10px; right:10px; bottom:56px;
+  display:flex; align-items:center; gap:4px;
+}
+.vzSimActionSet{ display:inline-flex; align-items:center; gap:6px; min-width:0; }
+.vzSimActionSet svg{ display:block; }
+/* ⛔ **شريطُ التقدّم بلا مفتاحٍ في Clean Player** — يُرسم لأن الإطارَ مُحاكٍ،
+   **وإخفاؤه ميزةُ السكون (#70) لا هذا القسم** (مكتوبٌ في تلميحه). */
+.vzSimProgress{
+  position:absolute; left:10px; right:10px; bottom:48px; height:3px;
+  border-radius:2px; background:rgba(255,255,255,.28); overflow:hidden;
+}
+.vzSimProgressFill{ display:block; width:22%; height:100%; background:#f00; border-radius:2px; }
+/* ⭐ **مفتاحُ التشغيل التلقائيّ شكلٌ لا أيقونة — والسببُ مقيس:** لا `svg` ولا
+   صورةَ فيه، **بل `div` أبيضُ `30×18` بنصف قطر `9px`** داخل صندوق `48×40`. */
+.vzSimSwitch{ display:inline-flex; align-items:center; justify-content:center; }
+.vzSimSwitchKnob{ display:block; width:25px; height:15px; border-radius:7.5px;
+  background:rgba(255,255,255,.82); }
+/* **الوسطُ وسطٌ حقيقيّ** — مقيسٌ `@380` من عرضٍ `776`، لا طرفاً ثالثاً في صفّ */
+.vzSimCenter{ position:absolute; left:50%; transform:translateX(-50%); }
+.vzSimLimits{
+  direction:rtl; margin:0; padding:6px 22px 6px 10px; font-size:12px; opacity:.75;
+  border-radius:8px; background:rgba(255,255,255,.05); display:flex;
+  flex-direction:column; gap:4px;
 }
 .vzSimTray{
   display:flex; align-items:center; gap:8px; flex-wrap:wrap;
