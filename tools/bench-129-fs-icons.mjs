@@ -45,23 +45,41 @@ const PULL = `(() => {
   if (qa) for (const b of qa.querySelectorAll("button, [role='button']")) out.quick.push(pull(b));
   out.expand = pull(document.querySelector(".ytp-fullscreen-grid-expand-button"));
   // ── التشغيلُ التلقائيّ: بأيّ شيءٍ يُرسم؟ ────────────────────────────────
-  const an = document.querySelector(".ytp-autonav-toggle");
-  if (an) {
-    const kids = [...an.querySelectorAll("*")].slice(0, 10).map((e) => {
-      const cs = getComputedStyle(e); const r = e.getBoundingClientRect();
-      return { tag: e.tagName, cls: cls(e).slice(0, 50), w: Math.round(r.width), h: Math.round(r.height),
-               bg: cs.backgroundColor, radius: cs.borderRadius, border: cs.borderWidth + " " + cs.borderColor,
-               bgImg: cs.backgroundImage.slice(0, 60), transform: cs.transform.slice(0, 40) };
-    });
-    const pseudo = ["::before", "::after"].map((p) => {
-      const cs = getComputedStyle(an, p);
-      return { p, content: cs.content, bg: cs.backgroundColor, bgImg: cs.backgroundImage.slice(0, 40),
-               w: cs.width, h: cs.height };
-    });
-    out.autonav = { cls: cls(an).slice(0, 80), aria: (an.getAttribute("aria-label") || "").slice(0, 50),
-                    html: an.innerHTML.slice(0, 400), kids, pseudo,
-                    checked: an.getAttribute("aria-checked"), title: an.getAttribute("title") };
-  }
+  // ⛔⭐⭐ أوّلُ قياسٍ أصاب عنصراً واحداً فأنتج رسماً كاذباً (#130): قُرئ المقبضُ
+  // وحدَه (30×18 أبيضُ نصفُ قطره 9) فرُسم شكلاً أبيضَ صلباً — والحقيقيُّ مسارٌ
+  // داكن وفيه مقبضٌ أبيضُ دائريّ. ⇒ فالبنيةُ تُقرأ كاملةً لا عنصراً منها.
+  // ⚠️ ولا علاماتِ قوالبَ في هذي التعليقات: هي داخل قالبٍ نصّيّ، وقد كسرته مرّةً.
+  const full = (el) => {
+    if (!el) return null;
+    const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
+    const ps = ["::before", "::after"].map((p) => {
+      const c2 = getComputedStyle(el, p);
+      return { p, content: c2.content, bg: c2.backgroundColor, radius: c2.borderRadius,
+               w: c2.width, h: c2.height, top: c2.top, left: c2.left, right: c2.right,
+               bottom: c2.bottom, margin: c2.margin, box: c2.boxSizing,
+               pos: c2.position, transform: c2.transform.slice(0, 46),
+               border: c2.borderWidth + " " + c2.borderColor, op: c2.opacity };
+    }).filter((p) => p.content !== "none");
+    return { cls: cls(el).slice(0, 70), w: Math.round(r.width), h: Math.round(r.height),
+             x: Math.round(r.left), y: Math.round(r.top),
+             bg: cs.backgroundColor, radius: cs.borderRadius, op: cs.opacity,
+             border: cs.borderWidth + " " + cs.borderStyle + " " + cs.borderColor,
+             shadow: cs.boxShadow.slice(0, 80), bgImg: cs.backgroundImage.slice(0, 60),
+             transform: cs.transform.slice(0, 46), position: cs.position,
+             display: cs.display, margin: cs.margin, padding: cs.padding, ps };
+  };
+  const snapAutonav = () => {
+    const an = document.querySelector(".ytp-autonav-toggle");
+    if (!an) return null;
+    return { checked: an.getAttribute("aria-checked"),
+             ariaBtn: (an.getAttribute("aria-label") || "").slice(0, 60),
+             html: an.innerHTML.slice(0, 300),
+             زرّ: full(an),
+             حاوية: full(an.querySelector(".ytp-autonav-toggle-button-container")),
+             مقبض: full(an.querySelector(".ytp-autonav-toggle-button")),
+             checkedInner: an.querySelector(".ytp-autonav-toggle-button")?.getAttribute("aria-checked") };
+  };
+  out.autonav = snapAutonav();
   return out;
 })()`;
 let h = null; const report = {};
@@ -82,6 +100,38 @@ try {
   for (let i = 0; i < 6; i++) { if (c) await mouseMove(page, c.x + (i % 2 ? 5 : -5), c.y + 3); await sleep(200); }
   await sleep(600);
   report.pull = await evalIn(page, PULL);
+  // ⛔⭐ **والحالُ الثانية تُنتَج ولا تُخمَّن** (قرار 125): موضعُ المقبض يختلف
+  // بين «مشغَّل» و«مطفأ» — **ورسمُه في غير موضعه يقول للمالك حالاً ليست حاله**،
+  // وهي «معاينةٌ تكذب» بدرجةٍ أصغر لا بنوعٍ آخر (نصّ المالك).
+  const anBox = await centerOf(page, ".ytp-autonav-toggle");
+  if (anBox) {
+    await click(page, anBox.x, anBox.y);
+    await sleep(900);
+    const c2 = await centerOf(page, "#movie_player");
+    if (c2) { await mouseMove(page, c2.x + 4, c2.y + 3); await mouseMove(page, c2.x - 4, c2.y - 3); }
+    await sleep(500);
+    report.autonavFlipped = await evalIn(page, `(() => {
+      const an = document.querySelector(".ytp-autonav-toggle");
+      if (!an) return null;
+      const k = an.querySelector(".ytp-autonav-toggle-button");
+      const cs = k && getComputedStyle(k); const r = k && k.getBoundingClientRect();
+      const cnt = an.querySelector(".ytp-autonav-toggle-button-container");
+      const cb = cnt && getComputedStyle(cnt, "::before");
+      const af = k && getComputedStyle(k, "::after");
+      return { checked: an.getAttribute("aria-checked"),
+               knobChecked: k && k.getAttribute("aria-checked"),
+               transform: cs ? cs.transform : null, bg: cs ? cs.backgroundColor : null,
+               radius: cs ? cs.borderRadius : null,
+               w: r ? Math.round(r.width) : 0, h: r ? Math.round(r.height) : 0,
+               // ⭐ المقبضُ هو ::after على المسار — ولونُه وموضعُه يتبدّلان بالحال
+               after: af ? { content: af.content, bg: af.backgroundColor, w: af.width,
+                             h: af.height, radius: af.borderRadius, top: af.top,
+                             left: af.left, bottom: af.bottom, right: af.right,
+                             margin: af.margin, box: af.boxSizing, pos: af.position,
+                             transform: af.transform } : null,
+               trackBefore: cb ? { content: cb.content, bg: cb.backgroundColor,
+                                   w: cb.width, h: cb.height, radius: cb.borderRadius } : null }; })()`);
+  }
   try { page.ws.close(); } catch {}
 } catch (e) { report.fatal = String(e?.message || e); }
 finally { try { killChrome(h); } catch {} }

@@ -756,13 +756,21 @@ function vzUiBuildBarEditor(doc, root, opts = {}) {
         el.innerHTML = part.أيقونات.map(svg).join("");
       } else if (part.شكل === "مفتاح") {
         // ⭐ **التشغيلُ التلقائيّ يُرسم بشكلٍ لا بأيقونة — والسببُ مقيس** (#129):
-        // **`svg=0 · img=0 · لا صورةَ خلفية`** ⇒ **بحثنا عمّا يرسمه فوجدناه:**
-        // `div` داخل `div`، **الخارج `48×40` والداخل `30×18` أبيضُ بنصف قطر `9px`
-        // ومزاحٌ `translateY(-9px)`** — **فنُسخت أرقامُه كما تُنسخ المسارات.**
+        // **`svg=0 · img=0 · لا صورةَ خلفية`** ⇒ **فقِيس بأيّ شيءٍ يُرسم.**
+        // ⛔⭐⭐ **وأوّلُ قياسٍ أصاب عنصراً واحداً فأنتج رسماً كاذباً** (#130):
+        // قُرئ `.ytp-autonav-toggle-button` **`30×18` أبيضُ** فرُسم **شكلاً أبيضَ
+        // صلباً** — **والحقيقيُّ مسارٌ ومقبضٌ**: ذلك العنصرُ هو **المسار**،
+        // **والمقبضُ `::after` عليه**. ⇒ **فبنيةٌ من عنصرين قُرئ منها واحد.**
+        // **والمقيس بحروفه (2026-08-07، في ملء الشاشة، الحالان معاً):**
+        //   · **المسار** `30×18` نصفُ قطره `9px` ومزاحٌ `translateY(-9px)` —
+        //     **مشغَّل: `#fff`** · **مطفأ: `rgba(255,255,255,.1)`**
+        //   · **المقبض** `::after` — `14×14` نصفُ قطره `7px` `margin:2px`
+        //     `top/left:0` — **مشغَّل: `#000` ومزاحٌ `translateX(12px)`** ·
+        //     **مطفأ: `#fff` بلا إزاحة.**
         el.classList.add("vzSimSwitch");
-        const knob = doc.createElement("i");
-        knob.className = "vzSimSwitchKnob";
-        el.appendChild(knob);
+        const track = doc.createElement("i");
+        track.className = "vzSimSwitchTrack";
+        el.appendChild(track);
       } else if (part.نصّ) {
         el.classList.add("vzSimTitleText");
         el.textContent = part.نصّ;

@@ -346,7 +346,21 @@ async function run(label) {
         إجراءات: q('.vzSimActions [data-vz-yt="quick_actions"] svg')
           ? q('.vzSimActions [data-vz-yt="quick_actions"]').querySelectorAll("svg").length : 0,
         وسط: !!q('.vzSimCenter [data-vz-yt="fullscreen_scroll_arrow"]'),
-        مفتاحُ_التلقائيّ: !!q('[data-vz-yt="autoplay_toggle"] .vzSimSwitchKnob'),
+        // ⛔⭐⭐ الشاهدُ يقرأ المقبضَ لا المسارَ وحدَه (#130): أوّلُ صياغةٍ اكتفت
+        // بوجود عنصرٍ داخل المفتاح، فمرّ عليها رسمٌ أبيضُ صلبٌ لا مقبضَ فيه —
+        // وهو عينُ العطب الذي كُتب الشاهدُ له. ⇒ فيُقرأ العنصرُ الزائف بلونه
+        // وقياسه وإزاحته، فالفرقُ بين «مسارٌ ومقبض» و«شكلٌ صلب» فيه وحدَه.
+        // ⚠️ ولا علاماتِ قوالبَ هنا: هذا داخل قالبٍ نصّيّ، وقد كُسر مرّتين اليوم.
+        مفتاحُ_التلقائيّ: (() => {
+          const t = q('[data-vz-yt="autoplay_toggle"] .vzSimSwitchTrack');
+          if (!t) return null;
+          const cs = getComputedStyle(t), af = getComputedStyle(t, "::after");
+          const r = t.getBoundingClientRect();
+          return { w: Math.round(r.width), h: Math.round(r.height), radius: cs.borderRadius,
+                   bg: cs.backgroundColor, مقبض: af.content !== "none",
+                   مقبضٌ_قياس: af.width + "×" + af.height, مقبضٌ_لون: af.backgroundColor,
+                   مقبضٌ_إزاحة: af.transform };
+        })(),
         سينما: !!q('[data-vz-yt="size_button"]'),          // ⬅ يجب أن يكون false
         تقدّمٌ_مرسوم: !!rProg,
         // **الرأسيّة**: عنوان < إجراءات < تقدّم < شريط
@@ -518,7 +532,13 @@ for (const v of sweepVerdicts(sw, live.drawn)) check(v.name, v.ok, v.extra);
       f.إجراءات === WANT_ACTIONS, { رُسم: f.إجراءات, السجلّ: WANT_ACTIONS });
     check("[٨هـ] ⭐ وزرُّ «المزيد من الفيديوهات» وسطَ الشريط", f.وسط === true, f);
     check("[٨هـ] ⭐⭐ ووسطُه وسطٌ حقيقيّ لا طرفٌ ثالث", f.وسطُه_وسط === true, f);
-    check("[٨هـ] ⭐ ومفتاحُ التشغيل التلقائيّ شكلٌ لا أيقونة", f.مفتاحُ_التلقائيّ === true, f);
+    // ── #130 — **المفتاحُ مسارٌ ومقبض، بالأرقام المقيسة لا بوجودِ عنصر** ──────
+    const sw = f.مفتاحُ_التلقائيّ;
+    check("[٨هـ] ⭐ ومفتاحُ التشغيل التلقائيّ مرسومٌ مساراً", !!sw && sw.w === 30 && sw.h === 18, sw);
+    check("[٨هـ] ⭐⭐ وفيه مقبضٌ (#130: رسمٌ صلبٌ بلا مقبضٍ يُحمّر هنا)",
+      !!sw && sw.مقبض === true && sw.مقبضٌ_قياس === "14px×14px", sw);
+    check("[٨هـ] ⭐ والمقبضُ مزاحٌ كما قِيس في الحال المشغَّلة",
+      !!sw && /matrix\(1, 0, 0, 1, 12, 0\)/.test(sw.مقبضٌ_إزاحة || ""), sw);
     // ⛔ **شاهدٌ سالبٌ من المنتَج نفسِه**: وضعُ السينما **مقيسٌ `display:none` في
     // ملء الشاشة** ⇒ **ظهورُه هنا يعني أن الإطارَ يَعِد بما لا يقع.**
     check("[٨هـ] ⛔ ولا زرَّ سينما (مقيسٌ مخفيّاً في ملء الشاشة)", f.سينما === false, f);

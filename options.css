@@ -474,10 +474,26 @@ label{display:grid;gap:6px;font-size:12px;color:var(--muted);font-weight:600;let
 }
 .vzSimProgressFill{ display:block; width:22%; height:100%; background:#f00; border-radius:2px; }
 /* ⭐ **مفتاحُ التشغيل التلقائيّ شكلٌ لا أيقونة — والسببُ مقيس:** لا `svg` ولا
-   صورةَ فيه، **بل `div` أبيضُ `30×18` بنصف قطر `9px`** داخل صندوق `48×40`. */
+   صورةَ فيه. ⛔⭐⭐ **وأوّلُ رسمٍ كان كاذباً** (#130): قُرئ **المسارُ وحدَه**
+   فرُسم **شكلاً أبيضَ صلباً**، **والحقيقيُّ مسارٌ ومقبضٌ `::after` عليه.**
+   **والمقيس بحروفه في ملء الشاشة، والحالان معاً:**
+     · المسار `30×18` · نصفُ قطر `9px` · `translateY(-9px)` —
+       **مشغَّل `#fff`** · **مطفأ `rgba(255,255,255,.1)`**
+     · المقبض `::after` `14×14` · نصفُ قطر `7px` · `margin:2px` · `top/left:0` —
+       **مشغَّل `#000` مع `translateX(12px)`** · **مطفأ `#fff` بلا إزاحة**
+   ⚠️ **والأرقامُ منسوخةٌ بحروفها لا مُقرَّبة** — **والمُصغَّرُ صندوقُ الإطار وحدَه.**
+   ⚠️ **والحالُ المرسومة هي المقيسة افتراضاً في ملفٍّ نظيف: مشغَّل** — **وحالُ
+   المستخدم تتبع حسابه**، وهو مكتوبٌ في تلميح العنصر. */
 .vzSimSwitch{ display:inline-flex; align-items:center; justify-content:center; }
-.vzSimSwitchKnob{ display:block; width:25px; height:15px; border-radius:7.5px;
-  background:rgba(255,255,255,.82); }
+.vzSimSwitchTrack{
+  position:relative; display:block; width:30px; height:18px;
+  border-radius:9px; background:#fff;
+}
+.vzSimSwitchTrack::after{
+  content:""; position:absolute; top:0; left:0; margin:2px;
+  width:14px; height:14px; border-radius:7px; background:#000;
+  transform:translateX(12px);
+}
 /* **الوسطُ وسطٌ حقيقيّ** — مقيسٌ `@380` من عرضٍ `776`، لا طرفاً ثالثاً في صفّ */
 .vzSimCenter{ position:absolute; left:50%; transform:translateX(-50%); }
 .vzSimLimits{
