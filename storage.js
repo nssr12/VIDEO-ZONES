@@ -265,7 +265,7 @@ function progressBarModeOf(overlay) {
 // ⚠️ **وسجلٌّ ناقص يُكمَّل بالترتيب المُعلَن ولا يُسقط زرّاً:** زرٌّ يُشحن غداً
 // **يجده مستخدمُ اليوم غائباً من قائمته** — **فيُلحق بالذيل مُطفأً**، ولا يظهر
 // بلا طلب. ⇒ **وميزةٌ تُفقَد أهونُ من ميزةٍ تُشغَّل على من لم يطلبها.**
-const BAR_BUTTON_IDS = ["speed", "filter"];
+const BAR_BUTTON_IDS = ["speed", "filter", "copy"];
 function barButtonsOf(overlay) {
   const o = overlay || {};
   const raw = Array.isArray(o.barButtons) ? o.barButtons : null;

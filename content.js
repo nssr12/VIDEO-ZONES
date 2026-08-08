@@ -1118,7 +1118,7 @@ function progressBarModeOf(overlay) {
 // ⚠️ **وسجلٌّ ناقص يُكمَّل بالترتيب المُعلَن ولا يُسقط زرّاً:** زرٌّ يُشحن غداً
 // **يجده مستخدمُ اليوم غائباً من قائمته** — **فيُلحق بالذيل مُطفأً**، ولا يظهر
 // بلا طلب. ⇒ **وميزةٌ تُفقَد أهونُ من ميزةٍ تُشغَّل على من لم يطلبها.**
-const BAR_BUTTON_IDS = ["speed", "filter"];
+const BAR_BUTTON_IDS = ["speed", "filter", "copy"];
 function barButtonsOf(overlay) {
   const o = overlay || {};
   const raw = Array.isArray(o.barButtons) ? o.barButtons : null;
@@ -2465,7 +2465,10 @@ function placeSpeedBtn(video) {
 // (وهو درسُ `CLEAN_PLAYER_ITEMS`/`CLEAN_PLAYER_OPTIONS` وحارسِهما).
 const BAR_BUTTONS = {
   speed:  { el: () => vzSpeedBtn,  label: "زرّ السرعة" },
-  filter: { el: () => vzFilterBtn, label: "زرّ الفلاتر" }
+  filter: { el: () => vzFilterBtn, label: "زرّ الفلاتر" },
+  // #134 — **والثالثُ لم يحتج في المحرِّر سطراً**: ثلاثةُ سجلّاتٍ وحدها
+  // (`BAR_BUTTON_IDS` · هذا · `VZ_BAR_BUTTONS`)، **و`applyBarOrder` عامّةٌ بلا أسماء.**
+  copy:   { el: () => vzCopyBtn,   label: "زرّ نسخ الرابط" }
 };
 
 // ⛔⭐ **الترتيبُ يُطبَّق على العناصر المحقونة نفسِها** (شرط المالك): معاينةٌ
@@ -2997,6 +3000,93 @@ function filterEscKeydown(e) {
 // `fullscreenchange`: **سطرٌ ينفَّذ عند التحميل داخل كتلةٍ يقتطعها سندُ #72
 // يرمي فيه** (`document is not defined`)، **والسندُ يقتطع منتَجاً لا يخترعه.**
 
+// ── #134 — **زرّ نسخ رابط الفيديو** (طلب المالك 2026-08-08) ──────────────────
+//
+// ⭐ **وهو أوّلُ اختبارٍ حقيقيّ لمحرِّر الشريط**: بُني بحجّة «ستُضاف أزرارٌ
+// لاحقاً»، **فكلّف الزرُّ الثالثُ ثلاثةَ سجلّاتٍ ولا سطرَ منطقٍ في المحرِّر** —
+// `BAR_BUTTON_IDS` · `BAR_BUTTONS` · `VZ_BAR_BUTTONS`. **والحجّةُ صمدت مقيسةً.**
+//
+// ⛔⭐ **وما يُنسخ: ما في شريط العنوان منزوعاً منه `t` وحدَه** (قرار المالك).
+// ⚠️ **وحدّاه مكتوبان في تلميح الزرّ لا في سجلٍّ بعيد** — **فمن يقرأ التلميح هو
+// من يقع عليه أثرُهما:**
+//   · **في قائمة تشغيل يبقى `list`** ⇒ **من نسخ فيها شارك القائمةَ معها.**
+//   · **و`/shorts/` يبقى كما هو إن أُطفئ تحويلُ Shorts** — ⭐ **وهو خارج المدى
+//     بسببٍ مقيسٍ لا بقرار**: `ytShortsRedirect` **افتراضُه مُشغَّل**، فالعنوانُ
+//     صار `/watch` قبل أن يُنقر الزرّ. **ولا منطقَ خاصّ له، ولم يُطلب.**
+//
+// ⛔ **ولا إذنَ جديدٌ في المانيفست** — مقيسٌ 2026-08-08 على أصل يوتيوب من عالم
+// الإضافة: `permissions.query({name:"clipboard-write"})` **granted**، **وبنقرةٍ
+// موثوقة نجح**، **وبلا نقرة رُفض** (`NotAllowedError`).
+// ⚠️ **وحدُّ ذاك القياس يُقال ولا يُدّعى أكثرُ منه:** الرفضُ كان
+// «Document is not focused» **لا «لا تفعيل»** ⇒ **فهو لا يفصل التركيزَ عن
+// التفعيل، والمُثبَتُ أن النقرةَ الموثوقة تكفي** — **وذاك يكفينا.**
+function copyButtonActive() {
+  if (!extensionActive()) return false;   // #64: الرئيسي ثمّ الحظر
+  return barButtonOn(overlaySettings, "copy");   // #118 — من القائمة لا من مفتاحٍ مفرد
+}
+
+// **الرابطُ يُشتقّ من شريط العنوان ولا يُركَّب** — فما يراه المستخدم هو ما يُنسخ.
+function copyLinkUrl() {
+  try {
+    const u = new URL(location.href);
+    u.searchParams.delete("t");           // **الوقتُ وحدَه يُنزع** (قرار المالك)
+    return u.toString();
+  } catch { return location.href; }
+}
+
+// **يمرّ بمسار الزرّين نفسِه** (#108) — ولا نسخةَ ثالثة من المنطق
+function setCopyBtnShown(on) {
+  let video = null;
+  if (on) {
+    if (!buttonsAllowedHere()) on = false;   // #116
+  }
+  if (on) {
+    video = speedBtnVideo();
+    if (!video) return;
+    if (!videoOwnsControls(video)) on = false;   // #94 — فيديوٌ يملك أدواته
+    else ensureVideoOverlay(video);
+  }
+  if (!vzCopyBtn) return;
+  if (on) { placeInHostBar(vzCopyBtn, video); applyBarOrder(); }
+  vzCopyBtn.classList.toggle("vzHidden", !on);
+  if (on) startOverlayTracking();
+}
+
+// ⛔⭐ **التأكيدُ بآلة الشارة القائمة (#71) لا بآليّةٍ ثانية** (قرار المالك):
+// **`showBadge` تملك المدّةَ والبناءَ والمؤقّتَ لكلّ قناة** — فلا مؤقّتَ هنا.
+// ⚠️ **وقيدُه مكتوبٌ في تلميح الزرّ كما كُتب لأخته:** المدّةُ من
+// «كم يبقى رقم الصوت ظاهراً» ⇒ **من أنزلها إلى صفرٍ أطفأ التأكيد معها.**
+// ⛔ **ولا مفتاحَ جديد ولا رقمَ ثانٍ: استثناءُ الثالثة يُنشئ قاعدتين لآلةٍ واحدة.**
+function copyBtnClick(e) {
+  if (e.button !== 0) return;              // اليمين والأوسط: كأختيه بعد `S9`
+  if (!copyButtonActive()) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const video = speedBtnVideo();
+  const url = copyLinkUrl();
+  // ⛔ **ولا يُعلَن نجاحٌ لم يقع** (audit #57): التأكيدُ في `then` لا قبله،
+  // **والرفضُ يقول إنه رفض** — **ونجاحٌ كاذب أسوأ من فشلٍ صامت.**
+  const say = (ok) => showBadge(video, "copyMsg", ok ? "نُسخ الرابط ✅" : "تعذّر النسخ");
+  try {
+    navigator.clipboard.writeText(url).then(() => say(true), () => say(false));
+  } catch { say(false); }
+  // ⛔⭐ **ولا `markIdleActivity()` هنا** — وقد كُتبت ثمّ حُذفت 2026-08-08:
+  // **حارسُ المحرّك يسأل «أهو إدخالٌ أم أثرُ إدخال؟»، والنقرةُ تمرّ سلفاً بـ
+  // `updatePointerFromEvent` ⇒ `noteIdleFromPointerEvent`** — **فندائي أثرُ إدخال.**
+  // ⭐ **والسابقةُ تحسمها: `filterBtnClick` (زرُّنا الثاني) لا يُناديها إطلاقاً**
+  // ⇒ **فحمرةُ العدّاد لم تكن كلفةَ الزرّ الثالث، بل كانت تُصحّح لي.**
+}
+
+// ── #134 — ويتبع السكونَ كأخويه، **بلا منطقٍ ثانٍ** ─────────────────────────
+IDLE_CONSUMERS.copyBtn = {
+  enabled: copyButtonActive,
+  target: () => vzCopyBtn,
+  onActive: () => setCopyBtnShown(true),
+  // **الزرُّ ابنٌ في الشريط والشريطُ يملك ظهورَ أبنائه** — كما في #72 و#108
+  onIdle: () => { if (speedBtnPlacement() === "bar") return; setCopyBtnShown(false); },
+  onDisabled: () => setCopyBtnShown(false)
+};
+
 // ── #108 — الزرّ يتبع السكون كزرّ السرعة، **ويمتنع ما دامت لوحتُه مفتوحة** ────
 IDLE_CONSUMERS.filterBtn = {
   enabled: filterButtonActive,
@@ -3267,7 +3357,7 @@ const OVERLAY_CSS = `
        **والزاويتان متقابلتان** فتظهران معاً بلا تراكب: المستوى حيث كان،
        والسرعة في الزاوية المقابلة. والمظهر مشترك: soundDisplay تُورَّث كما
        هي بلا مفاتيح ثانية (والدَّين مسجَّل بندَ #75). */
-    .vzVolume,.vzSpeed{
+    .vzVolume,.vzSpeed,.vzCopyMsg{
       position:absolute; top:10px;
       color:var(--vz-volume-color, #fff);
       font:700 var(--vz-volume-size, 48px)/1 Arial, sans-serif;
@@ -3277,6 +3367,11 @@ const OVERLAY_CSS = `
     }
     .vzVolume{ left:10px; }
     .vzSpeed{ right:10px; }
+    /* #134 — تأكيدُ النسخ **بالشارة نفسِها**: لونُه ومقاسُه ومدّتُه من
+       soundDisplay وvolumeAutoHideMs، ⛔ ولا مفتاحَ جديد ولا رقمَ ثانٍ.
+       وموضعُه أسفلَ الوسط فلا يزاحم شارتَي الصوت والسرعة ولا يُخفي الشريط. */
+    .vzCopyMsg{ left:50%; top:auto; bottom:14%; transform:translateX(-50%);
+      font-size:calc(var(--vz-volume-size, 48px) * .5); white-space:nowrap; }
     /* ── #72: زرّنا في طبقتنا، لا في شريط المضيف ────────────────────────
        والسبب ليس ذوقاً (قرار المالك): قائمة محدِّدات المضيف هي ما قضينا
        الجلسة نزيله — multicam مات، والتضمين هجر ytp- كلها، وS7 أثبت أن
@@ -3316,6 +3411,12 @@ const OVERLAY_CSS = `
        ⚠️ **ولا علامةَ اقتباسٍ خلفية في هذي الكتلة — هي قالبٌ نصّيّ، وقد وقعت
        ثلاثَ مرّات اليوم وأمسكها node --check في الثلاث.** */
     .vzFilterIcon{ width:24px; height:24px; flex:none; display:block; color:#fff; }
+    /* #134 — **مقاسٌ صريح كأختيها** (وبلا القاعدة قِيست 0×0 عند المالك، #108).
+       ⚠️ **والوزنُ سُبِر ولم يُقدَّر**: هي ممتلئةٌ لا مخطوطة و36-box لا 24،
+       **فسُمكُها الوسيط 1.13px مقابل 1.88 لأختها** ⇒ **وحدٌّ بـ1.1 طابقها
+       بحرفه (1.88 ⇐ 1.88)** — ⛔ **حدٌّ يُضاف، ولا يُعاد الرسم.** */
+    .vzCopyIcon{ width:24px; height:24px; flex:none; display:block; color:#fff;
+      stroke:currentColor; stroke-width:1.1; stroke-linejoin:round; }
     /* #85 — داخل شريط المضيف: تُنزع زينةُ الطبقة ويُترك المقاس المقيس (40) */
     .vzBtn.vzInBar{
       position:static; right:auto; bottom:auto;
@@ -3411,6 +3512,8 @@ let vzHintEl = null;
 let vzVolumeBadge = null;
 let vzSpeedBadge = null;         // #71 — قناة ثانية، عنصرٌ مستقلّ لا حقلٌ مشترك
 let vzSpeedBtn = null;           // #72 — زرّنا في طبقتنا
+let vzCopyBtn = null;            // #134 — زرّ نسخ الرابط
+let vzCopyBadge = null;          // #134 — وتأكيدُه، بقناةٍ في السجلّ الواحد
 let vzFilterBtn = null;          // #108 — زرّ الفلاتر ولوحتُه
 let vzFilterPanel = null;
 let vzOverlayHost = null;        // parent it's currently attached to (body or fullscreen el)
@@ -3436,6 +3539,9 @@ function buildOverlayElement() {
       <!-- #89 — **أيقونة \`speed\` من سجلّ المالك \`tools/icons.js\`، منقولةٌ لا مرسومة.**
            ومسارُنا المرسوم في #88 **حُذف** فلا موضعان لأيقونةٍ واحدة. -->
       ${vzSvg(VZ_OWN_ICONS["speed"], { cls: "vzSpeedIcon" })}<span class="vzSpeedNum">1x</span></div>
+    <div class="vzBtn vzCopyBtn vzHidden" role="button" tabindex="-1" aria-label="نسخ رابط الفيديو" data-vz-owns="wheel click">
+      ${vzSvg(VZ_OWN_ICONS["copy-link"], { cls: "vzCopyIcon", mode: "fill" })}</div>
+    <div class="vzCopyMsg vzHidden"></div>
   `;
   applyGridVars(el); // يزرع الأرقام بـ textContent بعد بناء الخلايا
   return el;
@@ -3607,6 +3713,8 @@ function teardownOverlay() {
   vzSpeedBtn = null;
   // #108 — والفلترُ يُرفع عن الفيديو الذي يخرج، فلا يبقى أثرٌ بلا لوحة
   try { if (vzOverlayVideo) vzOverlayVideo.style.filter = ""; } catch {}
+  vzCopyBtn = null;
+  vzCopyBadge = null;
   vzFilterBtn = null;
   vzFilterPanel = null;
   vzOverlayVideo = null;
@@ -3654,6 +3762,9 @@ function vzSvg(it, opts) {
 // يُحمّر على تباعدهما عن السجلّ.
 const VZ_OWN_ICONS = {
   "filter-h": { viewBox: "0 0 24 24", d: '<path d="M3.5 5H9.65"/> <path d="M17.35 5H20.5"/> <path d="M3.5 12H5.55"/> <path d="M13.25 12H20.5"/> <path d="M3.5 19H11.45"/> <path d="M19.15 19H20.5"/> <circle cx="13.5" cy="5" r="2.2" fill="currentColor" stroke="none"/> <circle cx="9.4" cy="12" r="2.2" fill="currentColor" stroke="none"/> <circle cx="15.3" cy="19" r="2.2" fill="currentColor" stroke="none"/>' },
+  // #134 — **من السجلّ بحروفها، ولم تُسحب ثانيةً: كانت فيه سلفاً** بـviewBox
+  // صريحٍ 36 (الحقلُ إجباريٌّ منذ #131) — **ومقاسُها يُضبط بالأنماط لا بالمسار.**
+  "copy-link": { viewBox: "0 0 36 36", fillWeight: 1.1, d: '<path d="M21.9,8.3H11.3c-0.9,0-1.7,.8-1.7,1.7v12.3h1.7V10h10.6V8.3z M24.6,11.8h-9.7c-1,0-1.8,.8-1.8,1.8v12.3  c0,1,.8,1.8,1.8,1.8h9.7c1,0,1.8-0.8,1.8-1.8V13.5C26.3,12.6,25.5,11.8,24.6,11.8z M24.6,25.9h-9.7V13.5h9.7V25.9z"/>' },
   "speed": { viewBox: "0 0 24 24", d: '<path stroke-linecap="butt" d="M19.63 9.23 A9.0 9.0 0 0 1 21 14 L21.0 17.4 A1.6 1.6 0 0 1 19.4 19.0 L4.6 19.0 A1.6 1.6 0 0 1 3.0 17.4 L3.0 14.0 A9.0 9.0 0 0 1 16.23 6.05"/> <path fill="currentColor" stroke="none" d="M18.79 7.21 L13.68 15.09 A2.0 2.0 0 1 1 10.91 12.32 Z"/>' }
 };
 
@@ -3684,6 +3795,10 @@ function ensureVideoOverlay(video) {
   // #108 — الزرُّ واللوحة: على عنصريهما لا على النافذة، ويُهدَمان معهما
   vzFilterBtn = vzOverlay.querySelector(".vzFilterBtn");
   vzFilterBtn?.addEventListener("click", filterBtnClick);
+  // #134 — والثالثُ يمرّ بالمسار نفسِه: عنصرٌ يملك حدثَه ويُهدَم معه
+  vzCopyBtn = vzOverlay.querySelector(".vzCopyBtn");
+  vzCopyBadge = vzOverlay.querySelector(".vzCopyMsg");
+  vzCopyBtn?.addEventListener("click", copyBtnClick);
   vzFilterPanel = buildFilterPanel();
   vzOverlay.appendChild(vzFilterPanel);
   vzFilterPanel.addEventListener("wheel", filterPanelWheel, { passive: false });
@@ -3770,6 +3885,8 @@ const OVERLAY_PARTS = {
   speed:     () => vzSpeedBadge,
   speedBtn:  () => vzSpeedBtn,     // #72 — والقناة الخامسة لم تحتج تعديلاً هنا
   filterBtn: () => vzFilterBtn,    // #108 — والسادسة والسابعة كذلك: السجلُّ يكفي
+  copyBtn:   () => vzCopyBtn,      // #134 — الثامنة
+  copyMsg:   () => vzCopyBadge,    // #134 — والتاسعة: تأكيدُ النسخ، بآلة الشارة نفسِها
   filterPanel: () => vzFilterPanel
 };
 
