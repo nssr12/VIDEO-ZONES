@@ -64,7 +64,11 @@ const LOADERS = ["loadRulesForThisHost", "loadSiteProfile", "loadZoneSettings", 
   "loadYtAutoQualitySettings", "loadYtShortsRedirectSetting", "loadCleanPlayerSettings",
   // مُحمِّل محرّك السكون (#70 · #72). **مرساةٌ لا تأكيد** (قرار 33): هذه القائمة
   // تُطابق ما في `flushReload` نصّاً، وغيابُ اسمٍ منها يرفع ReferenceError.
-  "loadIdleSettings"];
+  "loadIdleSettings",
+  // #109 — مُحمِّل الفلاتر المحفوظة. **ويُضاف هنا ولا تُشتقّ القائمة**: نصُّها
+  // يقول إنها **مرساةٌ مقصودة تُعلن نفسها برمية** (قرار 33)، وقد أعلنت فعلاً
+  // يوم وُلد هذا المُحمِّل — **فتصحيحُ تصميمٍ يعمل ليس من عمل هذا البند.**
+  "loadFilterPresets"];
 
 function makeFrame({ awake = true, value = "A" } = {}) {
   const st = { reads: 0, applied: 0, loaders: 0, value };
