@@ -52,18 +52,47 @@
   // على العامّ) لَرفض المِجَسُّ ولم يقس** — **فالافتراضُ الخاطئ يُعلن ولا يصمت.**
   // **الدوالُّ تُقرأ من عالم الإضافة والمتغيّراتُ لا** (مقيسٌ في #86) — فوجودُ
   // `vzIdleSnapshot` هو الفارقُ بين «قِستُ» و«لم أرَ»، **وصفرُهما واحد.**
-  if (typeof globalThis.vzIdleSnapshot !== "function" || typeof globalThis.progressBarMode !== "function") {
-    console.log("⛔ VZ-م7: لستَ في سياق الإضافة — بدّل سياقَ الكونسول إلى اسم الإضافة وأعِد اللصق. " +
-      "**ولا يُطبع رقمٌ من عالمٍ خطأ.**");
+  // ⛔⭐⭐ **كلُّ رفضٍ يُسمّي الشرطَ الذي أسقطه بقيمته، لا الصنفَ الذي ينتمي إليه**
+  // (قرار المالك 2026-08-08، من عطبٍ في هذا المِجَسّ نفسِه): **أوّلُ صياغةٍ طبعت
+  // «الميزةُ غيرُ مُفعَّلة» عن `progressHideActive()` — وهي ثلاثةُ شروطٍ في `&&`
+  // واحد** ⇒ **فقرأ المالكُ «غيرُ مُفعَّلة» وهو مُفعِّلُها، وأُرسل ليُخمّن.**
+  // ⇒ ⭐ **وهو عطبُنا المعروف في موضعٍ جديد: رفضٌ لا يُسمّي شرطَه** — **ومِجَسٌّ
+  // بُني ليقيس سببَنا لا الأثر طبع أثراً لا سبباً في أوّل رفضٍ له.**
+  const miss = ["vzIdleSnapshot", "progressBarMode", "progressHideActive"]
+    .filter((n) => typeof globalThis[n] !== "function");
+  if (miss.length) {
+    console.log(`⛔ VZ-م7: لستَ في سياق الإضافة — الغائب: ${miss.join(" · ")}. ` +
+      "بدّل سياقَ الكونسول إلى اسم الإضافة وأعِد اللصق. **ولا يُطبع رقمٌ من عالمٍ خطأ.**");
     return;
   }
-  const mode = globalThis.progressBarMode();
-  const on = typeof globalThis.progressHideActive === "function" ? globalThis.progressHideActive() : null;
-  if (mode === "off" || on === false) {
-    console.log(`⚪ VZ-م7: الوضع «${mode}»${on === false ? " والميزةُ غيرُ مُفعَّلة" : ""} ⇒ ` +
-      "**شرطُ التركيز لا يُقيَّم أصلاً** (`enabled()` يقطع قبله) ⇒ **نحن لا نُخفي شيئاً هنا، " +
-      "فاختفاءُ الشريط يوتيوبُ قطعاً — وهذا شاهدٌ سالبٌ لا عطب.** " +
-      "فعّل «إخفاءٌ بالسكون» أو «مخفيٌّ دائماً» ثمّ أعِد اللصق.");
+  // ── الشروطُ الثلاثة منفصلةً بقيمها — **ولا تُجمع في حكمٍ واحد** ─────────────
+  // ⭐ **و`masterEnabled` متغيّرٌ لا يُقرأ من هذا العالم — فيُشتقّ ولا يُترك مجهولاً:**
+  // `extensionActive() === false` **و**`isBlockedHost() === false` ⇒ **الساقطُ هو
+  // المفتاحُ الرئيسيّ بالضرورة.** ⛔ **ولا يُقال «غيرُ معروف» عمّا يُشتقّ.**
+  // ⛔ **ولا علامةَ اقتباسٍ خلفية في أيّ قالبٍ نصّيّ هنا** — وقد أُغلق القالبُ بها
+  // **خمسَ مرّاتٍ في هذي الجولة**، إحداها في التحذير المكتوب ضدّها (قرار 93).
+  const call = (n) => (typeof globalThis[n] === "function" ? globalThis[n]() : "لا دالّة");
+  const mode = call("progressBarMode");
+  const ea = call("extensionActive");
+  const blocked = call("isBlockedHost");
+  const ytHost = call("isYouTubeFamilyHost");
+  const g = { الوضع: mode, extensionActive: ea, isBlockedHost: blocked,
+              isYouTubeFamilyHost: ytHost, المضيف: location.hostname };
+  if (globalThis.progressHideActive() !== true) {
+    const fell = [];
+    if (mode === "off") fell.push("الوضع = «off» (لا تُخفِه)");
+    if (ea === false) {
+      fell.push(blocked === true
+        ? "حجبُ الموقع = مفعَّل على " + location.hostname + " ⇒ ارفعه من نافذة الإضافة"
+        : "المفتاحُ الرئيسيّ = مطفأ (مُشتقٌّ: extensionActive=false و isBlockedHost=false)");
+    }
+    if (ytHost === false) fell.push("المضيف " + location.hostname + " ليس من عائلة يوتيوب");
+    console.log("⚪ VZ-م7: الشرطُ لا يُقيَّم أصلاً — enabled() يقطع قبله. " +
+      "⇒ **والساقطُ بعينه: " +
+      (fell.length ? fell.join(" · ")
+                   : "لم يُسمَّ — أبلِغ بهذا السطر، فهو عيبٌ في المِجَسّ لا في إعدادك") + "**. " +
+      "⇒ **ونحن لا نُخفي شيئاً هنا، فاختفاءُ الشريط يوتيوبُ قطعاً — شاهدٌ سالبٌ لا عطب.** " +
+      "⇒ المقيس: " + JSON.stringify(g));
     return;
   }
 
@@ -138,12 +167,16 @@
     const order = log.length ? log.map((x) => `${x.who}@${x.at}ms`).join(" ثمّ ") : "لا انتقال";
 
     // ── ⛔ الإبطالات — تُقرأ قبل الحكم، ولكلٍّ سببُه ────────────────────────
+    // ⛔⭐ **ولكلٍّ اسمُ شرطه وقيمتُه، لا صنفُه** — **فمن رفض بلا تسميةٍ أرسل
+    // المالكَ ليخمّن، وقد أرسله مرّةً** (قرار المالك 2026-08-08).
     const bad = [];
-    if (!stillFocus) bad.push("خرج التركيزُ من الشريط أثناء الانتظار");
-    if (s.held) bad.push("زرُّ الفأرة ممسوك (`held`) — سببٌ كافٍ ثانٍ");
-    if (filters === true) bad.push("لوحةُ الفلاتر مفتوحة — سببٌ كافٍ ثانٍ");
-    if (mode !== "near" && s.activityAt === 0) bad.push("لا نشاطَ بعد على الصفحة — سببٌ كافٍ ثانٍ");
-    if (gap === 0) bad.push("المؤشّرُ على الشريط نفسِه (#95) — سببٌ كافٍ ثانٍ");
+    if (!stillFocus) bad.push("التركيز = خرج من الشريط أثناء الانتظار (activeElement=" +
+      (document.activeElement ? (document.activeElement.className || document.activeElement.tagName) : "لا شيء") + ")");
+    if (s.held) bad.push("held = true (زرُّ الفأرة ممسوك) — سببٌ كافٍ ثانٍ");
+    if (filters === true) bad.push("vzFilterPanelOpen = true (لوحةُ الفلاتر مفتوحة) — سببٌ كافٍ ثانٍ");
+    if (mode !== "near" && s.activityAt === 0)
+      bad.push("activityAt = 0 (لا نشاطَ بعد على الصفحة) — سببٌ كافٍ ثانٍ");
+    if (gap === 0) bad.push("بُعدُ المؤشّر = 0px (على الشريط نفسِه، #95) — سببٌ كافٍ ثانٍ");
 
     const facts = `الوضع=${mode} · مهلة=${s.ms}ms · صنفُنا=${ours} · صنفُ‑يوتيوب=${yt} · ` +
       `الشريطُ‑مرئيّ=${barVis} · السبق=[${order}] · تركيزٌ‑داخله=${stillFocus} (${armed.el}) · ` +
