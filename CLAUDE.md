@@ -159,6 +159,8 @@ Before reporting any fullscreen bug, paste `tools/report-fullscreen-bug.js` into
 the page console — it prints one copyable line with the URL, the chosen
 container, both rects, the ratio and the gate verdict.
 
+`tools/report-focus-idle.js` is the third paste-in probe (م7): it answers **whose hiding is it** when focus sits inside the control bar — our class `vz-idle-hide-progress` versus YouTube’s `ytp-autohide`, and which came first. It **refuses to print a verdict** outside the extension world, in `off` mode (where `enabled()` short-circuits before the focus condition is ever evaluated), or when any of the other four sufficient suspensions is active — measuring one guarantee of a multiply-guaranteed promise requires proving the others are off (decision 137).
+
 `tools/report-preview-scope.js` is the second paste-in probe (#94): it arms
 itself, waits for a **live** hover preview (measured by `currentTime` advancing,
 not by `paused`), then prints one line answering **are the host's controls inside
