@@ -204,5 +204,64 @@ console.log("\n[8] ⭐ #137 — المدخلُ الجاهز «افتراضي»")
   check("[8] وقيمُ الخيارات مسبوقةٌ تفصل المبنيَّ من المخزَّن", /`s:\$\{p\.n\}`/.test(render));
 }
 
+// ── [9] #138 — «تحديث»: المقارنة مُوسَّعةٌ بمُوسَّعة، والزرُّ يُخفى لا يُعطَّل ──
+console.log("\n[9] ⭐⭐ #138 — التحديث، وموضعُ العطب في المقارنة");
+{
+  const ctx = vm.createContext({ Number, Math, Object, console });
+  vm.runInContext(`${slice("const pct = ", "];")}
+${body("function vzFilterDefaults()")}
+${body("function vzFilterSparse(values)")}
+${body("function vzFilterValuesFromPreset(preset)")}
+${body("function vzFilterMatchesPreset(preset)")}`, ctx);
+
+  // ⛔⭐⭐ **الشاهدان اللذان اشترطهما المالك — للطرفين، ولا يكفي أحدُهما:**
+  // **مقارنةٌ تقول «مختلف» أبداً تمرّ على الثاني وتسقط في الأوّل، والعكسُ بالعكس.**
+  const P = { n: "ليل", v: { brightness: 1.4, contrast: 1.2, gamma: 1.3 } };
+  ctx.P = P;
+
+  // (أ) **تطبيقٌ بلا تغيير ⇒ لا زرّ** — الجاري = المُوسَّع من المخزَّن
+  vm.runInContext("vzFilterValues = vzFilterValuesFromPreset(P);", ctx);
+  check("[9] ⭐ تطبيقٌ بلا تغيير ⇒ متطابق (فلا زرّ)", vm.runInContext("vzFilterMatchesPreset(P)", ctx) === true);
+
+  // (ب) **وتغييرُ منزلقٍ واحد ⇒ زرّ**
+  vm.runInContext("vzFilterValues.blur = 4;", ctx);
+  check("[9] ⭐ وتغييرُ منزلقٍ واحد ⇒ مختلف (فيظهر)", vm.runInContext("vzFilterMatchesPreset(P)", ctx) === false);
+
+  // (ج) ⛔ **والعطبُ الذي حذّر منه المالك بعينه**: مقارنةٌ ساذجة مخزَّنٍ بجارٍ
+  const سذاجة = vm.runInContext("JSON.stringify(vzFilterValuesFromPreset(P)) === JSON.stringify(P.v)", ctx);
+  check("[9] ⛔⭐⭐ والمقارنةُ الساذجة (متفرّقٌ بكامل) تقول «مختلف» أبداً — فلا تُستعمل",
+    سذاجة === false, { الساذجة: سذاجة });
+
+  // (د) **والمُوسَّعُ يعود متطابقاً بعد إرجاع المنزلق** — فالحكمُ يتبع القيم لا التاريخ
+  vm.runInContext("vzFilterValues.blur = 0;", ctx);
+  check("[9] وإرجاعُ المنزلق يُعيد التطابق (فيختفي)", vm.runInContext("vzFilterMatchesPreset(P)", ctx) === true);
+
+  // (هـ) **ولفُّ المقارنة على السجلّ لا على مفاتيح المخزَّن** — وإلا فات مفتاح
+  const cmp = body("function vzFilterMatchesPreset(preset)");
+  check("[9] ⭐ والمقارنةُ تلفّ `VZ_FILTER_ITEMS` لا مفاتيحَ المخزَّن",
+    /for \(const it of VZ_FILTER_ITEMS\)/.test(cmp), cmp);
+
+  // (و) **الزرُّ يُخفى ولا يُعطَّل، ولا يظهر على المبنيّ** — والقاعدةُ واحدةٌ للزرّين
+  const btns = body("function syncFilterPresetButtons()");
+  check("[9] ⭐ «تحديث» يُخفى (`hidden`) ولا يُعطَّل", /upd\.hidden = /.test(btns) && !/upd\.disabled/.test(btns), btns);
+  check("[9] ⛔ ولا يظهر على المبنيّ", /sel\.builtin === true/.test(btns));
+  check("[9] ويختفي وقتَ التطابق", /vzFilterMatchesPreset\(sel\)/.test(btns));
+
+  // (ز) **والتأكيدُ بالآلة القائمة لا بثانية** — ولا نافذةَ استبدال
+  const clickBody = body("function filterPanelClick(e)");
+  check("[9] والتحديثُ يؤكَّد بـ`filterPresetNote` القائمة", /حُدِّث/.test(clickBody));
+  check("[9] ⛔ ولا نافذةَ تأكيدِ استبدال", !/confirm\s*\(/.test(SRC));
+
+  // (ح) ⛔ **عطبُ #137 الحيّ**: قيمةُ المحدَّد بعد الحفظ يجب أن تحمل البادئة
+  const save = body("function saveFilterPresetFromPanel()");
+  check("[9] ⛔⭐ وبعد الحفظ يُختار المحفوظُ بقيمته المسبوقة (عطبُ #137)",
+    /pick\.value = `s:\$\{n\}`/.test(save) && !/pick\.value = n[;\s]/.test(save), save.slice(-260));
+
+  // (ط) **ولا يُعاد بناءُ القائمة مع كل حركةِ منزلق**
+  const sync = body("function syncFilterPanel()");
+  check("[9] ⭐ و`syncFilterPanel` تُحدّث الأزرارَ لا القائمة",
+    /syncFilterPresetButtons\(\)/.test(sync) && !/renderFilterPresetList\(\)/.test(sync), sync.slice(-200));
+}
+
 console.log(`\n${fail === 0 ? "✅" : "❌"} #109 — النتيجة: ${pass} ناجحة · ${fail} فاشلة`);
 process.exit(fail === 0 ? 0 : 1);
