@@ -132,8 +132,13 @@ console.log("\n[5] الحدودُ مكتوبةٌ حيث تُقرأ");
     /يزول مع الفيديو التالي/.test(build));
   check("[5] ووسمُ المفتاح يقول إنه يعود مُشغَّلاً بتطبيق محفوظ",
     /يعود مُشغَّلاً إن طبّقتَ محفوظاً/.test(build));
-  check("[5] وبلا محفوظاتٍ يُعطَّل زرّا التطبيق والحذف (#24)",
-    /b\.disabled = !vzFilterPresets\.length/.test(SRC));
+  // ⛔ ~~«وبلا محفوظاتٍ يُعطَّل زرّا التطبيق والحذف»~~ — **مسحوبٌ 2026-08-08
+  // (قرار 21): نسخه #137، فالقائمةُ لا تفرغ بعد اليوم** (المبنيُّ فيها دائماً).
+  // ⇒ **والعقدُ الجديد في [8]: «تطبيق» لا يُعطَّل، و«حذف» يُخفى على المبنيّ.**
+  // ⚠️ **ويبقى شرطُ #24 قائماً بمعناه** — **لا ضابطَ يُضغَط ولا يفعل شيئاً** —
+  // **وقد صار يُستوفى بالإخفاء لا بالتعطيل، وغيابُه أصدقُ من تعطيله.**
+  check("[5] ولا يبقى تعطيلٌ مشروطٌ بفراغ القائمة (نسخه #137)",
+    !/disabled = !vzFilterPresets\.length/.test(SRC));
   const apply = body("function applyFilterPreset(preset)");
   check("[5] والتطبيقُ يُشغّل المفتاح", /vzFilterOn = true/.test(apply), apply);
 }
@@ -153,6 +158,50 @@ console.log("\n[7] يُحمَّل في البدء وفي إعادة القراء
 {
   check("[7] في `runStartupSteps`", /startup\("filterPresets"/.test(SRC));
   check("[7] وفي `flushReload`", /loadFilterPresets\(data\)/.test(body("async function flushReload()")));
+}
+
+// ── [8] #137 — المدخلُ الجاهز: مُشتقٌّ لا مخزَّن، ولا يُحذف ────────────────────
+console.log("\n[8] ⭐ #137 — المدخلُ الجاهز «افتراضي»");
+{
+  const ctx = vm.createContext({ Number, Math, Object, console });
+  vm.runInContext(`${slice("const pct = ", "];")}\n${body("function vzFilterDefaults()")}\n${body("function vzFilterValuesFromPreset(preset)")}`, ctx);
+  const D = vm.runInContext("vzFilterDefaults()", ctx);
+
+  // ⛔⭐⭐ **الشاهدُ الذي طلبه المالك، ولا يُفترض من تشابه المسار**: تطبيقُه يُعيد
+  // **التسعةَ** إلى افتراضها — **وهو العقدُ نفسُه (استبدالٌ لا دمج) في أوضح صوره.**
+  // ⚠️ **ومن هنا يُقاس، لا من قراءة أن قيمته `{}`**: «قيمتُه فارغة» مقدّمة،
+  // **و«التسعةُ تعود» هي الأثر** (قرار 109: أوقع الأثر؟).
+  vm.runInContext("var vzFilterValues = { blur: 8, saturate: 2.5, hue: 200, brightness: 1.9 };", ctx);
+  const out = vm.runInContext("vzFilterValuesFromPreset({ v: {} })", ctx);
+  check("[8] ⭐⭐ تطبيقُ المبنيّ يُعيد التسعةَ إلى افتراضها", JSON.stringify(out) === JSON.stringify(D), { out, D });
+  check("[8] وعددُها تسعة لا أقلّ", Object.keys(out).length === 9, Object.keys(out).length);
+
+  // **مُشتقٌّ لا مخزَّن**: لا قائمةَ قيمٍ منسوخة في التعريف
+  const decl = slice("const VZ_FILTER_BUILTIN = {", "};");
+  check("[8] ⭐ التعريفُ معرّفٌ ووسمٌ فقط — ولا قيمَ منسوخة",
+    /id:\s*"default"/.test(decl) && /label:\s*"افتراضي"/.test(decl) && !/brightness|contrast|gamma/.test(decl), decl);
+  const clickBody = body("function filterPanelClick(e)");
+  check("[8] ⭐⭐ ويُطبَّق بـ`v: {}` لا بقائمةِ قيم", /applyFilterPreset\(\{ n: VZ_FILTER_BUILTIN\.label, v: \{\} \}\)/.test(clickBody));
+  check("[8] ولا يُكتب في التخزين بحال",
+    !new RegExp("persistFilterPresets\\([^)]*BUILTIN").test(SRC));
+
+  // **الاسمُ محجوز، والردُّ بجملةٍ لا بصمت**
+  const save = body("function saveFilterPresetFromPanel()");
+  check("[8] الاسمُ محجوز ويُردُّ بجملةٍ تقول لماذا",
+    /VZ_FILTER_BUILTIN\.label/.test(save) && /محجوز/.test(save), save.slice(0, 200));
+
+  // ⛔ **زرُّ الحذف يُخفى لا يُعطَّل** — والحارسُ يُفرّق بينهما نصّاً
+  const btns = body("function syncFilterPresetButtons()");
+  check("[8] ⭐ زرُّ الحذف يُخفى على المبنيّ (`hidden`) ولا يُعطَّل",
+    /del\.hidden = /.test(btns) && !/del\.disabled/.test(btns), btns);
+  check("[8] و«تطبيق» لا يُعطَّل — القائمةُ لا تفرغ", /apply\.disabled = false/.test(btns));
+  check("[8] وحارسُ المسار قائمٌ مع إخفاء الزرّ (لا يُحذف ولو بُلغ بطريقٍ آخر)",
+    /لا يُحذف/.test(clickBody));
+
+  // **والقائمةُ تبدأ بالمبنيّ دائماً** ⇒ لا ضابطَ ميّتٌ عند أوّل فتح
+  const render = body("function renderFilterPresetList()");
+  check("[8] ⭐ القائمةُ تبدأ بالمبنيّ ولا تكون فارغة", /VZ_PRESET_BUILTIN_VALUE/.test(render) && !/لا محفوظات/.test(render));
+  check("[8] وقيمُ الخيارات مسبوقةٌ تفصل المبنيَّ من المخزَّن", /`s:\$\{p\.n\}`/.test(render));
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} #109 — النتيجة: ${pass} ناجحة · ${fail} فاشلة`);

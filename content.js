@@ -2725,6 +2725,28 @@ function vzFilterPanelOpen() {
 // **و`zones` (894 بايتاً) هو الجزء الذي ينمو بيد المستخدم — ونموُّه غيرُ مقيس.**
 const VZ_FILTER_PRESETS_MAX_NAME = 40;
 
+// ── #137 — **مدخلٌ جاهزٌ موجودٌ من أوّل مرّة** (طلب المالك 2026-08-08) ──────────
+//
+// ⭐ **غرضُه ليس تكرارَ «إرجاع الكلّ»**: القائمةُ فارغةٌ عند أوّل فتح ⇒ **فالقائمةُ
+// وزرّا التطبيق والحذف ضوابطُ ميتة، وميزةٌ لا تُرى لا تُستعمل** — **والمدخلُ يجعل
+// الميزةَ مقروءةً من أوّل لحظة.**
+//
+// ⛔⭐⭐ **ويُشتقّ من سجلّ الافتراضات ولا يُخزَّن** (وهو أهمُّ شروطه): **مدخلٌ
+// مخزَّنٌ بقيمٍ منسوخة يتباعد عن الافتراضات يومَ يتغيّر افتراضٌ واحد** ⇒ **فيصير
+// «الافتراضيّ» ليس الافتراضيّ** — **وهو موضعان لحقيقةٍ واحدة في بندٍ عن الحفظ.**
+// ⇒ **وقيمتُه `{}` بحرفها، فالاستبدالُ يُرجع التسعةَ إلى افتراضها بالبناء**،
+// **ولا يستهلك بايتاً من الحصّة.**
+// ⛔ **ولا يُحذف ولا يُكتب فوقه**، **وزرُّ الحذف لا يُعرض عليه أصلاً — لا مُعطَّلاً**:
+// **ضابطٌ يُضغَط ولا يفعل شيئاً هو ما نمنعه** (#24)، **وغيابُه أصدقُ من تعطيله.**
+// ⚠️ **والمعرّفُ لاتينيّ والوسمُ عربيّ** — **وقسمةُ المعرّف عن الوسم قائمةٌ في كلّ
+// سجلٍّ عندنا** (`VZ_UI_TIMING` · `VZ_BAR_BUTTONS` · `CLEAN_PLAYER_ITEMS`).
+// ⚠️ **وقيمةُ الخيار مسبوقةٌ بحرفٍ يفصل المبنيَّ من المخزَّن** (`b:` · `s:`)
+// — **فاسمٌ مخزَّنٌ يطابق الوسمَ لا يلتبس به في الكود.** ⚠️ **وحدُّه مُعلَن: مدخلٌ
+// مخزَّنٌ بالاسم نفسِه (من نسخةٍ مستوردة) يظهر بجواره ويبقى قابلاً للحذف** —
+// ⛔ **ولا يُحذف من تحت المستخدم** (قرار 6: لا حذفَ تلقائيّ).
+const VZ_FILTER_BUILTIN = { id: "default", label: "افتراضي" };
+const VZ_PRESET_BUILTIN_VALUE = `b:${VZ_FILTER_BUILTIN.id}`;
+
 // ⛔ **الرقمُ نسخةٌ من `SYNC_ITEM_LIMIT` في `storage.js`، لا منطقٌ ثانٍ** — سكربتُ
 // المحتوى لا يستطيع تحميل `storage.js`. **ويحرس تطابقَهما `tools/test-filter-presets.js`**
 // ⇒ **فتخلّفُه يُحمّر ولا يقع صامتاً.** ⭐ **ونُسخ الرقمُ وحدَه لا الحارسُ كلُّه:
@@ -3066,27 +3088,32 @@ function renderFilterPresetList() {
   if (!pick) return;
   const كان = pick.value;
   pick.textContent = "";
-  if (!vzFilterPresets.length) {
+  // ⭐ **#137 — المبنيُّ أوّلاً ودائماً**: القائمةُ لا تكون فارغةً بحال ⇒ **فلا
+  // ضابطَ ميّتٌ عند أوّل فتح، والميزةُ مقروءةٌ من أوّل لحظة.**
+  const b = document.createElement("option");
+  b.value = VZ_PRESET_BUILTIN_VALUE;
+  b.textContent = VZ_FILTER_BUILTIN.label;
+  pick.appendChild(b);
+  for (const p of vzFilterPresets) {
     const o = document.createElement("option");
-    o.value = "";
-    o.textContent = "لا محفوظات";
+    o.value = `s:${p.n}`;
+    o.textContent = p.n;
     pick.appendChild(o);
-    pick.disabled = true;
-  } else {
-    pick.disabled = false;
-    for (const p of vzFilterPresets) {
-      const o = document.createElement("option");
-      o.value = p.n;
-      o.textContent = p.n;
-      pick.appendChild(o);
-    }
-    if (vzFilterPresets.some((p) => p.n === كان)) pick.value = كان;
   }
-  // **وضابطٌ يُضغط ولا يفعل شيئاً انحدار** (#24): بلا محفوظاتٍ يُعطَّل الزرّان
-  for (const sel of ["[data-vz-preset-apply]", "[data-vz-preset-del]"]) {
-    const b = vzFilterPanel.querySelector(sel);
-    if (b) b.disabled = !vzFilterPresets.length;
-  }
+  pick.disabled = false;
+  if ([...pick.options].some((o) => o.value === كان)) pick.value = كان;
+  syncFilterPresetButtons();
+}
+
+// ⛔⭐ **زرُّ الحذف يُخفى على المبنيّ ولا يُعطَّل** (شرط المالك): **ضابطٌ يُضغَط
+// ولا يفعل شيئاً هو ما نمنعه** (#24)، **وغيابُه أصدقُ من تعطيله.**
+// ⚠️ **و«تطبيق» لا يُعطَّل أبداً بعد اليوم** — القائمةُ لا تفرغ.
+function syncFilterPresetButtons() {
+  const pick = vzFilterPanel?.querySelector(".vzFpPick");
+  const del = vzFilterPanel?.querySelector("[data-vz-preset-del]");
+  const apply = vzFilterPanel?.querySelector("[data-vz-preset-apply]");
+  if (apply) apply.disabled = false;
+  if (del) del.hidden = pick?.value === VZ_PRESET_BUILTIN_VALUE;
 }
 
 // **رسالةُ الصفّ** — نجاحاً أو سبباً، ولا نجاحَ يُطبع لما لم يقع (جرد #57)
@@ -3144,6 +3171,8 @@ function filterPanelWheel(e) {
 function filterPanelInput(e) {
   const range = e.target?.closest?.("input[type=range]");
   if (range) { setFilterValue(range.dataset.vzKey, range.value); return; }
+  // #137 — تبديلُ المحدَّد يُخفي زرَّ الحذف على المبنيّ أو يُظهره
+  if (e.target?.closest?.(".vzFpPick")) syncFilterPresetButtons();
 }
 
 // **مُحمِّلٌ كبقيّة الشرائح** — يقرأ من اللقطة نفسِها ولا يقرأ التخزين ثانيةً
@@ -3171,7 +3200,14 @@ function filterPanelClick(e) {
   if (e.target?.closest?.("[data-vz-preset-save]")) { saveFilterPresetFromPanel(); return; }
   if (e.target?.closest?.("[data-vz-preset-apply]")) {
     const pick = vzFilterPanel?.querySelector(".vzFpPick");
-    const p = vzFilterPresets.find((x) => x.n === pick?.value);
+    // ⭐ **#137 — والمبنيُّ قيمتُه `{}`، فالاستبدالُ يُرجع التسعةَ إلى افتراضها
+    // بالبناء** — **ولا قائمةَ قيمٍ منسوخةٍ تتباعد عن السجلّ.**
+    if (pick?.value === VZ_PRESET_BUILTIN_VALUE) {
+      applyFilterPreset({ n: VZ_FILTER_BUILTIN.label, v: {} });
+      filterPresetNote(`طُبِّق «${VZ_FILTER_BUILTIN.label}»`, false);
+      return;
+    }
+    const p = vzFilterPresets.find((x) => `s:${x.n}` === pick?.value);
     if (!p) { filterPresetNote("لا محفوظ محدَّد", true); return; }
     applyFilterPreset(p);
     filterPresetNote(`طُبِّق «${p.n}»`, false);
@@ -3179,7 +3215,13 @@ function filterPanelClick(e) {
   }
   if (e.target?.closest?.("[data-vz-preset-del]")) {
     const pick = vzFilterPanel?.querySelector(".vzFpPick");
-    const n = pick?.value;
+    // ⛔ **والمبنيُّ لا يُحذف** — والزرُّ مخفيٌّ عليه أصلاً، **وهذا حارسُ المسار
+    // لا حارسُ العرض**: من بلغه بطريقٍ آخر يُردُّ بجملةٍ لا بصمت.
+    if (pick?.value === VZ_PRESET_BUILTIN_VALUE) {
+      filterPresetNote(`«${VZ_FILTER_BUILTIN.label}» مدخلٌ جاهزٌ لا يُحذف`, true);
+      return;
+    }
+    const n = pick?.value?.startsWith("s:") ? pick.value.slice(2) : "";
     if (!n) { filterPresetNote("لا محفوظ محدَّد", true); return; }
     persistFilterPresets(vzFilterPresets.filter((x) => x.n !== n)).then((r) => {
       renderFilterPresetList();
@@ -3202,6 +3244,12 @@ function saveFilterPresetFromPanel() {
   const input = vzFilterPanel?.querySelector(".vzFpPresetName");
   const n = (input?.value || "").trim().slice(0, VZ_FILTER_PRESETS_MAX_NAME);
   if (!n) { filterPresetNote("اكتب اسماً أوّلاً", true); input?.focus(); return; }
+  // ⛔ **#137 — والاسمُ محجوز**: **ويُردُّ بجملةٍ تقول لماذا، لا بصمت.**
+  if (n === VZ_FILTER_BUILTIN.label) {
+    filterPresetNote(`«${VZ_FILTER_BUILTIN.label}» اسمٌ محجوز — اختر غيرَه`, true);
+    input?.focus();
+    return;
+  }
   const v = vzFilterSparse();
   // ⚠️ **وحفظُ فلترٍ لا شيءَ فيه يُعلَن ولا يُخزَّن** — مدخلٌ فارغٌ يُطبَّق فيبدو
   // «لم يفعل شيئاً»، **وهو «لا أثرَ بلا خطأ» بعينه**.
