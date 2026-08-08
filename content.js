@@ -3004,14 +3004,12 @@ function buildFilterPanel() {
   const pick = document.createElement("select");
   pick.className = "vzFpPick";
   pick.setAttribute("aria-label", "الفلاتر المحفوظة");
-  const applyBtn = document.createElement("button");
-  applyBtn.type = "button";
-  applyBtn.className = "vzFpChip";
-  applyBtn.dataset.vzPresetApply = "1";
-  // ⚠️ **الوسمُ يقول الحدَّ صراحةً** — **الحفظُ للقيم لا للتثبيت**، والمُطبَّق
-  // يزول مع الفيديو التالي كغيره. **وإلا ظنّه المستخدم تثبيتاً.**
-  applyBtn.title = "يستبدل القيم كلَّها بالمحفوظ — وما ليس فيه يعود إلى افتراضه. ويزول مع الفيديو التالي كأيّ فلتر";
-  applyBtn.textContent = "تطبيق";
+  pick.title = "اختيارُ الاسم يُطبّقه فوراً — يستبدل القيم كلَّها، وما ليس في المحفوظ يعود إلى افتراضه. ويزول مع الفيديو التالي كأيّ فلتر";
+  // ⛔⭐⭐ **#139 — لا زرَّ تطبيق: المحدَّدُ هو المطبَّق** (قرار المالك 2026-08-08).
+  // **وهو أصدقُ لا أقصر:** زرٌّ يُطبّق ما هو مطبَّقٌ سلفاً **ضابطٌ يُضغَط ولا يُغيّر
+  // شيئاً** (#24) — **أو أسوأ: يوهم أن الاختيارَ لم يقع بعد.**
+  // ⚠️ **والحدُّ الذي كان في وسمه انتقل إلى وسم القائمة، ولم يسقط**: الحفظُ للقيم
+  // لا للتثبيت، **والمُطبَّق يزول مع الفيديو التالي كأيّ فلتر.**
   // ── #138 — **«تحديث»: إظهارُ ما كان موجوداً ولا يُرى** ─────────────────────
   // ⛔⭐⭐ **والحفظُ باسمٍ موجود كان يستبدل من يوم #109 — مقيسٌ في المصدر** —
   // **لكنّه يشترط إعادةَ كتابة الاسم بحرفه، ولا شيءَ يقول إنه سيستبدل** ⇒
@@ -3033,7 +3031,7 @@ function buildFilterPanel() {
   delBtn.textContent = "حذف";
   const note = document.createElement("div");
   note.className = "vzFpNote";
-  save.append(name, saveBtn, pick, applyBtn, updBtn, delBtn, note);
+  save.append(name, saveBtn, pick, updBtn, delBtn, note);
   p.appendChild(save);
 
   const body = document.createElement("div");
@@ -3142,19 +3140,31 @@ function vzSelectedPreset() {
   return vzFilterPresets.find((p) => `s:${p.n}` === v) || null;
 }
 
+// ⭐⭐ **#139 — المُطبِّقُ الواحد للمحدَّد**: يُنادى من تبديل القائمة، **ومن أيّ
+// مسارٍ يُبدّل المحدَّدَ برمجياً فيلزمه الأثر.** ⛔ **ولا موضعان يتباعدان.**
+// ⚠️ **والمبنيُّ قيمتُه `{}`** فالاستبدالُ يُرجع التسعةَ إلى افتراضها بالبناء.
+function applySelectedPreset() {
+  const sel = vzSelectedPreset();
+  if (!sel) return;
+  if (sel.builtin) {
+    applyFilterPreset({ n: VZ_FILTER_BUILTIN.label, v: {} });
+    filterPresetNote(`طُبِّق «${VZ_FILTER_BUILTIN.label}»`, false);
+    return;
+  }
+  applyFilterPreset(sel);
+  filterPresetNote(`طُبِّق «${sel.n}»`, false);
+}
+
 // ⛔⭐ **زرّا الحذف والتحديث يُخفيان ولا يُعطَّلان** (شرط المالك): **ضابطٌ يُضغَط
 // ولا يفعل شيئاً هو ما نمنعه** (#24)، **وغيابُه أصدقُ من تعطيله.**
 // ⇒ ⭐ **والقاعدةُ واحدةٌ للزرّين بلا استثناءٍ يُكتب** — **ولا يظهران على المبنيّ:
 // مُشتقٌّ لا مخزَّن، فلا شيءَ يُحدَّث فيه ولا يُحذف.**
-// ⚠️ **و«تطبيق» لا يُعطَّل أبداً** — القائمةُ لا تفرغ.
 function syncFilterPresetButtons() {
   const pick = vzFilterPanel?.querySelector(".vzFpPick");
   const del = vzFilterPanel?.querySelector("[data-vz-preset-del]");
-  const apply = vzFilterPanel?.querySelector("[data-vz-preset-apply]");
   const upd = vzFilterPanel?.querySelector("[data-vz-preset-update]");
   if (!pick) return;
   const builtin = pick.value === VZ_PRESET_BUILTIN_VALUE;
-  if (apply) apply.disabled = false;
   if (del) del.hidden = builtin;
   // **يظهر حين يكون مدخلٌ مخزَّنٌ محدَّداً وقيمُه الجارية تخالف المخزَّن — ويختفي
   // وقتَ التطابق** (شرط المالك بحرفه).
@@ -3219,8 +3229,8 @@ function filterPanelWheel(e) {
 function filterPanelInput(e) {
   const range = e.target?.closest?.("input[type=range]");
   if (range) { setFilterValue(range.dataset.vzKey, range.value); return; }
-  // #137 — تبديلُ المحدَّد يُخفي زرَّ الحذف على المبنيّ أو يُظهره
-  if (e.target?.closest?.(".vzFpPick")) syncFilterPresetButtons();
+  // ⭐⭐ **#139 — تبديلُ المحدَّد يُطبّقه**: المحدَّدُ هو المطبَّق، فلا زرَّ بينهما.
+  if (e.target?.closest?.(".vzFpPick")) applySelectedPreset();
 }
 
 // **مُحمِّلٌ كبقيّة الشرائح** — يقرأ من اللقطة نفسِها ولا يقرأ التخزين ثانيةً
@@ -3246,21 +3256,6 @@ function filterPanelClick(e) {
   }
   // ── #109 — الحفظُ والتطبيقُ والحذف ──────────────────────────────────────
   if (e.target?.closest?.("[data-vz-preset-save]")) { saveFilterPresetFromPanel(); return; }
-  if (e.target?.closest?.("[data-vz-preset-apply]")) {
-    const pick = vzFilterPanel?.querySelector(".vzFpPick");
-    // ⭐ **#137 — والمبنيُّ قيمتُه `{}`، فالاستبدالُ يُرجع التسعةَ إلى افتراضها
-    // بالبناء** — **ولا قائمةَ قيمٍ منسوخةٍ تتباعد عن السجلّ.**
-    if (pick?.value === VZ_PRESET_BUILTIN_VALUE) {
-      applyFilterPreset({ n: VZ_FILTER_BUILTIN.label, v: {} });
-      filterPresetNote(`طُبِّق «${VZ_FILTER_BUILTIN.label}»`, false);
-      return;
-    }
-    const p = vzFilterPresets.find((x) => `s:${x.n}` === pick?.value);
-    if (!p) { filterPresetNote("لا محفوظ محدَّد", true); return; }
-    applyFilterPreset(p);
-    filterPresetNote(`طُبِّق «${p.n}»`, false);
-    return;
-  }
   // ── #138 — التحديث: استبدالُ قيمِ المحدَّد بالقيم الجارية ───────────────────
   if (e.target?.closest?.("[data-vz-preset-update]")) {
     const sel = vzSelectedPreset();
@@ -3844,15 +3839,19 @@ const OVERLAY_CSS = `
     .vzFilterPanel .vzFpBody{ overflow-y:auto; min-height:0; flex:1 1 auto; }
     .vzFilterPanel .vzFpHead, .vzFilterPanel .vzFpSave{ flex:none; }
     /* #109 — صفُّ المحفوظات: سطرٌ واحد، والرسالةُ تحته تمتدّ العرض كلَّه */
-    /* #138 — سطران: الاسمُ وحفظُه · ثمّ القائمةُ وأفعالُها. **وسطرٌ واحدٌ بستّة
-       أعمدة يسحق حقلَ الاسم في 300px** — والقياسُ يقول كم كلّف الجسمَ. */
+    /* #138 · #139 — **سطرٌ واحد بخمسة أعمدة**، وصار ممكناً بحذف زرّ التطبيق.
+       ⭐ **والقياسُ حسم الشكل مرّتين، وخالف التوقّع في الأولى:**
+       (١) **حذفُ زرٍّ لا يحذف صفّاً** — بسطرين بقي الجسمُ 166px والصفُّ 83px،
+           **فالثمنُ لم يعد بحذف الزرّ وحدَه.**
+       (٢) **وبضمّه إلى سطرٍ واحد: الجسم 196px والصفّ 53px** ⇒ **30px عادت
+           = 1.7 صفَّ منزلقٍ مرئيّاً (10.9 بدل 9.2).**
+       ⚠️ **والعرضان مقيسان لا مُقدَّران: حقلُ الاسم 122px والقائمة 122px** —
+       **وستّةُ أعمدة (قبل حذف «تطبيق») كانت تسحقهما.** */
     .vzFilterPanel .vzFpSave{
-      display:grid; grid-template-columns:1fr auto auto auto;
-      gap:6px 6px; align-items:center; padding-bottom:8px; margin-bottom:6px;
+      display:grid; grid-template-columns:1fr auto minmax(0,1fr) auto auto;
+      gap:6px; align-items:center; padding-bottom:8px; margin-bottom:6px;
       border-bottom:1px solid rgba(255,255,255,.18);
     }
-    .vzFilterPanel .vzFpPresetName{ grid-column:1 / 4; }
-    .vzFilterPanel .vzFpPick{ grid-column:1 / 2; }
     .vzFilterPanel .vzFpPresetName, .vzFilterPanel .vzFpPick{
       min-width:0; background:rgba(255,255,255,.10); color:#fff;
       border:1px solid rgba(255,255,255,.22); border-radius:6px;

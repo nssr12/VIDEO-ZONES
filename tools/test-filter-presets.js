@@ -180,8 +180,12 @@ console.log("\n[8] ⭐ #137 — المدخلُ الجاهز «افتراضي»")
   const decl = slice("const VZ_FILTER_BUILTIN = {", "};");
   check("[8] ⭐ التعريفُ معرّفٌ ووسمٌ فقط — ولا قيمَ منسوخة",
     /id:\s*"default"/.test(decl) && /label:\s*"افتراضي"/.test(decl) && !/brightness|contrast|gamma/.test(decl), decl);
+  // ⚠️ **المرساةُ انتقلت بـ#139 ولم يسقط الشرط**: كانت في `filterPanelClick`
+  // وصارت في `applySelectedPreset` — **والحكمُ هو هو: قيمةٌ فارغة لا قائمةُ قيم.**
   const clickBody = body("function filterPanelClick(e)");
-  check("[8] ⭐⭐ ويُطبَّق بـ`v: {}` لا بقائمةِ قيم", /applyFilterPreset\(\{ n: VZ_FILTER_BUILTIN\.label, v: \{\} \}\)/.test(clickBody));
+  const applySel = body("function applySelectedPreset()");
+  check("[8] ⭐⭐ ويُطبَّق بـ`v: {}` لا بقائمةِ قيم",
+    /applyFilterPreset\(\{ n: VZ_FILTER_BUILTIN\.label, v: \{\} \}\)/.test(applySel), applySel);
   check("[8] ولا يُكتب في التخزين بحال",
     !new RegExp("persistFilterPresets\\([^)]*BUILTIN").test(SRC));
 
@@ -194,7 +198,9 @@ console.log("\n[8] ⭐ #137 — المدخلُ الجاهز «افتراضي»")
   const btns = body("function syncFilterPresetButtons()");
   check("[8] ⭐ زرُّ الحذف يُخفى على المبنيّ (`hidden`) ولا يُعطَّل",
     /del\.hidden = /.test(btns) && !/del\.disabled/.test(btns), btns);
-  check("[8] و«تطبيق» لا يُعطَّل — القائمةُ لا تفرغ", /apply\.disabled = false/.test(btns));
+  // ⛔ ~~«و«تطبيق» لا يُعطَّل — القائمةُ لا تفرغ»~~ — **مسحوبٌ 2026-08-08 (قرار 21):
+  // نسخه #139، فلا زرَّ تطبيقٍ أصلاً.** **والحكمُ الذي كان يحرسه انتقل ولم يسقط:
+  // «لا ضابطَ يُضغَط ولا يفعل شيئاً» يُستوفى بحذف الزرّ لا بتمكينه** — وشرطُه في [9].
   check("[8] وحارسُ المسار قائمٌ مع إخفاء الزرّ (لا يُحذف ولو بُلغ بطريقٍ آخر)",
     /لا يُحذف/.test(clickBody));
 
@@ -244,6 +250,18 @@ ${body("function vzFilterMatchesPreset(preset)")}`, ctx);
   // (و) **الزرُّ يُخفى ولا يُعطَّل، ولا يظهر على المبنيّ** — والقاعدةُ واحدةٌ للزرّين
   const btns = body("function syncFilterPresetButtons()");
   check("[9] ⭐ «تحديث» يُخفى (`hidden`) ولا يُعطَّل", /upd\.hidden = /.test(btns) && !/upd\.disabled/.test(btns), btns);
+  // ── #139 — لا زرَّ تطبيق: المحدَّدُ هو المطبَّق ──────────────────────────
+  check("[9] ⛔⭐⭐ #139 — لا زرَّ تطبيقٍ في الشجرة كلِّها", !/vzPresetApply|preset-apply/.test(SRC));
+  const inp = body("function filterPanelInput(e)");
+  check("[9] ⭐⭐ وتبديلُ المحدَّد يُطبّقه", /applySelectedPreset\(\)/.test(inp), inp);
+  const appSel = body("function applySelectedPreset()");
+  check("[9] ⭐ ومُطبِّقٌ واحد يقرأ المحدَّد — لا موضعان يتباعدان",
+    /vzSelectedPreset\(\)/.test(appSel) && /sel\.builtin/.test(appSel) && /v: \{\} \}/.test(appSel), appSel);
+  check("[9] ⭐ ولا يُنادى المُطبِّقُ إلا من موضعٍ واحد",
+    (SRC.match(/applySelectedPreset\(\)/g) || []).length === 2, (SRC.match(/applySelectedPreset\(\)/g) || []).length);
+  const buildP = body("function buildFilterPanel()");
+  check("[9] ⚠️ والحدُّ الذي كان في وسم «تطبيق» انتقل إلى وسم القائمة ولم يسقط",
+    /اختيارُ الاسم يُطبّقه فوراً/.test(buildP) && /يزول مع الفيديو التالي/.test(buildP));
   check("[9] ⛔ ولا يظهر على المبنيّ", /sel\.builtin === true/.test(btns));
   check("[9] ويختفي وقتَ التطابق", /vzFilterMatchesPreset\(sel\)/.test(btns));
 
