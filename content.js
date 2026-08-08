@@ -3012,6 +3012,19 @@ function buildFilterPanel() {
   // يزول مع الفيديو التالي كغيره. **وإلا ظنّه المستخدم تثبيتاً.**
   applyBtn.title = "يستبدل القيم كلَّها بالمحفوظ — وما ليس فيه يعود إلى افتراضه. ويزول مع الفيديو التالي كأيّ فلتر";
   applyBtn.textContent = "تطبيق";
+  // ── #138 — **«تحديث»: إظهارُ ما كان موجوداً ولا يُرى** ─────────────────────
+  // ⛔⭐⭐ **والحفظُ باسمٍ موجود كان يستبدل من يوم #109 — مقيسٌ في المصدر** —
+  // **لكنّه يشترط إعادةَ كتابة الاسم بحرفه، ولا شيءَ يقول إنه سيستبدل** ⇒
+  // **فالميزةُ كانت موجودةً ولا تُرى، والعلاجُ إظهارُها لا بناؤها** (حكمُ المالك).
+  // ⚠️ **ولا نافذةَ تأكيدٍ للاستبدال**: الفعلُ قابلٌ للتراجع بضبطٍ وتحديثٍ ثانٍ،
+  // **والنوافذُ ليست من لغة هذي اللوحة** (قرار المالك).
+  const updBtn = document.createElement("button");
+  updBtn.type = "button";
+  updBtn.className = "vzFpChip";
+  updBtn.dataset.vzPresetUpdate = "1";
+  updBtn.hidden = true;
+  updBtn.title = "يستبدل قيمَ المحفوظ المحدَّد بالقيم الجارية";
+  updBtn.textContent = "تحديث";
   const delBtn = document.createElement("button");
   delBtn.type = "button";
   delBtn.className = "vzFpChip";
@@ -3020,7 +3033,7 @@ function buildFilterPanel() {
   delBtn.textContent = "حذف";
   const note = document.createElement("div");
   note.className = "vzFpNote";
-  save.append(name, saveBtn, pick, applyBtn, delBtn, note);
+  save.append(name, saveBtn, pick, applyBtn, updBtn, delBtn, note);
   p.appendChild(save);
 
   const body = document.createElement("div");
@@ -3076,7 +3089,11 @@ function syncFilterPanel() {
     // **الوحدةُ من طبيعة المقيس لا من شكل الجدول** (قرار 110)
     if (out) out.textContent = it.fmt(v[it.key]);
   }
-  renderFilterPresetList();
+  // ⛔⭐ **الأزرارُ وحدَها لا القائمة** (#138): `syncFilterPanel` تُنادى مع **كلّ
+  // حركةِ منزلق**، **وإعادةُ بناء `<select>` تحت يد المستخدم في كل نبضة** ثمنٌ
+  // بلا مقابل — **والقائمةُ لا تتغيّر إلا بحفظٍ أو حذفٍ أو تحميل، وهناك تُعاد.**
+  // ⇒ **وظهورُ «تحديث» يتبع القيم فيُحسب هنا بالضرورة.**
+  syncFilterPresetButtons();
 }
 
 // ⚠️ **القائمةُ وحدَها تُعاد** — **ولا يُمسّ حقلُ الاسم**: `flushReload` تقع بعد
@@ -3105,15 +3122,46 @@ function renderFilterPresetList() {
   syncFilterPresetButtons();
 }
 
-// ⛔⭐ **زرُّ الحذف يُخفى على المبنيّ ولا يُعطَّل** (شرط المالك): **ضابطٌ يُضغَط
+// ── #138 — **المقارنة: مُوسَّعةٌ بمُوسَّعة، ولا مخزَّنٌ بجارٍ** ────────────────
+// ⛔⭐⭐ **وهذا موضعُ العطب الذي حذّر منه المالك، ويُحرَس بشاهدين:** المخزَّن
+// **متفرّق** (يُسقط ما يساوي الافتراض) والجاري **كامل** ⇒ **فمقارنةٌ ساذجة تقول
+// «مختلف» أبداً فيظهر الزرُّ دائماً، أو «متطابق» أبداً فلا يظهر قطّ.**
+// ⇒ **فالطرفان يُوسَّعان قبل المقارنة**، والسجلُّ هو مدارُ اللفّ فلا مفتاحَ يفوت.
+function vzFilterMatchesPreset(preset) {
+  const now = vzFilterValues || vzFilterDefaults();
+  const was = vzFilterValuesFromPreset(preset);
+  for (const it of VZ_FILTER_ITEMS) if (Number(now[it.key]) !== Number(was[it.key])) return false;
+  return true;
+}
+
+// **المحدَّدُ الآن: مخزَّنٌ أم المبنيّ أم لا شيء** — موضعٌ واحد يقرأ البادئة
+function vzSelectedPreset() {
+  const v = vzFilterPanel?.querySelector(".vzFpPick")?.value || "";
+  if (v === VZ_PRESET_BUILTIN_VALUE) return { builtin: true };
+  if (!v.startsWith("s:")) return null;
+  return vzFilterPresets.find((p) => `s:${p.n}` === v) || null;
+}
+
+// ⛔⭐ **زرّا الحذف والتحديث يُخفيان ولا يُعطَّلان** (شرط المالك): **ضابطٌ يُضغَط
 // ولا يفعل شيئاً هو ما نمنعه** (#24)، **وغيابُه أصدقُ من تعطيله.**
-// ⚠️ **و«تطبيق» لا يُعطَّل أبداً بعد اليوم** — القائمةُ لا تفرغ.
+// ⇒ ⭐ **والقاعدةُ واحدةٌ للزرّين بلا استثناءٍ يُكتب** — **ولا يظهران على المبنيّ:
+// مُشتقٌّ لا مخزَّن، فلا شيءَ يُحدَّث فيه ولا يُحذف.**
+// ⚠️ **و«تطبيق» لا يُعطَّل أبداً** — القائمةُ لا تفرغ.
 function syncFilterPresetButtons() {
   const pick = vzFilterPanel?.querySelector(".vzFpPick");
   const del = vzFilterPanel?.querySelector("[data-vz-preset-del]");
   const apply = vzFilterPanel?.querySelector("[data-vz-preset-apply]");
+  const upd = vzFilterPanel?.querySelector("[data-vz-preset-update]");
+  if (!pick) return;
+  const builtin = pick.value === VZ_PRESET_BUILTIN_VALUE;
   if (apply) apply.disabled = false;
-  if (del) del.hidden = pick?.value === VZ_PRESET_BUILTIN_VALUE;
+  if (del) del.hidden = builtin;
+  // **يظهر حين يكون مدخلٌ مخزَّنٌ محدَّداً وقيمُه الجارية تخالف المخزَّن — ويختفي
+  // وقتَ التطابق** (شرط المالك بحرفه).
+  if (upd) {
+    const sel = vzSelectedPreset();
+    upd.hidden = !sel || sel.builtin === true || vzFilterMatchesPreset(sel);
+  }
 }
 
 // **رسالةُ الصفّ** — نجاحاً أو سبباً، ولا نجاحَ يُطبع لما لم يقع (جرد #57)
@@ -3213,6 +3261,22 @@ function filterPanelClick(e) {
     filterPresetNote(`طُبِّق «${p.n}»`, false);
     return;
   }
+  // ── #138 — التحديث: استبدالُ قيمِ المحدَّد بالقيم الجارية ───────────────────
+  if (e.target?.closest?.("[data-vz-preset-update]")) {
+    const sel = vzSelectedPreset();
+    if (!sel || sel.builtin) { filterPresetNote("لا محفوظ محدَّد", true); return; }
+    const v = vzFilterSparse();
+    // **ويمرّ بالتأكيد القائم لا بآليّةٍ ثانية** (#109) — **ومن ضغط ولم يرَ شيئاً
+    // لا يعرف أوقع أم لا، وذاك «لا أثرَ بلا خطأ».**
+    persistFilterPresets(vzFilterPresets.map((p) => (p.n === sel.n ? { n: p.n, v } : p))).then((r) => {
+      renderFilterPresetList();
+      const pick = vzFilterPanel?.querySelector(".vzFpPick");
+      if (r.ok && pick) pick.value = `s:${sel.n}`;
+      syncFilterPresetButtons();
+      filterPresetNote(r.ok ? `حُدِّث «${sel.n}»` : r.msg, !r.ok);
+    });
+    return;
+  }
   if (e.target?.closest?.("[data-vz-preset-del]")) {
     const pick = vzFilterPanel?.querySelector(".vzFpPick");
     // ⛔ **والمبنيُّ لا يُحذف** — والزرُّ مخفيٌّ عليه أصلاً، **وهذا حارسُ المسار
@@ -3257,7 +3321,12 @@ function saveFilterPresetFromPanel() {
   const next = vzFilterPresets.filter((p) => p.n !== n).concat([{ n, v }]);
   persistFilterPresets(next).then((r) => {
     renderFilterPresetList();
-    if (r.ok) { if (input) input.value = ""; const pick = vzFilterPanel?.querySelector(".vzFpPick"); if (pick) pick.value = n; }
+    // ⛔⭐ **عطبٌ حيٌّ أدخله #137 وأُصلح هنا:** كان `pick.value = n` **وقيمُ الخيارات
+    // صارت مسبوقةً `s:` في #137** ⇒ **قيمةٌ لا يحملها خيارٌ فيفرغ المحدَّد**،
+    // **فمن حفظ لم يجد محفوظَه مختاراً.** ⚠️ **ومرّ من خطوات `ج1`–`ج4` لأنها لم
+    // تحفظ ثمّ تقرأ المحدَّد** — ⭐ **وأمسكه سؤالُ التحديث لا شاهدٌ قائم.**
+    if (r.ok) { if (input) input.value = ""; const pick = vzFilterPanel?.querySelector(".vzFpPick"); if (pick) pick.value = `s:${n}`; }
+    syncFilterPresetButtons();
     filterPresetNote(r.ok ? `حُفظ «${n}»` : r.msg, !r.ok);
   });
 }
@@ -3775,11 +3844,15 @@ const OVERLAY_CSS = `
     .vzFilterPanel .vzFpBody{ overflow-y:auto; min-height:0; flex:1 1 auto; }
     .vzFilterPanel .vzFpHead, .vzFilterPanel .vzFpSave{ flex:none; }
     /* #109 — صفُّ المحفوظات: سطرٌ واحد، والرسالةُ تحته تمتدّ العرض كلَّه */
+    /* #138 — سطران: الاسمُ وحفظُه · ثمّ القائمةُ وأفعالُها. **وسطرٌ واحدٌ بستّة
+       أعمدة يسحق حقلَ الاسم في 300px** — والقياسُ يقول كم كلّف الجسمَ. */
     .vzFilterPanel .vzFpSave{
-      display:grid; grid-template-columns:1fr auto minmax(0,1fr) auto auto;
-      gap:6px; align-items:center; padding-bottom:8px; margin-bottom:6px;
+      display:grid; grid-template-columns:1fr auto auto auto;
+      gap:6px 6px; align-items:center; padding-bottom:8px; margin-bottom:6px;
       border-bottom:1px solid rgba(255,255,255,.18);
     }
+    .vzFilterPanel .vzFpPresetName{ grid-column:1 / 4; }
+    .vzFilterPanel .vzFpPick{ grid-column:1 / 2; }
     .vzFilterPanel .vzFpPresetName, .vzFilterPanel .vzFpPick{
       min-width:0; background:rgba(255,255,255,.10); color:#fff;
       border:1px solid rgba(255,255,255,.22); border-radius:6px;
