@@ -10,12 +10,12 @@
 // ⚠️ **ولا تُنقل خطوةٌ إلى الرِكاز لأنها تعذّرت على المالك** (قرار المالك):
 // ما يقيسه الرِكاز يُقاس **لأنه يقيسه**، وما يحكم فيه إنسان يبقى له —
 // **والخلط يُنتج «أخضر» عن شيءٍ لم يُحكم فيه.**
-import { launch, openPage, configure, serveTestPage, evalIn, waitPortFree, killChrome } from "./ext-harness.mjs";
+import { launch, openPage, openPageAsHost, configure, evalIn, waitPortFree, killChrome } from "./ext-harness.mjs";
 
 // **السجلّ يُحمَّل كما يُحمّله `test-settings-ui.js` و`bench-options-page.mjs`.**
 const uiReg = (await import("node:module")).createRequire(import.meta.url)(
   new URL("../settings-ui.js", import.meta.url).pathname);
-const PORT = 9771, HTTP = 8871;
+const PORT = 9771;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const IDLE = 1000;
 const R = [];
@@ -243,8 +243,25 @@ async function optionsPart(h) {
 }
 
 // ── ب) الطبقة على صفحةٍ محلية — ما لم يغطّه `bench-overlay-layer` بعد ────────
-async function layerPart(h, url) {
-  const c = await openPage(PORT, url);
+// ⛔⭐⭐ **يُقاس تحت اسم المضيف، لا على `localhost`** (أُصلح 2026-08-08، #112) ────
+// **العلّة مقيسةٌ بمتغيّرٍ واحد:** زرّا #72 و#108 **ضُيّقا إلى يوتيوب**، وهذا القسم
+// كان يقيسهما على `localhost` ⇒ **الزرُّ لا يُرسم أصلاً بقرارٍ منّا** — والصفحةُ
+// والإعداداتُ والحركةُ كما هي، **واسمُ المضيف وحدَه قلب النتيجة**:
+// `localhost` ⇒ `has:false · vzWrap:0 · placement:none` ·
+// `www.youtube.com` ⇒ **`has:true · hidden:false · vzWrap:1 · placement:layer`**.
+// ⚠️ **والأذوناتُ كانت ممنوحةً في الحالين** (`extensionActive` · `speedButtonActive`
+// · `videoOwnsControls` كلُّها `true`) ⇒ **فالمِجَسُّ كان يقرأ غيابَ ميزةٍ مُطفأةٍ
+// بقرارٍ منّا عطباً فيها.**
+//
+// ⛔⭐⭐ **وأخطرُ ما فيه لم يكن الحمرات الثلاث بل أربعُ خضراتٍ على صفحةٍ لا زرَّ
+// فيها** — **وشرطُ نفيٍ يصدق حين يستحيل نقضُه (17) ليس حارساً بل زينةٌ خضراء** ⇒
+// **فالثمانيةُ التي يُسنِدها هذا القسم كانت غيرَ محروسة، والسجلُّ يقول محروسة.**
+//
+// ⭐ **والإصلاح بآليّةٍ قائمة لا جديدة**: `openPageAsHost` — **وهي التي أُحيي بها
+// رِكازان يومَ التضييق**، ⛔ **وهذا كان ثالثاً ولم يُسأل عنه** (قرار 100 بحرفه:
+// إصلاحُ موضعٍ يُوجب سؤالَ «كم موضعاً غيرَه؟»).
+async function layerPart(h) {
+  const { c } = await openPageAsHost(PORT, {});
   await sleep(2800);
   const st = `(() => { const b = document.querySelector(".vzSpeedBtn"); const v = document.querySelector("video");
     const sp = document.querySelector(".vzSpeed");
@@ -322,16 +339,17 @@ async function layerPart(h, url) {
 }
 
 // ── التشغيل ─────────────────────────────────────────────────────────────────
-const srv = await serveTestPage(HTTP);
+// ⛔ **لا خادمَ محليّ بعد اليوم**: `openPageAsHost` يوقف الطلبَ **قبل الشبكة**
+// ويُلبّيه بصفحتنا — **فلا منفذَ ثانياً ولا مورِدَ يخرج.**
 let h = await launch(PORT);
 try {
   await configure(PORT, h.extensionId, S());
   await optionsPart(h);
-  await layerPart(h, srv.url);
+  await layerPart(h);
 } catch (e) {
   console.log("⚠️ توقّف المِجَسّ: " + String(e?.message || e).slice(0, 160));
 } finally {
-  killChrome(h); await waitPortFree(PORT); try { srv.srv.close(); } catch {}
+  killChrome(h); await waitPortFree(PORT);
 }
 
 console.log("\n=== تغطية §17 بالرِكاز — جُرّبت ولم تُقدَّر ===\n");
