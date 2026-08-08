@@ -2700,6 +2700,103 @@ function vzFilterPanelOpen() {
   return !!vzFilterPanel && !vzFilterPanel.classList.contains("vzHidden");
 }
 
+// ── #109 — **حفظُ الفلاتر بأسماء** (طلب المالك 2026-08-08) ────────────────────
+//
+// ⭐ **سببُ البند من قرار المالك نفسِه:** الفلترُ **يزول مع كلّ فيديو** بطلبه، **فكلُّ
+// مقطعٍ مظلمٍ يُعاد ضبطُه** ⇒ **فالحفظُ ثمنُ ذلك القرار لا زينةٌ فوقه.**
+//
+// ⛔⭐⭐ **والعقد: التطبيقُ استبدالٌ لا دمج.** ما ليس في المدخل **يعود إلى افتراضه**
+// — **وإلا بقيت بقايا الفلتر السابق تحت الجديد فيرى المستخدم نتيجةً لم يحفظها ولا
+// يعرف من أين جاءت.** ⚠️ **وهو أخطرُ ما في الشكل المتفرّق، فثُبّت بشاهدٍ لا بوسم**
+// (`tools/test-filter-presets.js`).
+//
+// ⛔ **والمخزَّن متفرّق** — ما غادر افتراضَه وحدَه، **كنمط `cleanPlayer.items` القائم**:
+// **مقيسٌ 2026-08-08: 95 بايتاً للمدخل الشائع مقابل 179 للكامل (أرخصُ بـ47٪)**،
+// **ويحتمل مفتاحاً عاشراً غداً بلا هجرة.**
+//
+// ⛔⭐ **والسكنى داخل `settings` قرارُ مالكٍ بالأرقام لا بالحدس** (2026-08-08):
+// **مقيسٌ بقيادة صفحة الإعدادات: `settings` = 1416 بايتاً** (بمحاسبتنا وبمحاسبة
+// كروم، متطابقتين)، **والمتاح 8192 − 1416 = 6776 ⇒ 71–101 مدخلاً بالمتفرّق** —
+// **عددٌ لا يبلغ أحدٌ نصفَه.** ⇒ **وتدخل النسخةَ الاحتياطية مجّاناً** (المُصدِّر
+// يأخذ `settings` كلَّها)، **بدل مفتاحٍ مستقلٍّ يُنسى سطرُه في النسخة.**
+// ⚠️⚠️ **وثمنُها يُكتب هنا صريحاً كي لا يُشخَّص بعد سنة: قائمةٌ تبلغ السقف تمنع حفظَ
+// أيّ إعدادٍ آخر — لا الفلاتر وحدَها**، لأن `settings` عنصرٌ واحد في حساب كروم.
+// ⚠️ **وحدُّ الرقم: قِيس على إعداداتٍ لم يُخصَّص فيها مربّعٌ ولم يُحجب موقع**،
+// **و`zones` (894 بايتاً) هو الجزء الذي ينمو بيد المستخدم — ونموُّه غيرُ مقيس.**
+const VZ_FILTER_PRESETS_MAX_NAME = 40;
+
+// ⛔ **الرقمُ نسخةٌ من `SYNC_ITEM_LIMIT` في `storage.js`، لا منطقٌ ثانٍ** — سكربتُ
+// المحتوى لا يستطيع تحميل `storage.js`. **ويحرس تطابقَهما `tools/test-filter-presets.js`**
+// ⇒ **فتخلّفُه يُحمّر ولا يقع صامتاً.** ⭐ **ونُسخ الرقمُ وحدَه لا الحارسُ كلُّه:
+// كتلةٌ مُقترنةٌ خامسة ثمنُها أكبر من فحصِ سقفٍ واحد.**
+const VZ_SYNC_ITEM_LIMIT = 8192;
+
+let vzFilterPresets = [];
+
+// **المتفرّق: ما غادر افتراضه وحدَه** — والسجلُّ هو المصدر، فلا قائمةَ ثانية تُكتب.
+function vzFilterSparse(values) {
+  const v = values || vzFilterValues || vzFilterDefaults();
+  const out = {};
+  for (const it of VZ_FILTER_ITEMS) {
+    const n = Number(v[it.key]);
+    if (Number.isFinite(n) && n !== it.def) out[it.key] = n;
+  }
+  return out;
+}
+
+// ⛔⭐⭐ **الاستبدالُ لا الدمج** — الافتراضاتُ أوّلاً ثمّ المحفوظ فوقها.
+// **ولا تُقرأ `vzFilterValues` هنا بحال**: قراءتُها هي الدمجُ بعينه.
+function vzFilterValuesFromPreset(preset) {
+  const out = vzFilterDefaults();
+  const saved = preset?.v || {};
+  for (const it of VZ_FILTER_ITEMS) {
+    if (!Object.prototype.hasOwnProperty.call(saved, it.key)) continue;
+    const n = Number(saved[it.key]);
+    if (!Number.isFinite(n)) continue;               // قيمةٌ فاسدة ⇒ الافتراض
+    out[it.key] = Math.min(it.max, Math.max(it.min, n));   // والمدى يُفرض عند القراءة
+  }
+  return out;
+}
+
+// ⚠️ **والتطبيقُ يُشغّل المفتاحَ إن كان مطفأً** (قرار المالك 2026-08-08): **وإلا
+// طبّق المستخدمُ فلتراً فلم يرَ شيئاً — وذاك «لا أثرَ بلا خطأ».**
+// ⭐ **والحالُ التي يعالجها واحدة ومقيسة:** `resetVideoFilter` تُعيد `vzFilterOn = true`
+// مع كل فيديو ⇒ **فالوحيدةُ الباقية: أطفأه بيده ثمّ طبّق في الفيديو نفسِه.**
+// ⚠️ **وثمنُه مكتوبٌ في وسم المفتاح** — **ضابطٌ يتغيّر بلا أن يلمسه أحد هو ما نطارده.**
+function applyFilterPreset(preset) {
+  if (!preset) return;
+  vzFilterValues = vzFilterValuesFromPreset(preset);
+  vzFilterOn = true;
+  syncFilterPanel();
+  applyVideoFilter();
+}
+
+// ⛔ **الكتابةُ الوحيدة إلى التخزين من سكربت المحتوى** — **وتفحص السقفَ قبلها لا
+// بعدها**: `safeSyncSet` لا يبلغها، **فلا يُترك الفشلُ صامتاً** (وهو ما بُني
+// `safeSyncSet` نفسُه لمنعه). ⇒ **وتُرجع سبباً يُعرض للمستخدم، ولا تُرجع نجاحاً
+// لم يقع** (جرد #57: نجاحٌ كاذب أسوأ من فشلٍ صامت).
+async function persistFilterPresets(list) {
+  try {
+    const data = await chrome.storage.sync.get({ settings: {} });
+    const next = { ...(data.settings || {}), filterPresets: list };
+    const bytes = new TextEncoder().encode("settings" + JSON.stringify(next)).length;
+    if (bytes > VZ_SYNC_ITEM_LIMIT) return { ok: false, msg: "لا مساحة — احذف محفوظاً" };
+    await chrome.storage.sync.set({ settings: next });
+    vzFilterPresets = list;
+    return { ok: true };
+  } catch (e) {
+    console.debug("[VZ] #109: تعذّر حفظ الفلاتر:", e);
+    return { ok: false, msg: "تعذّر الحفظ" };
+  }
+}
+
+function loadFilterPresetsFrom(settings) {
+  const raw = (settings || {}).filterPresets;
+  vzFilterPresets = Array.isArray(raw)
+    ? raw.filter((p) => p && typeof p.n === "string" && p.n).map((p) => ({ n: p.n, v: p.v || {} }))
+    : [];
+}
+
 // **السلسلة تُبنى من السجلّ**: ما لم يغادر افتراضه لا يدخلها أصلاً ⇒ **لا يُدفع
 // ثمنُ فلترٍ لم يطلبه أحد**، والجاما خاصّةً (انظر القياس أعلاه).
 function vzFilterChain() {
@@ -2844,6 +2941,9 @@ function buildFilterPanel() {
   // ⭐ **وسمُ كلٍّ يقول فعلَه، فلا يلتبس بالآخر** (شرط المالك): **المفتاحُ يُوقف
   // الأثر ويُبقي القيم · والزرُّ يمحو القيم** — **وإلا كانا مفتاحين لشيءٍ واحد
   // في العين.**
+  // ⚠️ **وصار يُقلَب بتطبيق محفوظ (#109) فيقوله** — **ضابطٌ يتغيّر بلا أن يلمسه
+  // أحد هو ما نطارده**، فالوسمُ يسبق المفاجأة.
+  sw.title = "يُوقف أثر الفلاتر ويُبقي القيم — ويعود مُشغَّلاً إن طبّقتَ محفوظاً";
   swTxt.textContent = "تشغيل الفلاتر";
   sw.append(swBox, track, swTxt);
   const resetAll = document.createElement("button");
@@ -2854,6 +2954,52 @@ function buildFilterPanel() {
   resetAll.textContent = "إرجاع الكلّ";
   head.append(sw, resetAll);
   p.appendChild(head);
+
+  // ── #109 — صفُّ المحفوظات، **في الرأس الثابت لا في الجسم المُمرَّر** ────────
+  // ⛔⭐⭐ **والقياسُ هو ما قلب السؤال** (2026-08-08، على فيديو 469px): اللوحةُ
+  // **عند سقفها اليوم بالضبط** (مرئيّ 308 = محتوى 308)، **وأيُّ صفٍّ يُدخلها
+  // التمرير — في الرأس كان أو في الجسم** (329 · 330). ⇒ **فالسؤال ليس «أين أضعه
+  // كي لا تطول» بل «ما الذي يبقى مرئيّاً حين تُمرَّر».**
+  // ⭐⭐ **وكشف القياسُ عيباً قائماً لم يُطلَب إصلاحُه: التمريرُ كان على اللوحة
+  // نفسِها لا على جسمها** ⇒ **فالمفتاحُ الرئيسيّ و«إرجاعُ الكلّ» يُمرَّران بعيداً
+  // اليوم — والرأسُ لم يكن رأساً أصلاً.** ⇒ **فنقلُ التمرير إلى `.vzFpBody`
+  // يُصلح القائمَ ويُنشئ المكان معاً، وثمنُه سطرا CSS.** ⛔ **ويُعلَّل هنا كي لا
+  // يُقرأ بعد سنةٍ توسّعاً في بندٍ لم يطلبه** (شرط المالك).
+  const save = document.createElement("div");
+  save.className = "vzFpSave";
+  const name = document.createElement("input");
+  name.type = "text";
+  name.className = "vzFpPresetName";
+  name.maxLength = VZ_FILTER_PRESETS_MAX_NAME;
+  name.placeholder = "اسم الفلتر";
+  name.setAttribute("aria-label", "اسم الفلتر المحفوظ");
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "vzFpChip";
+  saveBtn.dataset.vzPresetSave = "1";
+  saveBtn.title = "يحفظ قيم المنزلقات الحالية بهذا الاسم";
+  saveBtn.textContent = "حفظ";
+  const pick = document.createElement("select");
+  pick.className = "vzFpPick";
+  pick.setAttribute("aria-label", "الفلاتر المحفوظة");
+  const applyBtn = document.createElement("button");
+  applyBtn.type = "button";
+  applyBtn.className = "vzFpChip";
+  applyBtn.dataset.vzPresetApply = "1";
+  // ⚠️ **الوسمُ يقول الحدَّ صراحةً** — **الحفظُ للقيم لا للتثبيت**، والمُطبَّق
+  // يزول مع الفيديو التالي كغيره. **وإلا ظنّه المستخدم تثبيتاً.**
+  applyBtn.title = "يستبدل القيم كلَّها بالمحفوظ — وما ليس فيه يعود إلى افتراضه. ويزول مع الفيديو التالي كأيّ فلتر";
+  applyBtn.textContent = "تطبيق";
+  const delBtn = document.createElement("button");
+  delBtn.type = "button";
+  delBtn.className = "vzFpChip";
+  delBtn.dataset.vzPresetDel = "1";
+  delBtn.title = "يحذف المحدَّد";
+  delBtn.textContent = "حذف";
+  const note = document.createElement("div");
+  note.className = "vzFpNote";
+  save.append(name, saveBtn, pick, applyBtn, delBtn, note);
+  p.appendChild(save);
 
   const body = document.createElement("div");
   body.className = "vzFpBody";
@@ -2908,6 +3054,47 @@ function syncFilterPanel() {
     // **الوحدةُ من طبيعة المقيس لا من شكل الجدول** (قرار 110)
     if (out) out.textContent = it.fmt(v[it.key]);
   }
+  renderFilterPresetList();
+}
+
+// ⚠️ **القائمةُ وحدَها تُعاد** — **ولا يُمسّ حقلُ الاسم**: `flushReload` تقع بعد
+// كتابتنا نفسِها، **فإعادةُ بنائه تمحو ما يكتبه المستخدم تحت يده.**
+// ⛔ **والنصّ بـ`textContent` لا `innerHTML`**: الاسمُ من المستخدم ومن ملفّ نسخةٍ
+// مستوردة، فقد يحمل `<` أو `&` (جرد #32).
+function renderFilterPresetList() {
+  const pick = vzFilterPanel?.querySelector(".vzFpPick");
+  if (!pick) return;
+  const كان = pick.value;
+  pick.textContent = "";
+  if (!vzFilterPresets.length) {
+    const o = document.createElement("option");
+    o.value = "";
+    o.textContent = "لا محفوظات";
+    pick.appendChild(o);
+    pick.disabled = true;
+  } else {
+    pick.disabled = false;
+    for (const p of vzFilterPresets) {
+      const o = document.createElement("option");
+      o.value = p.n;
+      o.textContent = p.n;
+      pick.appendChild(o);
+    }
+    if (vzFilterPresets.some((p) => p.n === كان)) pick.value = كان;
+  }
+  // **وضابطٌ يُضغط ولا يفعل شيئاً انحدار** (#24): بلا محفوظاتٍ يُعطَّل الزرّان
+  for (const sel of ["[data-vz-preset-apply]", "[data-vz-preset-del]"]) {
+    const b = vzFilterPanel.querySelector(sel);
+    if (b) b.disabled = !vzFilterPresets.length;
+  }
+}
+
+// **رسالةُ الصفّ** — نجاحاً أو سبباً، ولا نجاحَ يُطبع لما لم يقع (جرد #57)
+function filterPresetNote(text, bad) {
+  const el = vzFilterPanel?.querySelector(".vzFpNote");
+  if (!el) return;
+  el.textContent = text || "";
+  el.dataset.vzBad = bad ? "1" : "0";
 }
 
 function setFilterValue(key, raw) {
@@ -2959,6 +3146,13 @@ function filterPanelInput(e) {
   if (range) { setFilterValue(range.dataset.vzKey, range.value); return; }
 }
 
+// **مُحمِّلٌ كبقيّة الشرائح** — يقرأ من اللقطة نفسِها ولا يقرأ التخزين ثانيةً
+async function loadFilterPresets(pre) {
+  const data = await settingsRead(pre);
+  loadFilterPresetsFrom(data.settings || {});
+  renderFilterPresetList();
+}
+
 function filterPanelClick(e) {
   // **الإرجاعُ الشامل يمحو القيم** — وهو غيرُ المفتاح الذي يُوقف الأثر ويُبقيها
   if (e.target?.closest?.("[data-vz-reset-all]")) {
@@ -2973,6 +3167,26 @@ function filterPanelClick(e) {
     if (it) setFilterValue(it.key, it.def);
     return;
   }
+  // ── #109 — الحفظُ والتطبيقُ والحذف ──────────────────────────────────────
+  if (e.target?.closest?.("[data-vz-preset-save]")) { saveFilterPresetFromPanel(); return; }
+  if (e.target?.closest?.("[data-vz-preset-apply]")) {
+    const pick = vzFilterPanel?.querySelector(".vzFpPick");
+    const p = vzFilterPresets.find((x) => x.n === pick?.value);
+    if (!p) { filterPresetNote("لا محفوظ محدَّد", true); return; }
+    applyFilterPreset(p);
+    filterPresetNote(`طُبِّق «${p.n}»`, false);
+    return;
+  }
+  if (e.target?.closest?.("[data-vz-preset-del]")) {
+    const pick = vzFilterPanel?.querySelector(".vzFpPick");
+    const n = pick?.value;
+    if (!n) { filterPresetNote("لا محفوظ محدَّد", true); return; }
+    persistFilterPresets(vzFilterPresets.filter((x) => x.n !== n)).then((r) => {
+      renderFilterPresetList();
+      filterPresetNote(r.ok ? `حُذف «${n}»` : r.msg, !r.ok);
+    });
+    return;
+  }
   const box = e.target?.closest?.(".vzFpOn");
   if (box) {
     // **يُوقف الفلتر كلَّه ولا يُضيّع القيم** (شرط المالك): الحالةُ تُقلَب،
@@ -2981,6 +3195,33 @@ function filterPanelClick(e) {
     syncFilterPanel();
     applyVideoFilter();
   }
+}
+
+// **الحفظُ من اللوحة** — والاسمُ المكرَّر يستبدل مكانَه ولا يُنشئ ثانياً بالاسم نفسِه
+function saveFilterPresetFromPanel() {
+  const input = vzFilterPanel?.querySelector(".vzFpPresetName");
+  const n = (input?.value || "").trim().slice(0, VZ_FILTER_PRESETS_MAX_NAME);
+  if (!n) { filterPresetNote("اكتب اسماً أوّلاً", true); input?.focus(); return; }
+  const v = vzFilterSparse();
+  // ⚠️ **وحفظُ فلترٍ لا شيءَ فيه يُعلَن ولا يُخزَّن** — مدخلٌ فارغٌ يُطبَّق فيبدو
+  // «لم يفعل شيئاً»، **وهو «لا أثرَ بلا خطأ» بعينه**.
+  if (!Object.keys(v).length) { filterPresetNote("لا قيمةَ تُحفظ — حرّك منزلقاً", true); return; }
+  const next = vzFilterPresets.filter((p) => p.n !== n).concat([{ n, v }]);
+  persistFilterPresets(next).then((r) => {
+    renderFilterPresetList();
+    if (r.ok) { if (input) input.value = ""; const pick = vzFilterPanel?.querySelector(".vzFpPick"); if (pick) pick.value = n; }
+    filterPresetNote(r.ok ? `حُفظ «${n}»` : r.msg, !r.ok);
+  });
+}
+
+// ⭐ **مسارُ لوحة المفاتيح في الحقل** (#77 · #109): `Enter` يحفظ.
+// ⛔ **و`Escape` ليس هنا**: مُغلِقُ اللوحة مستمعٌ على `document` **بالالتقاط**
+// فيسبق هذا المستمعَ بنيوياً — **فمنعُه هناك لا هنا**، وإلا كتبنا شرطاً لا يقع.
+// ⇒ **وسلطةُ `Escape` واحدة: `filterEscKeydown`.**
+function filterPanelKeydown(e) {
+  const input = e.target?.closest?.(".vzFpPresetName");
+  if (!input) return;
+  if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); saveFilterPresetFromPanel(); }
 }
 
 function filterBtnClick(e) {
@@ -3001,6 +3242,16 @@ function filterEscKeydown(e) {
   if (!extensionActive()) return;         // #64: الرئيسي ثمّ الحظر
   if (!filterButtonActive()) return;      // ثمّ مفتاح الميزة
   if (e.key !== "Escape" || !vzFilterPanelOpen()) return;
+  // ⛔⭐ **#109 — والتركيزُ في حقل الاسم: يُغادر الحقلَ ولا يُغلق اللوحة.**
+  // **منعُ فقدِ عملٍ لا تحسينُ راحة**: من ضغطها وهو يكتب اسماً فقده معها.
+  // ⚠️ **والحكمُ هنا لا في مستمع اللوحة**: هذا على `document` **بالالتقاط**
+  // فيسبقه بنيوياً — **وشرطٌ في المستمع الآخر شرطٌ لا يقع.**
+  if (e.target?.closest?.(".vzFpPresetName")) {
+    e.stopPropagation();
+    e.target.value = "";
+    e.target.blur();
+    return;
+  }
   setFilterPanelOpen(false);
 }
 // ⚠️ **والتسجيلُ مع بقيّة مستمعي دورة حياة الطبقة، لا هنا** — أسفل، بجوار
@@ -3457,14 +3708,44 @@ const OVERLAY_CSS = `
        ⚠️ **و pointer-events:auto عليها وحدها لا على .vzWrap** — كما في .vzBtn.
        ⛔ **ولا علامةَ اقتباسٍ خلفية في هذي الكتلة**: هي قالبٌ نصّيّ، والعلامةُ
        تقطعه — وقد وقع ذلك مرّتين في يومٍ واحد، وأمسكه node --check في الحالين. */
+    /* ⛔⭐⭐ #109 — **التمريرُ على الجسم لا على اللوحة**، والرأسُ وصفُّ المحفوظات
+       يثبتان. **وهذا إصلاحُ عيبٍ قائم لا توسّعٌ في البند** (يُعلَّل كي لا يُقرأ
+       بعد سنةٍ توسّعاً): كان التمريرُ على اللوحة نفسِها ⇒ **المفتاحُ الرئيسيّ
+       و«إرجاعُ الكلّ» يُمرَّران بعيداً**، وهو مقيسٌ 2026-08-08. */
     .vzFilterPanel{
       position:absolute; right:8px; bottom:56px;
-      width:min(300px, 92%); max-height:min(62%, 340px); overflow-y:auto;
+      width:min(300px, 92%); max-height:min(62%, 340px);
+      display:flex; flex-direction:column; overflow:hidden;
       background:rgba(28,28,28,.92); color:#fff; border-radius:12px;
       padding:10px 12px; pointer-events:auto;
       font:12px/1.35 Arial, sans-serif; direction:rtl;
       box-shadow:0 8px 24px rgba(0,0,0,.45);
     }
+    /* min-height:0 شرطٌ لا زينة: بدونها لا ينكمش ابنُ flex فلا يُمرَّر شيء.
+       ⛔ ولا علامةَ اقتباسٍ خلفية هنا: قالبٌ نصّيّ — وقد أُغلق به هذا القالب
+       فعلاً في أوّل صياغة، وهي سابعةُ العائلة. */
+    .vzFilterPanel .vzFpBody{ overflow-y:auto; min-height:0; flex:1 1 auto; }
+    .vzFilterPanel .vzFpHead, .vzFilterPanel .vzFpSave{ flex:none; }
+    /* #109 — صفُّ المحفوظات: سطرٌ واحد، والرسالةُ تحته تمتدّ العرض كلَّه */
+    .vzFilterPanel .vzFpSave{
+      display:grid; grid-template-columns:1fr auto minmax(0,1fr) auto auto;
+      gap:6px; align-items:center; padding-bottom:8px; margin-bottom:6px;
+      border-bottom:1px solid rgba(255,255,255,.18);
+    }
+    .vzFilterPanel .vzFpPresetName, .vzFilterPanel .vzFpPick{
+      min-width:0; background:rgba(255,255,255,.10); color:#fff;
+      border:1px solid rgba(255,255,255,.22); border-radius:6px;
+      padding:3px 6px; font:12px/1.3 Arial, sans-serif;
+    }
+    .vzFilterPanel .vzFpPick option{ background:#1c1c1c; color:#fff; }
+    .vzFilterPanel .vzFpChip{
+      background:rgba(255,255,255,.14); color:#fff; border:0; border-radius:6px;
+      padding:3px 8px; cursor:pointer; font:12px/1.3 Arial, sans-serif; white-space:nowrap;
+    }
+    .vzFilterPanel .vzFpChip:hover{ background:rgba(255,255,255,.24); }
+    .vzFilterPanel .vzFpChip:disabled{ opacity:.4; cursor:default; }
+    .vzFilterPanel .vzFpNote{ grid-column:1 / -1; min-height:14px; font-size:11px; opacity:.75; }
+    .vzFilterPanel .vzFpNote[data-vz-bad="1"]{ color:#ff9a8a; opacity:1; }
     .vzFilterPanel .vzFpHead{
       display:flex; align-items:center; justify-content:space-between;
       gap:8px; padding-bottom:8px; margin-bottom:6px;
@@ -3829,6 +4110,8 @@ function ensureVideoOverlay(video) {
   vzFilterPanel.addEventListener("wheel", filterPanelWheel, { passive: false });
   vzFilterPanel.addEventListener("input", filterPanelInput);
   vzFilterPanel.addEventListener("click", filterPanelClick);
+  vzFilterPanel.addEventListener("keydown", filterPanelKeydown);   // #109 — Enter يحفظ
+  renderFilterPresetList();
   // **يزول مع كلّ فيديو**: الغلافُ يُهدَم ويُبنى عند تبدّل الفيديو، فالتصفيرُ هنا
   resetVideoFilter(video);
   vzOverlayVideo = video;
@@ -4233,7 +4516,8 @@ async function flushReload() {
     loadRulesForThisHost(data), loadSiteProfile(data), loadZoneSettings(data),
     loadOverlaySettings(data), loadBlockedHosts(data), loadSoundDisplaySettings(data),
     loadMasterEnabled(data), loadGridAppearance(data), loadSubtitleSettings(data), loadYtAutoQualitySettings(data),
-    loadYtShortsRedirectSetting(data), loadCleanPlayerSettings(data), loadIdleSettings(data)
+    loadYtShortsRedirectSetting(data), loadCleanPlayerSettings(data), loadIdleSettings(data),
+    loadFilterPresets(data)   // #109
   ]);
   // #76: بعد اكتمال المُحمِّلات كلّها لا داخل أحدها — فالاشتقاق يقرأ حالةً تامّة
   refreshIdleConsumers();
@@ -4259,6 +4543,7 @@ function runStartupSteps() {
   const overlayReady = startup("overlay", () => read.then(loadOverlaySettings));
   startup("blockedHosts", () => read.then(loadBlockedHosts));
   startup("soundDisplay", () => read.then(loadSoundDisplaySettings));
+  startup("filterPresets", () => read.then(loadFilterPresets));   // #109
   startup("gridAppearance", () => read.then(loadGridAppearance));
   startup("subtitles", () => read.then(loadSubtitleSettings));
   startup("subtitleObserver", startSubtitleTrackObserver);
