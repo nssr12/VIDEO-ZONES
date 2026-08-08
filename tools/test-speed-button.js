@@ -95,10 +95,18 @@ console.log("\n[3] ⭐ الملكية بسمةٍ على العنصر، وتُح�
   check("[3] و`videoFromStack` تقرأها", !!stack && /el\.dataset\?\.vzOwns/.test(stack), stack);
   check("[3] وغير مشروطةٍ بـ`blockScrollable` (العجلة والنقر معاً)",
     !!stack && /if \(el\.dataset\?\.vzOwns\) return BLOCKED_BY_LAYER;/.test(stack), stack);
-  // والشبكة والشارتان **لا** تحملانها: عناصرنا التي لا تملك
+  // والشبكة والشارات **لا** تحملانها: عناصرنا التي لا تملك
   check("[3] والشبكة لا تحملها", !/class="vzGrid[^"]*"[^>]*data-vz-owns/.test(SRC));
-  check("[3] والشارتان لا تحملانها",
-    !/class="vzVolume[^"]*"[^>]*data-vz-owns/.test(SRC) && !/class="vzSpeed vzHidden"[^>]*data-vz-owns/.test(SRC));
+  // ⛔⭐⭐ **وصار يُشتقّ 2026-08-08 (#75):** كان يُعدِّد **شارتين بأسمائهما**
+  // **ووُلدت ثالثة (#134) فلم تدخل** — **فحرسَ اثنتين وسمّى نفسه حارسَ الشارات**،
+  // ⇒ ⭐ **وأخطرُ أثره خضرةٌ لا حمرة: شارةٌ جديدة تحمل السمة تمرّ صامتة.**
+  // **والمصدرُ الواحد قاعدةُ المظهر** (`--vz-volume-color`) — وهي عينُها التي
+  // يشتقّ منها `test-speed-badge.js`: **ما كان شارةً حُكم عليه، والرابعةُ تدخل بلا تعديل.**
+  const badgeRule = /\n\s*([.\w,]*\.vzSpeed[.\w,]*)\{[^}]*--vz-volume-color/.exec(SRC);
+  const badgeCls = badgeRule ? badgeRule[1].split(",").map((x) => x.trim().replace(/^\./, "")) : [];
+  check("[3] وقنوات الشارة تُشتقّ من قاعدة المظهر", badgeCls.length >= 3, badgeCls);
+  check("[3] ولا شارةَ تحمل `data-vz-owns`",
+    badgeCls.every((c) => !new RegExp(`class="${c}[^"]*"[^>]*data-vz-owns`).test(SRC)), badgeCls);
   const n = (SRC.match(/data-vz-owns/g) || []).length;
   // ⚠️ **العدد يُحدَّث بوعي ولا يُرفع ليمرّ:** صار ثلاثةً بـ#108 —
   // الزرّ (#72) · وزرّ الفلاتر · ولوحتُها. **ورابعٌ يُحمّر فيُسأل عنه.**

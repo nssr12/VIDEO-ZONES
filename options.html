@@ -12,7 +12,7 @@
       <div class="brand">VIDEO ZONES</div>
       <div class="nav">
         <button class="navItem active" data-section="zonesSection">INTERACTION ZONES</button>
-        <button class="navItem" data-section="volumeSection">VOLUME INDICATOR</button>
+        <button class="navItem" data-section="volumeSection">BADGES</button>
         <button class="navItem" data-section="timingSection">OVERLAY TIMING</button>
         <button class="navItem" data-section="youtubeSection">YOUTUBE</button>
         <button class="navItem" data-section="subtitlesSection">SUBTITLES</button>
@@ -102,16 +102,16 @@
 
       <section class="sectionPage" id="volumeSection" hidden>
         <div class="sectionHead">
-          <h1>Volume Indicator</h1>
-          <p>إعدادات رقم الصوت الذي يظهر أعلى يسار الفيديو عند تغيير مستوى الصوت.</p>
+          <h1>Badges</h1>
+          <p>لونُ الشاراتِ التي تظهر فوق الفيديو وحجمُها — وتسري على كلِّ شارة، لا على رقم الصوت وحدَه.</p>
         </div>
 
         <section class="panel">
           <div class="soundSettings">
-            <label>لون الرقم
+            <label>لون الشارات
               <input id="soundColor" type="color" />
             </label>
-            <label>حجم الرقم
+            <label>حجم الشارات
               <input id="soundSize" type="range" min="20" max="96" step="2" />
               <span class="rangeValue" id="soundSizeValue">48px</span>
             </label>
@@ -122,7 +122,7 @@
       <section class="sectionPage" id="timingSection" hidden>
         <div class="sectionHead">
           <h2>Overlay Timing</h2>
-          <p>تحكّم منفصل بمدة ظهور شبكة المربعات داخل الفيديو ورقم الصوت. القيمة 0 = إيقاف ذلك المؤشّر تماماً.</p>
+          <p>تحكّم منفصل بمدة ظهور شبكة المربعات داخل الفيديو وبمدة بقاء الشارات. والقيمة 0 = لا يظهر ذلك أصلاً.</p>
         </div>
 
         <section class="panel">
