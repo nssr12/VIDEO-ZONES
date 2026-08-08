@@ -132,8 +132,13 @@ console.log("\n[5] الحدودُ مكتوبةٌ حيث تُقرأ");
     /يزول مع الفيديو التالي/.test(build));
   check("[5] ووسمُ المفتاح يقول إنه يعود مُشغَّلاً بتطبيق محفوظ",
     /يعود مُشغَّلاً إن طبّقتَ محفوظاً/.test(build));
-  check("[5] وبلا محفوظاتٍ يُعطَّل زرّا التطبيق والحذف (#24)",
-    /b\.disabled = !vzFilterPresets\.length/.test(SRC));
+  // ⛔ ~~«وبلا محفوظاتٍ يُعطَّل زرّا التطبيق والحذف»~~ — **مسحوبٌ 2026-08-08
+  // (قرار 21): نسخه #137، فالقائمةُ لا تفرغ بعد اليوم** (المبنيُّ فيها دائماً).
+  // ⇒ **والعقدُ الجديد في [8]: «تطبيق» لا يُعطَّل، و«حذف» يُخفى على المبنيّ.**
+  // ⚠️ **ويبقى شرطُ #24 قائماً بمعناه** — **لا ضابطَ يُضغَط ولا يفعل شيئاً** —
+  // **وقد صار يُستوفى بالإخفاء لا بالتعطيل، وغيابُه أصدقُ من تعطيله.**
+  check("[5] ولا يبقى تعطيلٌ مشروطٌ بفراغ القائمة (نسخه #137)",
+    !/disabled = !vzFilterPresets\.length/.test(SRC));
   const apply = body("function applyFilterPreset(preset)");
   check("[5] والتطبيقُ يُشغّل المفتاح", /vzFilterOn = true/.test(apply), apply);
 }
@@ -153,6 +158,109 @@ console.log("\n[7] يُحمَّل في البدء وفي إعادة القراء
 {
   check("[7] في `runStartupSteps`", /startup\("filterPresets"/.test(SRC));
   check("[7] وفي `flushReload`", /loadFilterPresets\(data\)/.test(body("async function flushReload()")));
+}
+
+// ── [8] #137 — المدخلُ الجاهز: مُشتقٌّ لا مخزَّن، ولا يُحذف ────────────────────
+console.log("\n[8] ⭐ #137 — المدخلُ الجاهز «افتراضي»");
+{
+  const ctx = vm.createContext({ Number, Math, Object, console });
+  vm.runInContext(`${slice("const pct = ", "];")}\n${body("function vzFilterDefaults()")}\n${body("function vzFilterValuesFromPreset(preset)")}`, ctx);
+  const D = vm.runInContext("vzFilterDefaults()", ctx);
+
+  // ⛔⭐⭐ **الشاهدُ الذي طلبه المالك، ولا يُفترض من تشابه المسار**: تطبيقُه يُعيد
+  // **التسعةَ** إلى افتراضها — **وهو العقدُ نفسُه (استبدالٌ لا دمج) في أوضح صوره.**
+  // ⚠️ **ومن هنا يُقاس، لا من قراءة أن قيمته `{}`**: «قيمتُه فارغة» مقدّمة،
+  // **و«التسعةُ تعود» هي الأثر** (قرار 109: أوقع الأثر؟).
+  vm.runInContext("var vzFilterValues = { blur: 8, saturate: 2.5, hue: 200, brightness: 1.9 };", ctx);
+  const out = vm.runInContext("vzFilterValuesFromPreset({ v: {} })", ctx);
+  check("[8] ⭐⭐ تطبيقُ المبنيّ يُعيد التسعةَ إلى افتراضها", JSON.stringify(out) === JSON.stringify(D), { out, D });
+  check("[8] وعددُها تسعة لا أقلّ", Object.keys(out).length === 9, Object.keys(out).length);
+
+  // **مُشتقٌّ لا مخزَّن**: لا قائمةَ قيمٍ منسوخة في التعريف
+  const decl = slice("const VZ_FILTER_BUILTIN = {", "};");
+  check("[8] ⭐ التعريفُ معرّفٌ ووسمٌ فقط — ولا قيمَ منسوخة",
+    /id:\s*"default"/.test(decl) && /label:\s*"افتراضي"/.test(decl) && !/brightness|contrast|gamma/.test(decl), decl);
+  const clickBody = body("function filterPanelClick(e)");
+  check("[8] ⭐⭐ ويُطبَّق بـ`v: {}` لا بقائمةِ قيم", /applyFilterPreset\(\{ n: VZ_FILTER_BUILTIN\.label, v: \{\} \}\)/.test(clickBody));
+  check("[8] ولا يُكتب في التخزين بحال",
+    !new RegExp("persistFilterPresets\\([^)]*BUILTIN").test(SRC));
+
+  // **الاسمُ محجوز، والردُّ بجملةٍ لا بصمت**
+  const save = body("function saveFilterPresetFromPanel()");
+  check("[8] الاسمُ محجوز ويُردُّ بجملةٍ تقول لماذا",
+    /VZ_FILTER_BUILTIN\.label/.test(save) && /محجوز/.test(save), save.slice(0, 200));
+
+  // ⛔ **زرُّ الحذف يُخفى لا يُعطَّل** — والحارسُ يُفرّق بينهما نصّاً
+  const btns = body("function syncFilterPresetButtons()");
+  check("[8] ⭐ زرُّ الحذف يُخفى على المبنيّ (`hidden`) ولا يُعطَّل",
+    /del\.hidden = /.test(btns) && !/del\.disabled/.test(btns), btns);
+  check("[8] و«تطبيق» لا يُعطَّل — القائمةُ لا تفرغ", /apply\.disabled = false/.test(btns));
+  check("[8] وحارسُ المسار قائمٌ مع إخفاء الزرّ (لا يُحذف ولو بُلغ بطريقٍ آخر)",
+    /لا يُحذف/.test(clickBody));
+
+  // **والقائمةُ تبدأ بالمبنيّ دائماً** ⇒ لا ضابطَ ميّتٌ عند أوّل فتح
+  const render = body("function renderFilterPresetList()");
+  check("[8] ⭐ القائمةُ تبدأ بالمبنيّ ولا تكون فارغة", /VZ_PRESET_BUILTIN_VALUE/.test(render) && !/لا محفوظات/.test(render));
+  check("[8] وقيمُ الخيارات مسبوقةٌ تفصل المبنيَّ من المخزَّن", /`s:\$\{p\.n\}`/.test(render));
+}
+
+// ── [9] #138 — «تحديث»: المقارنة مُوسَّعةٌ بمُوسَّعة، والزرُّ يُخفى لا يُعطَّل ──
+console.log("\n[9] ⭐⭐ #138 — التحديث، وموضعُ العطب في المقارنة");
+{
+  const ctx = vm.createContext({ Number, Math, Object, console });
+  vm.runInContext(`${slice("const pct = ", "];")}
+${body("function vzFilterDefaults()")}
+${body("function vzFilterSparse(values)")}
+${body("function vzFilterValuesFromPreset(preset)")}
+${body("function vzFilterMatchesPreset(preset)")}`, ctx);
+
+  // ⛔⭐⭐ **الشاهدان اللذان اشترطهما المالك — للطرفين، ولا يكفي أحدُهما:**
+  // **مقارنةٌ تقول «مختلف» أبداً تمرّ على الثاني وتسقط في الأوّل، والعكسُ بالعكس.**
+  const P = { n: "ليل", v: { brightness: 1.4, contrast: 1.2, gamma: 1.3 } };
+  ctx.P = P;
+
+  // (أ) **تطبيقٌ بلا تغيير ⇒ لا زرّ** — الجاري = المُوسَّع من المخزَّن
+  vm.runInContext("vzFilterValues = vzFilterValuesFromPreset(P);", ctx);
+  check("[9] ⭐ تطبيقٌ بلا تغيير ⇒ متطابق (فلا زرّ)", vm.runInContext("vzFilterMatchesPreset(P)", ctx) === true);
+
+  // (ب) **وتغييرُ منزلقٍ واحد ⇒ زرّ**
+  vm.runInContext("vzFilterValues.blur = 4;", ctx);
+  check("[9] ⭐ وتغييرُ منزلقٍ واحد ⇒ مختلف (فيظهر)", vm.runInContext("vzFilterMatchesPreset(P)", ctx) === false);
+
+  // (ج) ⛔ **والعطبُ الذي حذّر منه المالك بعينه**: مقارنةٌ ساذجة مخزَّنٍ بجارٍ
+  const سذاجة = vm.runInContext("JSON.stringify(vzFilterValuesFromPreset(P)) === JSON.stringify(P.v)", ctx);
+  check("[9] ⛔⭐⭐ والمقارنةُ الساذجة (متفرّقٌ بكامل) تقول «مختلف» أبداً — فلا تُستعمل",
+    سذاجة === false, { الساذجة: سذاجة });
+
+  // (د) **والمُوسَّعُ يعود متطابقاً بعد إرجاع المنزلق** — فالحكمُ يتبع القيم لا التاريخ
+  vm.runInContext("vzFilterValues.blur = 0;", ctx);
+  check("[9] وإرجاعُ المنزلق يُعيد التطابق (فيختفي)", vm.runInContext("vzFilterMatchesPreset(P)", ctx) === true);
+
+  // (هـ) **ولفُّ المقارنة على السجلّ لا على مفاتيح المخزَّن** — وإلا فات مفتاح
+  const cmp = body("function vzFilterMatchesPreset(preset)");
+  check("[9] ⭐ والمقارنةُ تلفّ `VZ_FILTER_ITEMS` لا مفاتيحَ المخزَّن",
+    /for \(const it of VZ_FILTER_ITEMS\)/.test(cmp), cmp);
+
+  // (و) **الزرُّ يُخفى ولا يُعطَّل، ولا يظهر على المبنيّ** — والقاعدةُ واحدةٌ للزرّين
+  const btns = body("function syncFilterPresetButtons()");
+  check("[9] ⭐ «تحديث» يُخفى (`hidden`) ولا يُعطَّل", /upd\.hidden = /.test(btns) && !/upd\.disabled/.test(btns), btns);
+  check("[9] ⛔ ولا يظهر على المبنيّ", /sel\.builtin === true/.test(btns));
+  check("[9] ويختفي وقتَ التطابق", /vzFilterMatchesPreset\(sel\)/.test(btns));
+
+  // (ز) **والتأكيدُ بالآلة القائمة لا بثانية** — ولا نافذةَ استبدال
+  const clickBody = body("function filterPanelClick(e)");
+  check("[9] والتحديثُ يؤكَّد بـ`filterPresetNote` القائمة", /حُدِّث/.test(clickBody));
+  check("[9] ⛔ ولا نافذةَ تأكيدِ استبدال", !/confirm\s*\(/.test(SRC));
+
+  // (ح) ⛔ **عطبُ #137 الحيّ**: قيمةُ المحدَّد بعد الحفظ يجب أن تحمل البادئة
+  const save = body("function saveFilterPresetFromPanel()");
+  check("[9] ⛔⭐ وبعد الحفظ يُختار المحفوظُ بقيمته المسبوقة (عطبُ #137)",
+    /pick\.value = `s:\$\{n\}`/.test(save) && !/pick\.value = n[;\s]/.test(save), save.slice(-260));
+
+  // (ط) **ولا يُعاد بناءُ القائمة مع كل حركةِ منزلق**
+  const sync = body("function syncFilterPanel()");
+  check("[9] ⭐ و`syncFilterPanel` تُحدّث الأزرارَ لا القائمة",
+    /syncFilterPresetButtons\(\)/.test(sync) && !/renderFilterPresetList\(\)/.test(sync), sync.slice(-200));
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} #109 — النتيجة: ${pass} ناجحة · ${fail} فاشلة`);
