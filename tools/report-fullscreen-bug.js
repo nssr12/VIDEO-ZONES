@@ -80,6 +80,29 @@
     return /player|video|controls|overlay|container/i.test(cls + " " + role);
   };
 
+  // نطاقُ المشغّل وأدواتُه — نسخةٌ مبسّطة: المقطعُ في عالم الصفحة فلا يبلغ دوالَّنا
+  const PLAYER_CONTROL_SELECTOR_LITE =
+    'button,[role="button"],a[href],[role="slider"],input[type="range"],[aria-valuenow],progress';
+  const playerScopeLite = (video) => {
+    const known = video.closest(KNOWN_PLAYER_WRAPPER_SELECTOR);
+    if (known) return known;
+    let out = null, el = video.parentElement;
+    for (let i = 0; i < FS_CONTAINER_MAX_DEPTH && el && el !== document.body; i++) {
+      if (looksLikePlayer(el)) out = el;
+      el = el.parentElement;
+    }
+    return out;
+  };
+  const scopeShowsOwnControlsLite = (scope) => {
+    if (!scope) return false;
+    for (const el of scope.querySelectorAll(PLAYER_CONTROL_SELECTOR_LITE)) {
+      if (el.closest && el.closest(".vzWrap")) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) return true;
+    }
+    return false;
+  };
+
   const nearestPlayerAncestor = (video) => {
     let el = video && video.parentElement;
     for (let i = 0; i < FS_CONTAINER_MAX_DEPTH && el && el !== document.body && el !== document.documentElement; i++) {
@@ -89,12 +112,38 @@
     return null;
   };
 
+  // #140 — نسخةُ الشرط الثالث. **نسخةٌ تتخلّف تطبع حاويةً لم يعد المنتَجُ يختارها**،
+  // ويحرسها tools/test-fs-report-sync.js كما يحرس السكور.
+  const isOwnElement = (el) => !!(el && el.closest && el.closest(".vzWrap"));
+  const hostControlsLostBy = (video, container) => {
+    if (!video || !container) return false;
+    let el = video.parentElement;
+    for (let i = 0; i < FS_CONTAINER_MAX_DEPTH && el &&
+         el !== document.body && el !== document.documentElement; i++) {
+      const found = el.querySelectorAll("button, [role='button'], input[type='range']");
+      for (const ctrl of found) {
+        if (isOwnElement(ctrl)) continue;
+        if (!container.contains(ctrl)) return true;
+      }
+      el = el.parentElement;
+    }
+    return false;
+  };
+
+  // #140ج — نسخةُ فصلِ صنفِ ضوابط المتصفّح، ويحرسها test-fs-report-sync
+  const videoOwnsBrowserControls = (v) => !!v && v.controls === true &&
+    !scopeShowsOwnControlsLite(playerScopeLite(v));
+
   const pickContainer = (video) => {
     const known = video.closest(KNOWN_PLAYER_WRAPPER_SELECTOR);
     if (known && known.requestFullscreen) return { el: known, via: "known-wrapper" };
 
+    if (videoOwnsBrowserControls(video)) return { el: video, via: "browser-controls (#140ج)" };
+
     const nearest = nearestPlayerAncestor(video);
-    if (nearest && nearest.requestFullscreen) return { el: nearest, via: "nearest-player (#58)" };
+    if (nearest && nearest.requestFullscreen && !hostControlsLostBy(video, nearest)) {
+      return { el: nearest, via: "nearest-player (#58)" };
+    }
 
     const videoRect = video.getBoundingClientRect();
     const videoArea = Math.max(1, videoRect.width * videoRect.height);

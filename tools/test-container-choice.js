@@ -29,7 +29,10 @@ const REPORT = fs.existsSync("tools/report-fullscreen-bug.js")
   ? fs.readFileSync("tools/report-fullscreen-bug.js", "utf8") : "";
 const PICK = slice("content.js", "// ── البند #58: تعريف واحد", "// Selectors for sites that expose");
 const KNOWN = slice("content.js", "const KNOWN_PLAYER_WRAPPER_SELECTOR", "const zoneContainerCache");
-const READY = !!(PICK && KNOWN);
+// #140 — البوّابةُ الثالثة تنادي `isOwnElement`، **وهي خارج شريحة #58** —
+// فتُحمَّل الدالّةُ الحقيقية لا بديلٌ عنها (بديلٌ يُصحّح الاختبارَ لا الكود).
+const OWN = slice("content.js", "function isOwnElement", "function makeKeyStepAdapter");
+const READY = !!(PICK && KNOWN && OWN);
 
 let pass = 0, fail = 0;
 const check = (name, cond, extra) => cond
@@ -54,8 +57,27 @@ function build(spec, scale) {
         width: r[0], height: r[1], left: r[2] ?? 0, top: r[3] ?? 0,
         right: (r[2] ?? 0) + r[0], bottom: (r[3] ?? 0) + r[1]
       }),
-      __name: s.name
+      controls: !!s.controls,
+      __name: s.name,
+      __ctrls: []
     };
+  });
+  // ضوابطُ المضيف: عقدٌ بسيطة تحمل ما يقرؤه المحدِّد وما تقرؤه `isOwnElement`
+  spec.forEach((sp, i) => {
+    const total = (sp.ctrls || 0) + (sp.ownCtrls || 0);
+    for (let k = 0; k < total; k++) {
+      const mine = k >= (sp.ctrls || 0);   // #141 — أزرارُنا تحمل صنفَنا
+      // #140ج — **مستطيلٌ غير صفريّ**: `isVisibleEl` تقرؤه، وبلا مستطيلٍ ترمي
+      const btn = { nodeType: 1, tagName: "BUTTON", className: mine ? "vzSpeedBtn" : "", id: "",
+                    parentElement: nodes[i],
+                    getBoundingClientRect: () => ({ width: 40, height: 32, left: 0, top: 0, right: 40, bottom: 32 }) };
+      btn.matches = (sel) => sel.split(",").some((x) => x.trim() === "button");
+      btn.closest = (sel) => {
+        for (let q = btn; q; q = q.parentElement) if (q.matches && q.matches(sel)) return q;
+        return null;
+      };
+      nodes[i].__ctrls.push(btn);
+    }
   });
   for (let i = 0; i < nodes.length - 1; i++) nodes[i].parentElement = nodes[i + 1];
   const sels = (sel) => sel.split(",").map((x) => x.trim()).filter(Boolean);
@@ -77,6 +99,15 @@ function build(spec, scale) {
       return null;
     };
     n.querySelector = () => ({});   // كل سلف فيه أزرار — كما قِيس على d.tube
+    // ⭐ #140 — **ضوابطُ المضيف تُصرَّح في المواصفة ولا تُحاكى**: `ctrls: n` تعني
+    // «هذا العنصر يملك n ضابطاً». **وبدون هذا لا يستطيع الحارسُ أن يرى البوّابة
+    // الثالثة أصلاً** — و`querySelectorAll` غيرُ معرَّفةٍ تعني بوّابةً لا تُشغَّل.
+    n.contains = (x) => { for (let p = x; p; p = p.parentElement) if (p === n) return true; return false; };
+    n.querySelectorAll = () => {
+      const out = [];
+      for (const m of nodes) if (n.contains(m)) out.push(...m.__ctrls);
+      return out;
+    };
   }
   return nodes;
 }
@@ -93,9 +124,12 @@ function load(spec, scale) {
     createElement: () => ({ id: "", textContent: "" }),
     querySelectorAll: () => []
   };
-  const ctx = { document: doc, console };
+  // ⛔⭐ **`getComputedStyle` تُقدَّم صراحةً** — وبدونها يبتلع `isVisibleEl` رميتَه
+  // ويُرجع `false` **دائماً**، فيخضرّ فحصُ الصنف الثالث عن عمى لا عن حكم.
+  const ctx = { document: doc, console,
+    getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1" }) };
   vm.createContext(ctx);
-  vm.runInContext(KNOWN + "\n" + PICK, ctx);
+  vm.runInContext(OWN + "\n" + KNOWN + "\n" + PICK, ctx);
   return { ctx, video: nodes[0], nodes };
 }
 
@@ -343,6 +377,126 @@ console.log("\n[9] البند #59 كومِت ب — المسار الاحتيا�
     /scored\[0\]\?\.el\|\|video;/.test(CONTENT.replace(/\s+/g, "")));
   check("والتعليق يذكر شرط دخول المسار",
     /رُفض كل المرشّحين أو كانت مستطيلاتهم صفرية/.test(CONTENT));
+}
+}
+
+if (READY) {
+console.log("\n[10] #140 — ما نُكبّره لا يُخرج أدواتِ المضيف من الرسم");
+{
+  // ⭐ **البنيةُ الكاسرة**: الشريطُ **خارج** أضيقِ حاويةٍ يملؤها الفيديو —
+  // بصمةُ فيميو المقيسة في CLAUDE.md منذ #94 (`div.vp-video` بصفر ضابط،
+  // والضوابطُ مستوىً أعلى). ⚠️ **والفارقُ عن d.tube سطرٌ واحد: هناك الشريطُ داخلها.**
+  const OUTSIDE = [
+    { name: "VIDEO", tag: "VIDEO", cls: "", rect: (s) => [960 * s, 540 * s] },
+    { name: "DIV.vp-video", cls: "vp-video", rect: (s) => [960 * s, 540 * s] },
+    { name: "DIV.player", cls: "player", rect: (s) => [960 * s, 588 * s], ctrls: 12 },
+    { name: "BODY", tag: "BODY", cls: "", rect: (s) => [1440 * s, 900] }
+  ];
+  const INSIDE = [
+    { name: "VIDEO", tag: "VIDEO", cls: "", rect: (s) => [960 * s, 540 * s] },
+    { name: "DIV.vp-video", cls: "vp-video", rect: (s) => [960 * s, 540 * s], ctrls: 12 },
+    { name: "DIV.player", cls: "player", rect: (s) => [960 * s, 588 * s] },
+    { name: "BODY", tag: "BODY", cls: "", rect: (s) => [1440 * s, 900] }
+  ];
+  // ⭐ **#141 — أزرارُنا ليست أدواتِ مضيف**: البنيةُ نفسُها والضوابطُ ضوابطُنا
+  const MINE = [
+    { name: "VIDEO", tag: "VIDEO", cls: "", rect: (s) => [960 * s, 540 * s] },
+    { name: "DIV.vp-video", cls: "vp-video", rect: (s) => [960 * s, 540 * s] },
+    { name: "DIV.player", cls: "player", rect: (s) => [960 * s, 588 * s], ownCtrls: 12 },
+    { name: "BODY", tag: "BODY", cls: "", rect: (s) => [1440 * s, 900] }
+  ];
+
+  const out = load(OUTSIDE, 1);
+  // ⛔⭐ **حمرةٌ عن السبب لا عن العَرَض** (درسُ #109): على النصّ السابق من السجلّ
+  // لا وجودَ للبوّابة، **فالنداءُ يرمي `TypeError`** — **ورميةٌ تقول «سقط» ولا
+  // تقول «البوّابةُ غائبة»**. ⇒ **يُقاس وجودُها أوّلاً ويُسمّى الغياب.**
+  if (typeof out.ctx.hostControlsLostBy !== "function") {
+    check("بوّابةُ #140 (`hostControlsLostBy`) موجودةٌ في content.js", false, "غائبة");
+    fail += 9;   // بقيّةُ فحوص القسم لا تُشغَّل، ولا تُحسب نجاحاً
+    console.log("  ⛔ بقيّةُ [10] لا تُشغَّل: لا بوّابةَ تُقاس.");
+  } else {
+  check("بوّابةُ #140 (`hostControlsLostBy`) موجودةٌ في content.js", true);
+  const nearOut = out.ctx.nearestPlayerAncestor(out.video);
+  check("الحكم القاطع ما زال يجد الحاوية الضيّقة", nearOut && nearOut.__name === "DIV.vp-video",
+    nearOut && nearOut.__name);
+  check("والبوّابةُ تقول: اختيارُه يُخرج أدواتِ المضيف",
+    out.ctx.hostControlsLostBy(out.video, nearOut) === true);
+  const pickOut = out.ctx.pickFullscreenContainer(out.video);
+  check("فيُستأنَف السكور ويختار الحاوية التي تحوي الشريط",
+    pickOut && pickOut.__name === "DIV.player", pickOut && pickOut.__name);
+  check("ولا يُفقد ضابطٌ واحد بالمختار",
+    out.ctx.hostControlsLostBy(out.video, pickOut) === false);
+  const pickOut2 = load(OUTSIDE, 0.6).ctx.pickFullscreenContainer(load(OUTSIDE, 0.6).video);
+  check("وحتميّ على المقاسين (شرط قبول المالك في #58)",
+    pickOut2 && pickOut2.__name === "DIV.player", pickOut2 && pickOut2.__name);
+
+  // ⛔ **الشاهد السالب — وهو ما يمنع بوّابةً تُطلق على كل شيء:** الشريطُ داخل
+  // الحاوية الضيّقة ⇒ **لا تُطلَق، والحكمُ القاطع يبقى كما كان** (شكلُ d.tube).
+  const ins = load(INSIDE, 1);
+  const nearIn = ins.ctx.nearestPlayerAncestor(ins.video);
+  check("سالب: شريطٌ داخل ما يملؤه الفيديو ⇒ لا فقد",
+    ins.ctx.hostControlsLostBy(ins.video, nearIn) === false);
+  const pickIn = ins.ctx.pickFullscreenContainer(ins.video);
+  check("وسالب: والحكم القاطع يبقى صاحبَ القرار",
+    pickIn === nearIn, pickIn && pickIn.__name);
+
+  // ⛔ **#141 — ولا يُحسب زرُّنا أداةَ مضيف**: بوّابةٌ تعدّ طبقتَنا تقيس نفسها
+  const mine = load(MINE, 1);
+  const nearMine = mine.ctx.nearestPlayerAncestor(mine.video);
+  check("سالب (#141): ضوابطُ الصفحة كلُّها لنا ⇒ لا فقد",
+    mine.ctx.hostControlsLostBy(mine.video, nearMine) === false);
+  check("والحكمُ القاطع يبقى صاحبَ القرار",
+    mine.ctx.pickFullscreenContainer(mine.video) === nearMine);
+
+  // **والمدى مدى الحكم القاطع نفسِه** — مسحٌ أوسعُ يُحمّر على ما لا يُغيّره
+  check("المسحُ يستعمل حدَّ العمق نفسَه",
+    /for\(leti=0;i<FS_CONTAINER_MAX_DEPTH&&el&&/.test(CONTENT.replace(/\s+/g, "")));
+  }
+}
+}
+
+if (READY) {
+console.log("\n[11] #140ج — ضوابطُ المتصفّح صنفٌ يُفصل قبل الصعود");
+{
+  // ⭐⭐ **متغيّرٌ واحد لا غير: `video.controls`.** البنيةُ نفسُها، والأزرارُ نفسُها
+  // (أزرارُ صفحةٍ حول المشغّل: Save · Try · HD…) — **والحكمُ ينقلب.**
+  const spec = (controls) => ([
+    { name: "VIDEO", tag: "VIDEO", cls: "", controls, rect: (s) => [800 * s, 450 * s] },
+    { name: "DIV.shell", cls: "video-shell", rect: (s) => [800 * s, 450 * s] },
+    { name: "DIV.page", cls: "page", rect: (s) => [900 * s, 700 * s], ctrls: 5 },
+    { name: "BODY", tag: "BODY", cls: "", rect: (s) => [1440 * s, 900] }
+  ]);
+  const withC = load(spec(true), 1);
+  const nearC = withC.ctx.nearestPlayerAncestor(withC.video);
+  check("الحكم القاطع يجد غلافَ الفيديو", nearC && nearC.__name === "DIV.shell", nearC && nearC.__name);
+  check("وضوابطُ المتصفّح ⇒ لا شيءَ يُفقد بالصعود",
+    withC.ctx.hostControlsLostBy(withC.video, nearC) === false);
+  const pickC = withC.ctx.pickFullscreenContainer(withC.video);
+  // ⭐ **الفيديو نفسُه هو الهدف** (بنصّ المالك): ضوابطُه داخله، فلا صعودَ يشتري شيئاً
+  // — **ولا صفحةٌ فوقه**، وهو العطبُ الذي رآه على شترستوك.
+  check("فالفيديو نفسُه هو المختار", pickC === withC.video, pickC && pickC.__name);
+  check("⛔ ولا صفحةٌ فوقه", !pickC || pickC.__name !== "DIV.page", pickC && pickC.__name);
+
+  // ⛔ **والسالب هو ما يجعل الموجبَ خبراً**: بلا `controls` تُقرأ أزرارُ الصفحة
+  // أدواتِ مضيفٍ تُفقد ⇒ **يصعد إلى الصفحة** — وهو العطبُ الذي رآه المالك.
+  const noC = load(spec(false), 1);
+  const nearN = noC.ctx.nearestPlayerAncestor(noC.video);
+  check("سالب: بلا ضوابط متصفّح ⇒ البوّابةُ تُطلق",
+    noC.ctx.hostControlsLostBy(noC.video, nearN) === true);
+  // ⛔⭐⭐ **وحدُّ هذا الملفّ يُكتب هنا لا يُسكت عنه:** الشجرةُ المزيّفة تُعطي
+  // **كلَّ سلفٍ أزراراً** (`querySelector` ثابتةُ الصدق — نموذجُ d.tube المقيس)
+  // ⇒ **فأثرُ البوّابة على اختيار السكور لا يُقاس هنا**، والسكورُ يُبقي الغلافَ
+  // في الحالين. **والمقيسُ هنا حكمُ الصنف وحدَه، وأثرُه في `repro-58` (بنية ك).**
+  // ⚠️ **وأوّلُ صياغةٍ ادّعت «فيصعد إلى الصفحة» فسقطت بالقياس** — **ومعها فحصٌ
+  // قارَن كائنين من سياقين (`pickC !== pickN`) فكان أخضرَ دائماً بلا معنى.**
+  check("⇒ والمتغيّرُ واحد وحدَه: الحكمان متعاكسان على البنية نفسِها",
+    withC.ctx.hostControlsLostBy(withC.video, nearC) === false &&
+    noC.ctx.hostControlsLostBy(noC.video, nearN) === true);
+
+  // **وشرطُ الصنف يُقرأ من الدالّة لا من نصٍّ**: زوالُه يُحمّر السطر أعلاه
+  check("الشرطُ في content.js بحروفه",
+    /video\.controls===true&&!scopeShowsOwnControls\(playerScopeForVideo\(video\)\)/
+      .test(CONTENT.replace(/\s+/g, "")));
 }
 }
 
