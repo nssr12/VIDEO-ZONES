@@ -767,6 +767,7 @@ const TIMING_CONTROLS = {
   idleDuration:       (s, el) => { s.idle = { ...(s.idle || {}), ms: Number(el.value) }; },
   zoneHintEnabled:    (s, el) => { s.overlay.hintEnabled = el.checked; },
   speedBadgeEnabled:  (s, el) => { s.overlay.speedBadge = el.checked; },
+  hostBarEnabled:     (s, el) => { s.overlay.hostBar = el.checked; },
   // ⛔ **خرج الثلاثة بـ#118**: مفتاحا الزرّين **صارا `on` في قائمة `barButtons`**
   // (`persistBarButtons`)، **وسرعةُ النقرة انتقلت إلى قسم يوتيوب** — **نقلُ موضعٍ
   // لا هجرة**، وكتابتُها في `persistHostControl` أدناه.
@@ -791,6 +792,8 @@ function timingValueOf(s, id) {
   if (id === "idleDuration") return Math.max(VZ_IDLE_MIN_MS, Number(s.idle?.ms) > 0 ? Number(s.idle.ms) : 2000);
   if (id === "zoneHintEnabled") return o.hintEnabled !== false;
   if (id === "speedBadgeEnabled") return o.speedBadge === true;
+  // #142 — ميزةٌ جديدة ⇒ افتراضُها مطفأ، والقراءةُ بالشكل نفسِه
+  if (id === "hostBarEnabled") return o.hostBar === true;
   if (id === "speedButtonEnabled") return o.speedButton === true;
   if (id === "filterButtonEnabled") return o.filterButton === true;
   if (id === "speedButtonPreset") return Number(o.speedButtonPreset) > 0 ? Number(o.speedButtonPreset) : 2;

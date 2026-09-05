@@ -3478,6 +3478,165 @@ IDLE_CONSUMERS.filterBtn = {
   onDisabled: () => { setFilterPanelOpen(false); setFilterBtnShown(false); }
 };
 
+// ── ⭐⭐ #142 — شريطُ تقدّمٍ لمضيفٍ بلا أدوات (المرحلة الأولى) ────────────────
+// **الحاجةُ مقيسةٌ عند المالك 2026-09-05**: تيك توك وإنستقرام **لا شريطَ تقدّمٍ
+// فيهما ولا زرّ** — **ولا سبيلَ إلى التنقّل في الفيديو إطلاقاً.**
+// ✅ **والإمكانيةُ قِيست قبل السطر الأوّل** (مِجَسّ في متصفّح المالك، تيك توك):
+// المدّة **135.39** منتهية · ونافذةُ التنقّل **1** · **والكتابةُ في الموضع تحرّكه**
+// · **وطبقتُنا حاضرةٌ فوقه سلفاً** · **وصفرُ أزرارٍ في أربعة مستوياتٍ حول الفيديو.**
+//
+// ⛔⭐⭐ **والقرارُ المعماريّ الذي سبق البناء (قرار المالك 2026-09-05):**
+// قاعدةُ #94 (قرار 63) تقول **«نطاقُ مشغّلٍ موجودٌ ولا يُظهر أدواته ⇒ نمتنع، لأن
+// المضيفَ هو من أخفاها»** — **وتيك توك هذا الوصفُ بحرفه.** ⇒ **فاختير المفتاحُ
+// الصريح على تعديل القاعدة**: **السببُ الموجبُ صار طلبَ المستخدم لا حدسَنا**،
+// **والقاعدةُ تبقى بحرفها لأنها عن اجتهادنا نحن لا عن اختياره.**
+//
+// ⛔⭐ **وشرطُ المالك «ألّا يتضرّر يوتيوب» مُنفَّذٌ بنيوياً لا نيّةً — بضمانتين:**
+//   **(١)** بوّابةُ المضيف تُخرجه صراحةً — شرطٌ لا يُقرأ ولا يُقاس.
+//   **(٢)** **وحتى لو زالت الأولى**: الشرطُ الموجب «فيديوٌ لا يملك أدواته»،
+//       **ويوتيوب يُظهر أدواته** ⇒ **فالشريطُ لا يُرسم عليه أصلاً.**
+// ⇒ ⭐⭐ **وهو وميزةُ #94 نقيضان تامّان يتقاسمان مُحدِّداً واحداً ومزلاجَه**:
+// **حيث يمتنع زرُّ السرعة يعمل هذا، وحيث يعمل يمتنع هذا** — **فلا حكمَ ثانٍ
+// يتباعد، ومزلاجُ #94 (الموجبُ يُثبَّت) يمنع أن يُرسم شريطُنا فوق مشغّلٍ خبا
+// شريطُه بالسكون.**
+//
+// ⚠️ **والمرحلةُ الأولى شريطٌ بلا أزرار — بسببٍ مكتوب لا باختصار:** الأزرارُ
+// تحتاج أيقوناتٍ من **سجلّ المنتَج**، **ولا تُنسخ من سجلّ المرآة** — و#145 مقيسٌ:
+// ثلاثةُ حرّاسٍ أحمرّت على ذلك. **وصفُّ أزرارٍ في طبقتنا يفتح #119** (زرّانا
+// يتراكبان فيها). ⇒ **فالمرحلتان مفصولتان، وهذي تسدّ ما لا يملكه المستخدمُ
+// أصلاً: التنقّل.**
+// ⛔⭐⭐ **ولا يُقرأ المؤشّرُ في هذي الدالّة — والسببُ مقيسٌ لا احترازيّ:**
+// **`enabled()` هي شرطُ تسلّحِ محرّك السكون، ويُحسب مرّةً عند تحميل الإعدادات**
+// — **قبل أن يتحرّك المؤشّرُ أصلاً.** ⇒ **فشرطٌ يقرأ الفيديوَ تحت المؤشّر يُخرج
+// `false` وقتها، فلا يتسلّح المحرّك، فلا تصل الحركةُ إليه، فلا يُبنى الشريطُ أبداً.**
+// **وقِيس: `hostBarActive()` تُرجع `true` بعد الحركة، والطبقةُ غيرُ مبنيّة** —
+// **حكمٌ صادقٌ في لحظة القياس عن آلةٍ ماتت قبله.**
+// ⇒ ⭐ **فالحكمُ على الفيديو انتقل إلى `setHostBarShown` — «إخفاءٌ لا `return`»،
+// وهو شكلُ #94 بحرفه** (`setSpeedBtnShown` تفعل الشيء نفسَه للسبب نفسِه).
+function hostBarEnabled() {
+  if (!extensionActive()) return false;              // #64: الرئيسي ثم الحظر
+  if (!overlaySettings.hostBar) return false;        // مفتاحٌ صريح، وافتراضُه مطفأ
+  if (isYouTubeFamilyHost()) return false;           // ⛔ شرطُ المالك، بنيويّاً
+  return true;
+}
+
+// **الزمنُ يُكتب كما يكتبه المشغّلون**: بلا ساعةٍ ما لم تلزم
+function hostBarTime(t) {
+  if (!isFinite(t) || t < 0) t = 0;
+  const sec = Math.floor(t % 60), min = Math.floor(t / 60) % 60, hr = Math.floor(t / 3600);
+  const mm = hr ? String(min).padStart(2, "0") : String(min);
+  return (hr ? hr + ":" : "") + mm + ":" + String(sec).padStart(2, "0");
+}
+
+// **يُنادى من حلقة الرسم القائمة وحدها** — ولا مؤقّتَ ثانٍ: الحلقةُ تقف بنفسها
+// حين لا شيءَ معروض (شرطُ anySubElementVisible)، فالكلفةُ صفرٌ عند الإخفاء.
+function updateHostBar() {
+  if (!vzHostBar || vzHostBar.classList.contains("vzHidden")) return;
+  const video = vzOverlayVideo;
+  if (!video) return;
+  const cur = Number(video.currentTime) || 0;
+  const dur = Number(video.duration);
+  // ⚠️ **«مدّةٌ منتهية» شرطُ القضيب لا شرطُ الوقت** — والبثُّ يعرض وقتَه ولا قضيبَ
+  // له: **قضيبٌ بلا نهايةٍ معلومة يرسم موضعاً لا معنى له** — إثباتٌ كاذب مرسوماً.
+  const known = isFinite(dur) && dur > 0;
+  vzHostBar.setAttribute("data-vz-live", known ? "0" : "1");
+  if (vzHbTime) {
+    vzHbTime.textContent = known
+      ? hostBarTime(cur) + " / " + hostBarTime(dur)
+      : hostBarTime(cur);
+  }
+  if (!known) return;
+  const pct = Math.max(0, Math.min(1, cur / dur)) * 100;
+  if (vzHbFill) vzHbFill.style.width = pct + "%";
+  if (vzHbKnob) vzHbKnob.style.left = pct + "%";
+  if (vzHbBuf) {
+    let end = 0;
+    try {
+      const r = video.buffered;
+      if (r && r.length) end = r.end(r.length - 1);
+    } catch { end = 0; }
+    vzHbBuf.style.width = (Math.max(0, Math.min(1, end / dur)) * 100) + "%";
+  }
+}
+
+let vzHbDragging = false;
+
+// ⛔⭐⭐ **والتنقّل يمرّ بـseek القائمة ولا مسارَ ثانٍ** — وهي تحمل قيوداً مقيسةً
+// بثمنٍ طويل: نافذةُ التنقّل · ورفضُ التقديم حين تكون المدّةُ غيرَ منتهية
+// (تجمّدُ تويتش المقيس في تشغيلتين). ⇒ **فالهدفُ يُحوَّل إلى فرقٍ وتُنادى هي** —
+// **ومسارٌ ثانٍ للتنقّل يعني قيوداً تتباعد.**
+function hostBarSeekToX(clientX) {
+  const video = vzOverlayVideo;
+  if (!video || !vzHbTrack) return;
+  const r = vzHbTrack.getBoundingClientRect();
+  if (!(r.width > 0)) return;                        // مستطيلٌ صفريّ لا يُقاس (قرار 22)
+  const dur = Number(video.duration);
+  if (!isFinite(dur) || !(dur > 0)) return;          // بثٌّ ⇒ لا سحب، والقضيبُ مخفيٌّ أصلاً
+  const ratio = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+  seek(video, ratio * dur - video.currentTime);
+  updateHostBar();
+}
+
+function hostBarPointerMove(e) {
+  if (!vzHbDragging) return;
+  e.preventDefault();
+  e.stopPropagation();
+  hostBarSeekToX(e.clientX);
+  markIdleActivity();      // **السحبُ نشاط**: فلا يختفي الشريطُ تحت الإصبع
+}
+
+function hostBarPointerUp(e) {
+  if (!vzHbDragging) return;
+  vzHbDragging = false;
+  window.removeEventListener("pointermove", hostBarPointerMove, true);
+  window.removeEventListener("pointerup", hostBarPointerUp, true);
+  window.removeEventListener("pointercancel", hostBarPointerUp, true);
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  markIdleActivity();
+}
+
+function hostBarPointerDown(e) {
+  if (!hostBarEnabled()) return;
+  if (e.button !== undefined && e.button !== 0) return;   // اليسرى وحدها
+  e.preventDefault();
+  e.stopPropagation();
+  vzHbDragging = true;
+  window.addEventListener("pointermove", hostBarPointerMove, true);
+  window.addEventListener("pointerup", hostBarPointerUp, true);
+  window.addEventListener("pointercancel", hostBarPointerUp, true);
+  hostBarSeekToX(e.clientX);
+  markIdleActivity();
+}
+
+function setHostBarShown(on) {
+  let video = null;
+  if (on && !hostBarEnabled()) on = false;
+  if (on) {
+    video = speedBtnVideo();
+    if (!video) return;                 // لا فيديو ⇒ لا شريط، وهو الصواب
+    // ⭐ **الشرطُ الموجب: مضيفٌ لا يُظهر أدواته** — نقيضُ شرط #94 بحرفه.
+    // ⚠️ **إخفاءٌ لا `return`** (علّةُ #94 نفسُها): المؤشّرُ ينتقل من مضيفٍ بلا
+    // أدوات إلى آخرَ له أدواتُه **بلا أن يمرّ سكون**، فلو خرجنا صامتين لبقي
+    // شريطُنا معروضاً فوق مشغّلٍ له شريطُه.
+    if (videoOwnsControls(video)) on = false;
+    else ensureVideoOverlay(video);
+  }
+  if (!vzHostBar) return;
+  vzHostBar.classList.toggle("vzHidden", !on);
+  if (on) { updateHostBar(); startOverlayTracking(); }
+}
+
+// **يتبع السكون كأخواته** — ⚠️ **ويمتنع ما دام الإصبعُ يسحب** (شكلُ لوحة #108):
+// **المستهلكُ يُعلن، والمحرّكُ يسأل ولا يعرف لماذا.**
+IDLE_CONSUMERS.hostBar = {
+  enabled: hostBarEnabled,
+  target: () => vzHostBar,
+  suspended: () => vzHbDragging,
+  onActive: () => setHostBarShown(true),
+  onIdle: () => setHostBarShown(false),
+  onDisabled: () => setHostBarShown(false)
+};
+
 // **الأحداث فوق الزرّ**: مستمعونا في `window`+`capture` يخرجون بالعلامة البنيوية
 // (`videoFromStack`)، ثمّ يصل الحدث إلى الزرّ فيُنفّذ أمرَه — فلا تسابق ولا
 // اعتماد على ترتيب التسجيل.
@@ -3659,6 +3818,9 @@ async function loadOverlaySettings(pre) {
     // المتناظرة تُرجعه حين لا مفتاحَ ولا قديم). ⛔ **ولا `!!` هنا**: القيمةُ نصٌّ.
     progressBarMode: progressBarModeOf(o),
     speedButtonPreset: Number(o.speedButtonPreset) > 0 ? Number(o.speedButtonPreset) : 2,
+    // #142 — **ميزةٌ جديدة ⇒ `!!x` لا `!== false`** (شكلُ #71): من لم يفتح
+    // الإعدادات قطُّ لا يتغيّر عنده حرف.
+    hostBar: !!o.hostBar,
     // ── ⛔⭐⭐ #120 — **الإسقاطُ يحمل القائمةَ محسوبةً مرّةً، ولا مفتاحَ زرٍّ مفرد**
     // **العطبُ الذي وُلد منه هذا السطر (2026-08-07، عند المالك):** كان هنا
     // `speedButton: !!o.speedButton` و`filterButton: !!o.filterButton`،
@@ -3916,6 +4078,42 @@ const OVERLAY_CSS = `
        الشاشة هو <video> نفسه. أنماط المتصفح الافتراضية لـ [popover] تفرض
        inset:0 و margin:auto وإطاراً وحشواً وخلفية — تُصفَّر كلها هنا فيبقى
        شكل الـ overlay كما هو بالضبط. left/top/width/height سطرية فتغلب. */
+    /* ── ⭐⭐ #142 — شريطُ تقدّمٍ لمضيفٍ بلا أدوات ──────────────────────────
+       ⚠️ **pointer-events:auto على الشريط وحده لا على .vzWrap** — كما في .vzBtn:
+       الطبقةُ تبقى شفّافةً للأحداث، والشريطُ عنصرٌ يملك حدثَه بالوسم البنيويّ.
+       ⚠️ **والمقاسُ من ارتفاعِ ما يُسحَب لا من ذوقٍ**: مساحةُ السحب 16px والقضيبُ
+       4px — فحافّةٌ حادّةٌ بارتفاع 4 عطبٌ في الاستعمال (وهو درسُ #106 نفسُه).
+       ⛔ ولا علامةَ اقتباسٍ خلفية هنا: قالبٌ نصّيّ. */
+    .vzHostBar{
+      position:absolute; left:0; right:0; bottom:0;
+      display:flex; align-items:center; gap:10px;
+      padding:10px 12px 12px; box-sizing:border-box;
+      background:linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,0));
+      pointer-events:auto; direction:ltr; cursor:default;
+      font:600 12px/1 Arial, sans-serif; color:#fff;
+      user-select:none; -webkit-user-select:none;
+      text-shadow:0 1px 3px rgba(0,0,0,.8);
+    }
+    .vzHostBar .vzHbTime{ flex:none; font-variant-numeric:tabular-nums; min-width:82px; }
+    .vzHostBar .vzHbTrack{
+      position:relative; flex:1 1 auto; height:16px; cursor:pointer;
+      display:flex; align-items:center; touch-action:none;
+    }
+    .vzHostBar .vzHbRail,
+    .vzHostBar .vzHbBuf,
+    .vzHostBar .vzHbFill{
+      position:absolute; left:0; height:4px; border-radius:2px; pointer-events:none;
+    }
+    .vzHostBar .vzHbRail{ right:0; background:rgba(255,255,255,.3); }
+    .vzHostBar .vzHbBuf{ width:0; background:rgba(255,255,255,.5); }
+    .vzHostBar .vzHbFill{ width:0; background:#fff; }
+    .vzHostBar .vzHbKnob{
+      position:absolute; left:0; width:12px; height:12px; margin-left:-6px;
+      border-radius:50%; background:#fff; pointer-events:none;
+      box-shadow:0 1px 4px rgba(0,0,0,.6);
+    }
+    /* **مدّةٌ مجهولة (بثّ) ⇒ لا يُعرض قضيبٌ يكذب** — الوقتُ وحدَه */
+    .vzHostBar[data-vz-live="1"] .vzHbTrack{ visibility:hidden; }
     .vzWrap[popover]{
       inset:auto; margin:0; border:0; padding:0;
       background:transparent; color:inherit; overflow:visible;
@@ -3942,6 +4140,9 @@ let vzCopyBtn = null;            // #134 — زرّ نسخ الرابط
 let vzCopyBadge = null;          // #134 — وتأكيدُه، بقناةٍ في السجلّ الواحد
 let vzFilterBtn = null;          // #108 — زرّ الفلاتر ولوحتُه
 let vzFilterPanel = null;
+// #142 — شريطُ التقدّم لمضيفٍ بلا أدوات، وأجزاؤه
+let vzHostBar = null, vzHbTrack = null, vzHbFill = null, vzHbBuf = null,
+    vzHbKnob = null, vzHbTime = null;
 let vzOverlayHost = null;        // parent it's currently attached to (body or fullscreen el)
 let vzTrackRafId = null;
 
@@ -3968,6 +4169,10 @@ function buildOverlayElement() {
     <div class="vzBtn vzCopyBtn vzHidden" role="button" tabindex="-1" aria-label="نسخ رابط الفيديو" data-vz-owns="wheel click">
       ${vzSvg(VZ_OWN_ICONS["copy-link"], { cls: "vzCopyIcon", mode: "fill" })}</div>
     <div class="vzCopyMsg vzHidden"></div>
+    <div class="vzHostBar vzHidden" data-vz-owns="wheel click">
+      <div class="vzHbTime">0:00</div>
+      <div class="vzHbTrack" role="slider" aria-label="موضع التشغيل"><div class="vzHbRail"></div><div class="vzHbBuf"></div><div class="vzHbFill"></div><div class="vzHbKnob"></div></div>
+    </div>
   `;
   applyGridVars(el); // يزرع الأرقام بـ textContent بعد بناء الخلايا
   return el;
@@ -4088,6 +4293,7 @@ function startOverlayTracking() {
       return;
     }
     positionOverlayToVideo();
+    updateHostBar();   // #142 — في الحلقة القائمة، ولا مؤقّتَ ثانٍ ولا rAF ثانٍ
     vzTrackRafId = requestAnimationFrame(tick);
   };
   vzTrackRafId = requestAnimationFrame(tick);
@@ -4143,6 +4349,8 @@ function teardownOverlay() {
   vzCopyBadge = null;
   vzFilterBtn = null;
   vzFilterPanel = null;
+  vzHostBar = null; vzHbTrack = null; vzHbFill = null; vzHbBuf = null;
+  vzHbKnob = null; vzHbTime = null;
   vzOverlayVideo = null;
   vzOverlayHost = null;
   if (vzTrackRafId != null) {
@@ -4225,6 +4433,14 @@ function ensureVideoOverlay(video) {
   vzCopyBtn = vzOverlay.querySelector(".vzCopyBtn");
   vzCopyBadge = vzOverlay.querySelector(".vzCopyMsg");
   vzCopyBtn?.addEventListener("click", copyBtnClick);
+  // #142 — الشريطُ يملك حدثَه على عنصره، ويُهدَم معه (كأخواته)
+  vzHostBar = vzOverlay.querySelector(".vzHostBar");
+  vzHbTrack = vzOverlay.querySelector(".vzHbTrack");
+  vzHbFill = vzOverlay.querySelector(".vzHbFill");
+  vzHbBuf = vzOverlay.querySelector(".vzHbBuf");
+  vzHbKnob = vzOverlay.querySelector(".vzHbKnob");
+  vzHbTime = vzOverlay.querySelector(".vzHbTime");
+  vzHbTrack?.addEventListener("pointerdown", hostBarPointerDown);
   vzFilterPanel = buildFilterPanel();
   vzOverlay.appendChild(vzFilterPanel);
   vzFilterPanel.addEventListener("wheel", filterPanelWheel, { passive: false });
@@ -4315,7 +4531,8 @@ const OVERLAY_PARTS = {
   filterBtn: () => vzFilterBtn,    // #108 — والسادسة والسابعة كذلك: السجلُّ يكفي
   copyBtn:   () => vzCopyBtn,      // #134 — الثامنة
   copyMsg:   () => vzCopyBadge,    // #134 — والتاسعة: تأكيدُ النسخ، بآلة الشارة نفسِها
-  filterPanel: () => vzFilterPanel
+  filterPanel: () => vzFilterPanel,
+  hostBar:   () => vzHostBar      // #142 — والعاشرة
 };
 
 // مؤقّتٌ **لكل قناة**: حقلٌ ساكن واحد كان يعني أن مؤقّت السرعة يُلغي مؤقّت الصوت
