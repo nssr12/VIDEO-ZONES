@@ -41,9 +41,22 @@ const PAGE = `<!doctype html><meta charset="utf-8">
 <script>
   var q = new URLSearchParams(location.search);
   var bar = document.getElementById("bar");
-  // بأدوات أو بلا أدوات — والمتغيّرُ واحد
-  if (q.get("ctrl") === "1") {
-    for (var i = 0; i < 8; i++) { var b = document.createElement("button"); b.textContent = "b" + i; bar.appendChild(b); }
+  var kind = q.get("ctrl");
+  // ⛔⭐⭐ **ثلاثُ حالاتٍ لا حالتان — والتفريقُ بينها هو البند** (#142ب):
+  //   "bar"  = شريطُ مشغّلٍ حقيقيّ: **فيه ما يُنقِّل** (منزلق) ⇒ نمتنع.
+  //   "feed" = أزرارُ خلاصة (إعجاب/تعليق/مشاركة): **أزرارٌ بلا تنقّل** ⇒ نرسم.
+  //   غيرُهما = بلا شيء ⇒ نرسم.
+  // ⭐ **والثانيةُ هي حالُ تيك توك وإنستقرام، وهي التي كانت تُقرأ «مضيفٌ له أدواته».**
+  if (kind === "bar") {
+    var sl = document.createElement("div");
+    sl.setAttribute("role", "slider");
+    sl.style.cssText = "height:6px;margin:19px 12px;background:#888;border-radius:3px";
+    bar.appendChild(sl);
+    for (var i = 0; i < 4; i++) { var b = document.createElement("button"); b.textContent = "b" + i; bar.appendChild(b); }
+  } else if (kind === "feed") {
+    bar.style.cssText = "position:absolute;right:8px;bottom:60px;left:auto;height:auto;background:none";
+    for (var j = 0; j < 4; j++) { var f = document.createElement("button"); f.textContent = "♥";
+      f.style.cssText = "display:block;width:40px;height:40px;margin:6px 0"; bar.appendChild(f); }
   } else { bar.remove(); }
 </script>`;
 
@@ -127,10 +140,11 @@ try {
   h = await launch(PORT, { withExtension: true, extra: ["--window-size=1440,900"] });
 
   for (const cell of [
-    { label: "موجب — مفتاحٌ مُشغَّل ومضيفٌ بلا أدوات", on: true, ctrl: 0, yt: false, expect: true },
-    { label: "سالب ١ — المفتاحُ مطفأ", on: false, ctrl: 0, yt: false, expect: false },
-    { label: "سالب ٢ — مضيفٌ يُظهر أدواته", on: true, ctrl: 1, yt: false, expect: false },
-    { label: "سالب ٣ — يوتيوب (والمفتاحُ مُشغَّل وبلا أدوات)", on: true, ctrl: 0, yt: true, expect: false }
+    { label: "موجب — مفتاحٌ مُشغَّل ومضيفٌ بلا أدوات", on: true, ctrl: "0", yt: false, expect: true },
+    { label: "سالب ١ — المفتاحُ مطفأ", on: false, ctrl: "0", yt: false, expect: false },
+    { label: "سالب ٢ — مضيفٌ له شريطٌ يُنقِّل (منزلق)", on: true, ctrl: "bar", yt: false, expect: false },
+    { label: "سالب ٣ — يوتيوب (والمفتاحُ مُشغَّل وبلا أدوات)", on: true, ctrl: "0", yt: true, expect: false },
+    { label: "⭐ موجب ٢ — أزرارُ خلاصةٍ بلا تنقّل (حالُ تيك توك وإنستقرام)", on: true, ctrl: "feed", yt: false, expect: true }
   ]) {
     const out = { label: cell.label, expect: cell.expect };
     const cfg = await configure(PORT, h.extensionId, SETTINGS(cell.on));
@@ -210,14 +224,16 @@ for (const r of rows) {
   }
   console.log("");
 }
-const pos = rows.find((r) => r.expect);
+const poss = rows.filter((r) => r.expect);
+const pos = poss[0];
 const negs = rows.filter((r) => !r.expect);
 const posOk = !!pos && pos.moved && pos.moved.shown === true && pos.seeked === true &&
-              pos.idle && pos.idle.shown === false;
+              pos.idle && pos.idle.shown === false &&
+              poss.every((r) => r.moved && r.moved.shown === true);
 const negOk = negs.every((r) => r.moved && r.moved.shown === false);
 console.log("── الشاهدان (قرار 26)");
-console.log("   موجب (يظهر · يُنقِّل · ويختفي بالسكون): " + (posOk ? "✅" : "❌"));
-console.log("   وسوالبُه الثلاثة (مطفأ · مضيفٌ بأدوات · يوتيوب): " + (negOk ? "✅" : "❌"));
+console.log("   موجبان (يظهر · يُنقِّل · يختفي بالسكون · ويبقى مع أزرار الخلاصة): " + (posOk ? "✅" : "❌"));
+console.log("   وسوالبُه الثلاثة (مطفأ · مضيفٌ له منزلق · يوتيوب): " + (negOk ? "✅" : "❌"));
 if (!(posOk && negOk)) {
   console.log("\n⛔ **لا يُقرأ من هذا رقمٌ عن الميزة حتى يخضرّ الشاهدان.**");
   code = 1;
