@@ -38,6 +38,7 @@ const PAGE = `<!doctype html><meta charset="utf-8">
   #bar button{height:30px;margin:7px 2px}
 </style>
 <div id="player" class="feed-video-shell"><video id="v" src="/tone.wav" loop muted autoplay playsinline></video><div id="bar"></div></div>
+<div id="player2" class="feed-video-shell" style="margin-top:700px"><video id="v2" src="/tone.wav" loop muted autoplay playsinline></video></div>
 <script>
   var q = new URLSearchParams(location.search);
   var bar = document.getElementById("bar");
@@ -188,6 +189,31 @@ try {
         out.seeked = typeof out.before === "number" && typeof out.after === "number" &&
                      Math.abs(out.after - out.before) > 1;
       }
+      // ── ⭐⭐ #142ج — **الخلاصة: أيتبع الشريطُ الفيديوَ تحت المؤشّر؟** ────────
+      // **العطبُ المقيس عند المالك (إنستقرام): الشريطُ ظاهرٌ ومرسومٌ خارج الشاشة**
+      // — **يتبع منشوراً صعِد بالتمرير.** ⇒ **فيُنتَج الحال: يُربَط بالأوّل، ثمّ
+      // يُمرَّر ويُحوَّم على الثاني، ويُقاس أين رُسم.**
+      if (cell.expect) {
+        out.feed = await evalIn(page, `(async () => {
+          const p2 = document.getElementById("player2");
+          window.scrollTo(0, p2.getBoundingClientRect().top + window.scrollY - 40);
+          await new Promise((r) => setTimeout(r, 400));
+          const r2 = p2.getBoundingClientRect();
+          return { y: Math.round(r2.top + r2.height / 2), x: Math.round(r2.left + r2.width / 2),
+                   top2: Math.round(r2.top) }; })()`);
+        await wiggle(page, out.feed.x, out.feed.y, 3);
+        await sleep(500);
+        out.afterScroll = await evalIn(page, `(() => {
+          const b = document.querySelector(".vzHostBar");
+          const r = b ? b.getBoundingClientRect() : null;
+          const v2 = document.getElementById("v2").getBoundingClientRect();
+          return { shown: !!b && !b.classList.contains("vzHidden"),
+                   top: r ? Math.round(r.top) : null,
+                   onScreen: !!r && r.top >= 0 && r.top < window.innerHeight,
+                   onSecond: !!r && Math.abs((r.top + r.height) - v2.bottom) < 6 }; })()`);
+        await evalIn(page, "window.scrollTo(0, 0)");
+        await sleep(300);
+      }
       // ⚠️ **والسكونُ يُقاس بعد الحركة لا قبلها**: الشريطُ يظهر بالحركة، **فاختفاؤه
       // بعد المهلة نصفُ العقد** — ومن قاس الظهور وحدَه قاس نصفَ الوعد.
       // ⛔⭐ **والمؤشّرُ يُزاح عن الشريط أوّلاً**: القاعدةُ العامّة (#95) **لا يُخفى
@@ -218,6 +244,11 @@ for (const r of rows) {
       ` · بثّ=${r.moved.live} · مدّة=${r.moved.dur}`);
   }
   if (r.ready) console.log(`   الحالُ المُنتَجة: مُشغَّل=${!r.ready.paused} · نافذةُ التنقّل=${r.ready.seekable} · نهايتُها=${r.ready.end}`);
+  if (r.afterScroll) {
+    console.log(`   ⇒ الخلاصة: بعد التمرير والتحويم على الثاني — يظهر=${r.afterScroll.shown}` +
+      ` رأسُه=${r.afterScroll.top} داخلَ الشاشة=${r.afterScroll.onScreen}` +
+      ` على الفيديو الثاني=${r.afterScroll.onSecond}`);
+  }
   if (r.idle) console.log(`   بعد السكون: يظهر=${r.idle.shown}`);
   if (r.seeked !== undefined) {
     console.log(`   ⇒ السحب: ${r.before} ⇒ ${r.after} — ${r.seeked ? "✅ تحرّك الموضع" : "❌ لم يتحرّك"}`);
@@ -229,10 +260,12 @@ const pos = poss[0];
 const negs = rows.filter((r) => !r.expect);
 const posOk = !!pos && pos.moved && pos.moved.shown === true && pos.seeked === true &&
               pos.idle && pos.idle.shown === false &&
-              poss.every((r) => r.moved && r.moved.shown === true);
+              poss.every((r) => r.moved && r.moved.shown === true) &&
+              poss.every((r) => r.afterScroll && r.afterScroll.onScreen === true &&
+                                r.afterScroll.onSecond === true);
 const negOk = negs.every((r) => r.moved && r.moved.shown === false);
 console.log("── الشاهدان (قرار 26)");
-console.log("   موجبان (يظهر · يُنقِّل · يختفي بالسكون · ويبقى مع أزرار الخلاصة): " + (posOk ? "✅" : "❌"));
+console.log("   موجبان (يظهر · يُنقِّل · يختفي بالسكون · يبقى مع أزرار الخلاصة · ويتبع المؤشّر في الخلاصة): " + (posOk ? "✅" : "❌"));
 console.log("   وسوالبُه الثلاثة (مطفأ · مضيفٌ له منزلق · يوتيوب): " + (negOk ? "✅" : "❌"));
 if (!(posOk && negOk)) {
   console.log("\n⛔ **لا يُقرأ من هذا رقمٌ عن الميزة حتى يخضرّ الشاهدان.**");
