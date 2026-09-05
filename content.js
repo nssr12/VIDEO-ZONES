@@ -5505,6 +5505,37 @@ function videoOwnsControls(video) {
 // فيه إطلاقاً، ولا سمة إن كان المكبَّر هو `<video>` نفسه (لا معنى للقاعدة حينها).
 const VZ_FS_ATTR = "data-vz-fs";
 const VZ_FS_VIDEO_ATTR = "data-vz-fs-video";
+// ── #140ب — **الغلافُ الوسيط هو القيد، لا الحاوية ولا الفيديو** ───────────────
+// ⛔ **الأثرُ الجانبيّ الذي ولّده علاجُ #140 (بلاغ المالك 2026-09-05):** صعِدنا إلى
+// حاويةٍ تحمل أدواتِ المضيف، **فعاد الشريط ولم يعد الفيديو يملأ** — سوادٌ حوله.
+// ✅ **والسببُ قِيس ولم يُفترض** (`tools/repro-140-fs-bar.mjs`، سلسلةُ الأسلاف):
+// **لا أبعادٌ ثابتة على الحاوية** (أنماطُ المتصفّح لـ`:fullscreen` تفرض عليها
+// `width/height:100%`)، **ولا الفيديو بمقاسٍ ثابت** (نسبيٌّ 100٪) — ⭐ **بل ما
+// بينهما**: `div.vp-video 800×540` **يحتفظ بارتفاعه المكتوب**، **و100٪ من غلافٍ
+// ارتفاعُه 540 هي 540** ⇒ **فقاعدةُ #58ب تُصيب الفيديو وحدَه ولا تبلغ القيد.**
+//
+// ⛔⭐⭐ **ومرشَّحٌ أوّل رُفض بالقياس لا بالحدس — وهو الذي كان سيُعيد #140:**
+// **«الغلافُ 100٪»** (V1) أعطى ملءاً تامّاً على شريطٍ متراكب، **وعلى شريطٍ في
+// التدفّق دفعه خارج الشاشة** (`barOn:false`) ⇒ **يُغلق العطبُ من باب الشجرة
+// ويعود من باب التخطيط**، وهو أسوأُ ما يُخرَج من هذا الإصلاح.
+// ✅ **والمقبول (V2): الحاويةُ عمودٌ مرن، والغلافُ ينمو** — مقيسٌ على البنيتين:
+// **شريطٌ متراكب ⇒ الفيديو 1.00 والشريط باقٍ** · **وشريطٌ في التدفّق ⇒ 0.92
+// والشريط باقٍ وصفرُ سواد.**
+// ⇒ ⭐⭐ **ولا شرطَ تخمينياً فيه ولا حاجة إليه** (شرط المالك): **التمييزُ بين
+// البنيتين يقع في محرّك التخطيط نفسِه** — **المتراكبُ خارج التدفّق فلا يأخذ
+// حصّة، والذي في التدفّق يأخذ حصّته** — **فقاعدةٌ واحدة تُصيب الحالين.**
+//
+// ⚠️⚠️ **وحدُّه يُكتب صريحاً لأنه أثقلُ ما فعلناه: نحن نُغيّر تخطيطَ المضيف.**
+// ⛔ **ولا يُقبل هذا إلا بسببه المقيس**: **لا بديلَ يبلغ موقعَي المالك** — تيك توك
+// **بلا اسمٍ يُطابَق** (قرار 148)، وشترستوك **غيرُ مقيس** ⇒ **فمسارُ زرّ المضيف
+// (#17) لا يُغني، والحاويةُ هي ما بقي.**
+// ⚠️ **ومداه أضيقُ ما يمكن، ومقيَّدٌ بالبناء لا بالنيّة:**
+//   · `[data-vz-fs]` **لا تُوضع إلا حين طلبنا نحن وقبِلت بوّابةُ الملء** ⇒
+//     **يوتيوب والخمسةُ المعروفة تخرج عند زرّها الأصليّ قبل أن يُسجَّل شيء.**
+//   · **و`data-vz-fs-col` لا تُوضع إلا حين يوجد غلافٌ وسيط فعلاً** ⇒ **البنياتُ
+//     التي يكون فيها الفيديو ابناً مباشراً لا يُمَسّ تخطيطُها بحرف.**
+const VZ_FS_PATH_ATTR = "data-vz-fs-path";
+const VZ_FS_COL_ATTR = "data-vz-fs-col";
 
 // العنصران اللذان طلبنا ملء الشاشة لهما. يُصفَّران في كل مخرج بلا استثناء.
 let vzFsRequestedEl = null;
@@ -5521,6 +5552,12 @@ function injectFsFillCSS() {
       max-width:none!important; max-height:none!important;
       object-fit:contain!important;
     }
+    [${VZ_FS_ATTR}][${VZ_FS_COL_ATTR}]:fullscreen{
+      display:flex!important; flex-direction:column!important;
+    }
+    [${VZ_FS_ATTR}][${VZ_FS_COL_ATTR}]:fullscreen [${VZ_FS_PATH_ATTR}]{
+      flex:1 1 auto!important; min-height:0!important; height:auto!important;
+    }
   `;
   (document.head || document.documentElement).appendChild(style);
 }
@@ -5529,12 +5566,19 @@ function injectFsFillCSS() {
 // شاردة نجت من إعادة بناء الموقع لعنصره — لا نفترض بقاء المرجع صحيحاً.
 function clearFsFillMarks() {
   vzFsRequestedEl?.removeAttribute?.(VZ_FS_ATTR);
+  vzFsRequestedEl?.removeAttribute?.(VZ_FS_COL_ATTR);
   vzFsRequestedVideo?.removeAttribute?.(VZ_FS_VIDEO_ATTR);
   vzFsRequestedEl = null;
   vzFsRequestedVideo = null;
-  for (const el of document.querySelectorAll(`[${VZ_FS_ATTR}],[${VZ_FS_VIDEO_ATTR}]`)) {
+  // **الأربعُ تُمسح من المستند كلِّه** — لا المرجعان وحدهما: #140ب يسم عناصر
+  // **لا نحتفظ بمرجعٍ لها** (المسارُ يُمشى ولا يُخزَّن)، فالمسحُ العامّ هو ما
+  // يضمن ألّا تبقى سمةٌ تُغيّر تخطيطَ المضيف بعد الخروج.
+  for (const el of document.querySelectorAll(
+    `[${VZ_FS_ATTR}],[${VZ_FS_VIDEO_ATTR}],[${VZ_FS_PATH_ATTR}],[${VZ_FS_COL_ATTR}]`)) {
     el.removeAttribute(VZ_FS_ATTR);
     el.removeAttribute(VZ_FS_VIDEO_ATTR);
+    el.removeAttribute(VZ_FS_PATH_ATTR);
+    el.removeAttribute(VZ_FS_COL_ATTR);
   }
 }
 
@@ -5548,6 +5592,16 @@ function applyFsFillIfNeeded() {
   injectFsFillCSS();
   el.setAttribute(VZ_FS_ATTR, "");
   video.setAttribute(VZ_FS_VIDEO_ATTR, "");
+  // #140ب — **المسارُ بين الفيديو والحاوية حصراً**، بمدى الحكم القاطع نفسِه.
+  // ⚠️ **والسمةُ العموديّة لا تُوضع إلا إن وُجد غلافٌ فعلاً** — فبلا غلافٍ لا قيد،
+  // **وتغييرُ تخطيطٍ بلا قيدٍ يُصلحه ثمنٌ بلا مقابل.**
+  let hops = 0;
+  for (let p = video.parentElement;
+       p && p !== el && hops < FS_CONTAINER_MAX_DEPTH;
+       p = p.parentElement, hops++) {
+    p.setAttribute(VZ_FS_PATH_ATTR, "");
+  }
+  if (hops > 0) el.setAttribute(VZ_FS_COL_ATTR, "");
   return true;
 }
 

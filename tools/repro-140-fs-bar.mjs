@@ -37,6 +37,7 @@
 //
 // ⚠️ **وحدُّ هذا الشاهد مكتوبٌ فيه:** ثلاثُ بنياتٍ مصنوعة لا مواقعُ حيّة، ونافذتُه
 // **1200ms بعد كلّ حركة** — و«لم يظهر» فيه يعني **حتى 1200ms ولا شيء بعدها**.
+import fs from "node:fs";
 import {
   launch, configure, openPage, contentWorld, evalIn, serveTestPage, killChrome, refuseUnknownFlags
 } from "./ext-harness.mjs";
@@ -44,6 +45,7 @@ import {
 refuseUnknownFlags([]);
 
 const PORT = 9412, HTTP = 8842;
+const PROTO_PATH = process.env.VZ_PROTO || "/dev/null";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ── صفحةُ القياس: مشغّلٌ غيرُ يوتيوبيّ بنموذج سكونٍ للمضيف ────────────────────
@@ -66,6 +68,10 @@ const PAGE = `<!doctype html><meta charset="utf-8">
   #player.fixed video{display:block;width:640px;height:360px;background:#222}
   #player.fixed #bar{position:absolute;left:0;right:0;bottom:0;height:48px;background:rgba(0,0,0,.65)}
   #player.outside{height:588px}
+  #player.outflow{height:588px}
+  #player.outflow .vp-video{position:relative;width:100%;height:540px}
+  #player.outflow video{display:block;width:100%;height:100%;background:#222}
+  #player.outflow #bar{position:static;height:48px;background:rgba(0,0,0,.65)}
   #player.outside .vp-video{position:relative;width:100%;height:540px}
   #player.outside video{display:block;width:100%;height:100%;background:#222}
   #player.outside #bar{position:absolute;left:0;right:0;bottom:0;height:48px;background:rgba(0,0,0,.65)}
@@ -79,7 +85,7 @@ const PAGE = `<!doctype html><meta charset="utf-8">
   var v = document.getElementById("v");
   p.className = new URLSearchParams(location.search).get("bar") || "abs";
   // **الشريطُ خارج حاوية الفيديو الضيّقة** — الفيديو يُلَفّ ويبقى الشريط أخاً لها.
-  if (p.className === "outside") {
+  if (p.className === "outside" || p.className === "outflow") {
     var inner = document.createElement("div");
     inner.className = "vp-video";
     p.insertBefore(inner, v);
@@ -151,6 +157,21 @@ const MEASURE = `(() => {
                    pointerEvents: wcs.pointerEvents, zIndex: wcs.zIndex,
                    position: wcs.position, box: box(wrap),
                    visibleKids: [...wrap.children].filter((k) => !k.classList.contains("vzHidden")).map((k) => desc(k)) } : null,
+    // #140ب — **لماذا لا يملأ؟** سلسلةُ الأسلاف من الفيديو إلى عنصر ملء الشاشة
+    // بمستطيلاتها وما يقيّدها — يُقاس ولا يُفترض (شرطُ المالك 2026-09-05).
+    chain: (() => {
+      const out = [];
+      let el = v;
+      for (let i = 0; i < 10 && el; i++) {
+        const r = el.getBoundingClientRect(), c = getComputedStyle(el);
+        out.push(desc(el) + " " + Math.round(r.width) + "x" + Math.round(r.height) +
+          " [h:" + c.height + " ar:" + c.aspectRatio + " pos:" + c.position + " disp:" + c.display + "]" +
+          (el === fsEl ? " ⇐fsEl" : ""));
+        if (el === fsEl) break;
+        el = el.parentElement;
+      }
+      return out;
+    })(),
     fsMarks: document.querySelectorAll("[data-vz-fs],[data-vz-fs-video]").length,
     fillCss: !!document.getElementById("vz_fs_fill_css"),
     htmlClass: document.documentElement.className || "",
@@ -251,6 +272,7 @@ const WHEEL_AT_ZONE4 = `(async () => {
   return { ok: true, wrap: !!document.querySelector(".vzWrap"), rate: v.playbackRate };
 })()`;
 
+const PROTO = fs.readFileSync(PROTO_PATH, "utf8");
 const rows = [];
 
 async function cell({ h, label, structure, ext, fsPath, buildLayer = true, stayWindowed = false }) {
@@ -314,6 +336,7 @@ async function cell({ h, label, structure, ext, fsPath, buildLayer = true, stayW
     await sleep(1200);
     out.steps.fsMoved = await evalIn(page, MEASURE);
     if (ext) out.steps.inner = await evalIn(page, INNER, ctx);
+    if (PROTO) out.steps.proto = await evalIn(page, PROTO);
 
     // (٧) والخروج — المخرجُ الثالث في بلاغ المالك
     await gesture(page, "window.__exitFs()");
@@ -364,6 +387,7 @@ try {
           { structure: "fixed",   fsPath: "ours", label: "fixed · بالإضافة · ملءُ شاشتنا" },
           { structure: "outside", fsPath: "host", label: "outside · بالإضافة · ملءُ شاشة المضيف" },
           { structure: "outside", fsPath: "ours", label: "⭐ outside · بالإضافة · ملءُ شاشتنا" },
+          { structure: "outflow", fsPath: "ours", label: "⭐ outflow · شريطٌ في التدفّق · ملءُ شاشتنا" },
           { structure: "abs",     fsPath: "—", stayWindowed: true, label: "abs · بالإضافة · نافذةٌ بلا ملء شاشة" }
         ]
       : [
@@ -390,6 +414,8 @@ try {
     if (r.steps.fsMoved) console.log("   " + line("ملء/حركة    ", r.steps.fsMoved));
     if (r.steps.afterExit) console.log("   " + line("بعد الخروج  ", r.steps.afterExit));
     if (r.steps.wheel) console.log("   عجلة: " + JSON.stringify(r.steps.wheel));
+    if (r.steps.proto?.out) for (const o of r.steps.proto.out) console.log("   مِرْجل: " + JSON.stringify(o));
+    if (r.steps.fsMoved?.chain) console.log("   سلسلة ملء الشاشة: " + r.steps.fsMoved.chain.join("  ⟵  "));
     if (r.steps.enter) console.log("   دخول: " + JSON.stringify(r.steps.enter));
     if (r.steps.inner) console.log("   داخل السكربت: " + JSON.stringify(r.steps.inner));
     if (r.steps.inner0) console.log("   قبل الدخول:   " + JSON.stringify(r.steps.inner0));

@@ -213,6 +213,31 @@ window.__cases = [
     }
   },
   {
+    // ⭐⭐ #140ب — **البنيةُ الثانية التي أمر بها المالك**: الشكلُ نفسُه (شريطٌ خارج
+    // ما يملؤه الفيديو) **والشريطُ في التدفّق لا متراكباً** — وهي التي رفضت
+    // المرشَّحَ الأوّل: غلافٌ بارتفاع 100٪ يدفعها خارج الشاشة فيُعيد #140.
+    name: "ل — الشريطُ خارجَ ما يملؤه الفيديو وفي التدفّق (#140ب)",
+    build() {
+      sheet(
+        ".v140f-player{position:relative;width:960px;height:588px;background:#000}" +
+        ".v140f-video{position:relative;width:100%;height:540px}" +
+        ".v140f-video>video{width:100%;height:100%;object-fit:contain;background:#333}" +
+        ".v140f-bar{position:static;height:48px;background:rgba(0,0,0,.55)}"
+      );
+      const div = (cls) => { const d = document.createElement("div"); d.className = cls; return d; };
+      const player = div("v140f-player");
+      const inner = div("v140f-video");
+      const v = mkVideo("none");
+      const bar = div("v140f-bar");
+      for (let i = 0; i < 12; i++) bar.appendChild(document.createElement("button"));
+      inner.appendChild(v);
+      player.appendChild(inner);
+      player.appendChild(bar);
+      document.body.appendChild(player);
+      return v;
+    }
+  },
+  {
     name: "ط — منصّة الظل: <video> ابن مباشر لجذر ظل (HANDOFF §9)",
     build() {
       const host = document.createElement("vz-repro-player");
@@ -373,7 +398,7 @@ window.__after = () => {
     // #58 كومِت ب: هل وسمت البوابة، وهل حُقنت ورقة الأنماط؟
     stamped: document.querySelectorAll("[data-vz-fs]").length > 0 &&
              document.querySelectorAll("video[data-vz-fs-video]").length > 0,
-    marks: document.querySelectorAll("[data-vz-fs],[data-vz-fs-video]").length,
+    marks: document.querySelectorAll("[data-vz-fs],[data-vz-fs-video],[data-vz-fs-path],[data-vz-fs-col]").length,
     cssInjected: !!document.getElementById("vz_fs_fill_css")
   };
 };
@@ -386,6 +411,62 @@ window.__after = () => {
 // **فالمقيس «contains» لا شفافيةٌ ولا مستطيل** — والشريطُ يحمل مستطيلاً محسوباً
 // وهو غيرُ مرسوم (العمى الأوّل، «S7»).
 // ⚠️ **وأزرارُنا تُقصى** (#141) — وإلا عدَّ الحارسُ طبقتَنا أدواتِ مضيف.
+// ── ⭐⭐ #140ب — **الحكم الثالث: الثلاثةُ في تشغيلةٍ واحدة** (شرط المالك) ──────
+// **الشريطُ يعود · والفيديو يملأ · والمربّعات تعمل** — ⛔ **ولا تُفرَّق**: حمرةٌ
+// لأحدهما وحدَه أعادت العطبَ الآخر مرّتين عندنا (#140 ثمّ #140ب).
+//
+// ⚠️⚠️ **وفرقٌ عن الصيغة التي أقرّها المالك، يُعلَن ولا يُدفَن** (قرار 16):
+// أُقرّت «كلا المحورين بـVZ_FILL_RATIO» — **والمقيسُ أنها تُحمّر بنيةً سليمة**:
+// في «ل» الشريطُ في التدفّق يأخذ 48px بحقّ، **فأحسنُ ما يمكن للفيديو 0.92**،
+// **وذاك ليس سواداً بل شريطُ المضيف نفسُه الذي أنقذناه.** ⇒ **وتثبيتُ عطبٍ لا
+// وجود له يقتل المجموعة** (قرار 20).
+// ⇒ **فالارتفاعُ يُقاس بغياب السواد لا بنسبةٍ ثانية**: **صفرُ بكسلٍ لا يغطّيه
+// الفيديو ولا أدواتُ المضيف الناجية** — ⭐ **والصفرُ غيابٌ لا عتبة، فلا رقمَ ثانياً.**
+// **والعرضُ يبقى بـVZ_FILL_RATIO نفسِها.**
+// ✅ **ويُحمّر على الحال الحاضرة**: «ك» قبل #140ب ⇒ **12px سوداء** بين الفيديو
+// والشريط، **والنسبةُ 0.90** — فالحكمُ يراها بالوجهين.
+window.__verdict3 = () => {
+  const v = window.__v;
+  const fsEl = document.fullscreenElement;
+  const H = window.innerHeight, W = window.innerWidth;
+  const vr = v.getBoundingClientRect();
+  const s = window.__survived();
+  // ⛔⭐⭐ **«السواد» يُقاس بما يظهر في الموضع لا بمستطيلات الأزرار.**
+  // **وأوّلُ صياغةٍ لهذا الحقل قاست حدودَ الأزرار** — والشريطُ عنصرٌ يحوي أزراراً
+  // بحشوةٍ حولها ⇒ **فحُسبت حشوةُ شريطٍ ظاهرٍ سواداً (42px في «ل»، والمقيسُ صفر)**.
+  // ⇒ **وهي «المقيسُ جارُ المطلوب» (قرار 81) واقعةً في حكمٍ أكتبه أنا.**
+  // ✅ **والمقيس الآن: عمودٌ في وسط الشاشة، ونقطةٌ سوداءُ هي ما تُرجع فيه
+  // الحاويةَ نفسَها** — لا الفيديو ولا شيئاً من محتوى المضيف.
+  // ⚠️ **وحدُّه مُعلَن: عمودٌ واحد بخطوةِ 2px، لا مسحُ الشاشة كلِّها.**
+  let black = 0;
+  if (fsEl) {
+    const x = Math.round(W / 2);
+    for (let y = 1; y < H; y += 2) {
+      // ⚠️ **وجذرُ الظلّ يُخترق** — «elementFromPoint» **تُعيد الاستهداف إلى
+      // المضيف** ⇒ **بنيةُ الظلّ (ط) طبعت 600px سواداً والفيديو يملأ 100٪.**
+      // **إعادةُ استهدافٍ لا سواد** (وهي عائلةُ «الأداة ترى والمقيسُ ليس المنتَج»).
+      let hit = document.elementFromPoint(x, y);
+      for (let d = 0; d < 4 && hit && hit.shadowRoot; d++) {
+        const inner = hit.shadowRoot.elementFromPoint(x, y);
+        if (!inner || inner === hit) break;
+        hit = inner;
+      }
+      // ⚠️ **والحاويةُ تُعدّ سواداً إلا أن تكون الفيديوَ نفسَه** — وأوّلُ صياغةٍ
+      // نسيت ذلك **فطبعت 600px سواداً عن ثلاث بنياتٍ الفيديو فيها يملأ الشاشة**
+      // (أ · ب · ط): عنصرُ ملء الشاشة هو الفيديو، فكلُّ نقطةٍ عليه أرجعته.
+      const bgHit = !hit || hit === document.body || hit === document.documentElement ||
+                    (hit === fsEl && fsEl !== v);
+      if (bgHit) black += 2;
+    }
+  }
+  return {
+    fillW: Math.round((vr.width / W) * 1000) / 1000,
+    fillH: Math.round((vr.height / H) * 1000) / 1000,
+    blackPx: black,
+    lost: s.lost, total: s.total
+  };
+};
+
 window.__survived = () => {
   const v = window.__v;
   const fsEl = document.fullscreenElement;
@@ -405,7 +486,8 @@ window.__survived = () => {
 };
 
 // بعد الخروج: لا سمة تبقى على الـ DOM
-window.__marksAfterExit = () => document.querySelectorAll("[data-vz-fs],[data-vz-fs-video]").length;
+// #140ب — **والسمتان الجديدتان في العدّ**: سمةٌ تبقى تُغيّر تخطيطَ المضيف بعد الخروج.
+window.__marksAfterExit = () => document.querySelectorAll("[data-vz-fs],[data-vz-fs-video],[data-vz-fs-path],[data-vz-fs-col]").length;
 
 window.__exit = () => (document.fullscreenElement ? document.exitFullscreen() : Promise.resolve());
 `;
@@ -422,13 +504,17 @@ const PAGE = `<!doctype html><meta charset="utf-8"><body style="margin:0;backgro
 // ⚠️ **وكلُّ استبدالٍ آليّ يُتحقَّق من وقوعه** (درسُ `String.replace` الصامتة):
 // **لا مطابقةَ ⇒ لا شاهد، ويُرفض بصوتٍ عالٍ ولا يُتخطّى صامتاً.**
 const ARGS = process.argv.slice(2);
-const UNKNOWN = ARGS.filter((a) => a !== "--witness");
+const UNKNOWN = ARGS.filter((a) => a !== "--witness" && a !== "--witness-fill");
 if (UNKNOWN.length) {
-  console.log("⛔ وسمٌ مجهول: " + UNKNOWN.join(" ") + " — والمعروف: --witness");
+  console.log("⛔ وسمٌ مجهول: " + UNKNOWN.join(" ") + " — والمعروف: --witness · --witness-fill");
   console.log("   (قرار 136: وسمٌ يُتجاهَل صامتاً يُنتج تشغيلةً لم تقع تُقرأ شاهداً)");
   process.exit(1);
 }
 const WITNESS = ARGS.includes("--witness");
+const WITNESS_FILL = ARGS.includes("--witness-fill");
+// #140ب — **شاهدُه ينزع سمةَ العمود وحدَها**: القاعدةُ تبقى مكتوبة ولا تُطابق
+// شيئاً ⇒ **الغلافُ يعود إلى ارتفاعه المكتوب، ويعود السواد.**
+const GATE_140B = 'if (hops > 0) el.setAttribute(VZ_FS_COL_ATTR, "");';
 const GATE_140 = " && !hostControlsLostBy(video, nearest)";
 const CONTENT_RAW = fs.readFileSync(path.join(ROOT, "content.js"), "utf8");
 let CONTENT_JS = CONTENT_RAW;
@@ -440,6 +526,15 @@ if (WITNESS) {
   }
   CONTENT_JS = CONTENT_RAW.replace(GATE_140, "");
   console.log("\n⚠️ **وضعُ الشاهد**: شرطُ #140 منزوعٌ من النسخة المخدومة — والمنتظَر حمرةٌ في «ك».\n");
+}
+if (WITNESS_FILL) {
+  const hits = CONTENT_RAW.split(GATE_140B).length - 1;
+  if (hits !== 1) {
+    console.log(`⛔ شاهدُ #140ب يشترط موضعاً واحداً، والموجود ${hits} — لا شاهد.`);
+    process.exit(1);
+  }
+  CONTENT_JS = CONTENT_RAW.replace(GATE_140B, "");
+  console.log("\n⚠️ **وضعُ الشاهد**: سمةُ العمود منزوعة — والمنتظَر سوادٌ في «ك» و«ل».\n");
 }
 
 const srv = http.createServer((req, res) => {
@@ -535,6 +630,7 @@ for (let i = 0; i < count; i++) {
   await sleep(1100);
   const after = await evalJs("window.__after()");
   const survived = await evalJs("window.__survived()");
+  const v3 = await evalJs("window.__verdict3()");
   await evalJs("window.__exit()");
   await sleep(600);
   const leftover = await evalJs("window.__marksAfterExit()");
@@ -549,13 +645,18 @@ for (let i = 0; i < count; i++) {
   console.log(`  ${after.fills ? "✅ الفيديو يملأ الشاشة" : "❌ الفيديو بقي بمقاسه — شاشة سوداء حوله"}`);
   console.log("");
   const ctrlOk = !survived || survived.lost === 0;
+  // ⭐ الحكم الثالث — ثلاثتُها معاً أو لا شيء
+  const FILL = 0.95;   // VZ_FILL_RATIO نفسُها، ولا رقمَ ثانٍ
+  const v3ok = !!v3 && v3.lost === 0 && v3.fillW >= FILL && v3.blackPx <= 0;
   console.log(`  ${ctrlOk ? "✅" : "❌"} #140 · أدواتُ المضيف داخل عنصر ملء الشاشة` + ` → موجودة=${survived && survived.total} · **تُفقد=${survived && survived.lost}**`);
   console.log(`  #140 · نجاةُ أدوات المضيف → مختار=${scope.picked} (ضوابط:${scope.pickedCtrls})` +
     ` · قاطع=${scope.nearest} (ضوابط:${scope.nearestCtrls})` +
     ` · أسلافٌ بضوابط=${scope.ctrlsAnywhere} · تُفقد بالمختار=${scope.lostFromPicked} · بالقاطع=${scope.lostFromNearest}` +
     ` · السكور=${scope.scorerArgmax} · يطابق=${scope.scorerAgrees}`);
+  console.log(`  ${v3ok ? "✅" : "❌"} #140ب · الثلاثةُ معاً` +
+    ` → عرض=${v3 && v3.fillW} ارتفاع=${v3 && v3.fillH} **سواد=${v3 && v3.blackPx}px** تُفقد=${v3 && v3.lost}`);
   rows.push({ name: setup.name, ok: after.fills, fs: after.fsElement, pct: after.areaPct,
-              stamped: after.stamped, leftover, branch, scope, survived, ctrlOk });
+              stamped: after.stamped, leftover, branch, scope, survived, ctrlOk, v3, v3ok });
 }
 
 console.log("=== الخلاصة ===");
@@ -578,6 +679,7 @@ console.log("⚠️ اقرأ tools/KNOWN-DEFECTS.md قبل تفسير أي ❌ �
 console.log("");
 // ── ⭐ الحكم الذي يستطيع أن يُحمّر — وهو ما ينقص أيَّ رِكازٍ بلا حكمٍ لسؤاله ────
 const lostRows = rows.filter((r) => r.survived && r.survived.lost > 0);
+const v3Bad = rows.filter((r) => !r.v3ok);
 console.log("");
 console.log("=== #140 · أدواتُ المضيف داخل عنصر ملء الشاشة ===");
 for (const r of rows) {
@@ -587,13 +689,29 @@ for (const r of rows) {
 console.log(`    ⇒ **بنياتٌ تُفقد فيها أدواتُ المضيف: ${lostRows.length}** ` +
   (lostRows.length === 0 ? "✅" : "❌ " + lostRows.map((r) => r.name.split(" — ")[0]).join(" · ")));
 console.log("");
+console.log("=== #140ب · الشريطُ يعود · والفيديو يملأ · بلا سواد — في تشغيلةٍ واحدة ===");
+for (const r of rows) {
+  console.log(`    ${r.v3ok ? "✅" : "❌"} ${pad(r.name.split(" — ")[0], 5)}` +
+    `عرض=${pad(r.v3 && r.v3.fillW, 6)}ارتفاع=${pad(r.v3 && r.v3.fillH, 6)}سواد=${pad((r.v3 && r.v3.blackPx) + "px", 7)}تُفقد=${r.v3 && r.v3.lost}`);
+}
+console.log(`    ⇒ **بنياتٌ تسقط في الحكم الثالث: ${v3Bad.length}** ` +
+  (v3Bad.length === 0 ? "✅" : "❌ " + v3Bad.map((r) => r.name.split(" — ")[0]).join(" · ")));
+console.log("");
 chrome.kill(); srv.close();
 if (WITNESS) {
-  const ok = lostRows.some((r) => r.name.startsWith("ك"));
+  const ok = lostRows.some((r) => r.name.startsWith("ك")) || v3Bad.some((r) => r.name.startsWith("ك"));
   console.log(ok
     ? "✅ **الشاهد أحمر كما يجب**: بنزع الشرط تُفقد أدواتُ المضيف في «ك» ⇒ الحكمُ يرى."
     : "⛔ **الشاهد لم يُحمّر بنزع الشرط** — فالحكمُ لا يقيس ما يدّعيه، ولا يُصدَّق أخضرُه.");
   process.exit(ok ? 0 : 1);
 }
+if (WITNESS_FILL) {
+  const black = rows.filter((r) => r.v3 && r.v3.blackPx > 0).map((r) => r.name.split(" — ")[0]);
+  const ok = black.includes("ك") && black.includes("ل");
+  console.log(ok
+    ? "✅ **الشاهد أحمر كما يجب**: بنزع سمة العمود يعود السوادُ في «ك» و«ل» ⇒ الحكمُ يرى."
+    : "⛔ **الشاهد لم يُحمّر** — والسوداءُ التي وُجدت: " + (black.join(" · ") || "لا شيء"));
+  process.exit(ok ? 0 : 1);
+}
 // ⛔ **والخرْجُ غيرُ صفريّ على فقدٍ واقع** — حكمٌ لا يستطيع أن يُوقف كومِتاً ليس حارساً
-process.exit(lostRows.length === 0 ? 0 : 1);
+process.exit(lostRows.length === 0 && v3Bad.length === 0 ? 0 : 1);
