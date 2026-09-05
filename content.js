@@ -5563,6 +5563,54 @@ function syncFsFillMarks() {
 document.addEventListener("fullscreenchange", syncFsFillMarks);
 document.addEventListener("fullscreenerror", clearFsFillMarks);
 
+// ── #140 — **ما نُكبّره يجب ألّا يُخرج أدواتِ المضيف من الرسم** ───────────────
+// ⛔ **العطب الذي وُلد منه (بلاغ المالك 2026-09-05، وشاهدُه السالب عنده: أطفأ
+// الإضافة فعاد الشريط):** شريطُ تقدّم المضيف يبقى غيرَ مرئيّ **في ملء الشاشة
+// وحدَه**، ولا يعود إلا بإطفاء الإضافة أو حجب الموقع أو الخروج منه.
+//
+// ⭐⭐ **والسبب أن شرطَي الحكم القاطع يتناقضان بالبناء مع بقاء الأدوات:**
+// `nearestPlayerAncestor` تشترط **«يملؤه الفيديو»** (`VZ_FILL_RATIO` في المحورين)،
+// **وشريطُ التحكّم يقع خارج ما يملؤه الفيديو بطبعه** ⇒ **فما تُرجعه قد لا يحوي
+// أدواتِ المضيف، والمتصفّح لا يرسم إلا شجرةَ عنصر ملء الشاشة** ⇒ ⭐ **فالشريطُ
+// لا يُخفى بل لا يُرسم** — **والمضيفُ يظلّ يُظهره ولا يُرى** (مقيس: عدّادُ حركته
+// يزيد وشفافيتُه `1`)، **وذاك بعينه سببُ «لا يعود مهما فعل».**
+// ⚠️ **والحقيقةُ كانت مقيسةً عندنا منذ #94 وقُرئت لغير سؤالها** (قرار 143 · 146):
+// *«a control bar sits outside what the video fills … Measured on Vimeo»* —
+// **قُرئت نهياً عن استعماله نطاقاً للزرّ، ولم يُسأل عكسُها.**
+//
+// ⛔⭐ **والحكم على ما يُفقد لا على ما يُوجد، والفرقُ ليس صياغة:**
+//   · «أفي المرشّح ضوابط؟» ⇒ **يُطلق البوّابة على كلّ صفحةٍ بلا ضوابط أصلاً**،
+//     فيدفع **تسعاً من عشر بنياتٍ قائمة** إلى السكور **بلا أن يُفقد شيء**.
+//   · «أثمّة ضابطُ مضيفٍ يُخرجه اختيارُنا؟» ⇒ **لا يقع إلا حيث يقع الفقد.**
+// ⇒ ✅ **مقيسٌ على البنيات العشر قبل الكتابة: صفرُ إطلاق، وصفرُ انقلابٍ في حكم أيّ
+// بنية** — **ومنها `ي` (d.tube) وهي الوحيدة التي تبلغ الحكم القاطع: ضوابطُها
+// الستّةُ والثلاثون داخل المختار فلا تُفقد.**
+//
+// ⚠️ **ولا يُشترط أن يكون الضابط مرئيّاً** — المضيفُ يُخفي شريطه بالسكون (قرار 48)،
+// **وشرطُ الرؤية يجعل الحكمَ تابعاً للحظة القياس** ⇒ **الوجودُ في الشجرة هو المقيس.**
+// ⚠️ **وأزرارُنا ليست أدواتِ مضيف** (#141): `isOwnElement` تُقصيها — ⛔ **لا لأن
+// التلوّثَ واقعٌ هنا (مقيسٌ أنه غيرُ بالغ)، بل لأن هذا مسحُ صفحةٍ جديد، والقاعدةُ
+// تسري على كلّ مسحٍ لا على مسح الصوت وحده.**
+// ⚠️ **والمدى مدى الحكم القاطع نفسِه** (`FS_CONTAINER_MAX_DEPTH` من أب الفيديو):
+// **مسحٌ أوسعُ من الحكم الذي يحرسه يُحمّر على ما لا يملك الحكمُ تغييره.**
+const HOST_CONTROL_SELECTOR = "button, [role='button'], input[type='range']";
+
+function hostControlsLostBy(video, container) {
+  if (!video || !container) return false;
+  let el = video.parentElement;
+  for (let i = 0; i < FS_CONTAINER_MAX_DEPTH && el &&
+       el !== document.body && el !== document.documentElement; i++) {
+    let found = null;
+    try { found = el.querySelectorAll(HOST_CONTROL_SELECTOR); } catch { found = null; }
+    for (const ctrl of found || []) {
+      if (isOwnElement(ctrl)) continue;          // #141 — طبقتُنا ليست مضيفاً
+      if (!container.contains(ctrl)) return true;
+    }
+    el = el.parentElement;
+  }
+  return false;
+}
+
 function pickFullscreenContainer(video) {
   if (!video) return null;
 
@@ -5573,8 +5621,11 @@ function pickFullscreenContainer(video) {
   if (knownPlayer && knownPlayer.requestFullscreen) return knownPlayer;
 
   // #58 — الحكم القاطع قبل السكور. لم يتحقّق؟ يسقط إلى السكور القائم بلا تعديل حرف.
+  // ⛔ **#140 — وشرطٌ ثالث: ألّا يُخرج اختيارُه أدواتِ المضيف من الرسم.** والسكورُ
+  // هو المستأنَف لأنه **يملك حكمَه سلفاً** (`hasButtons` ثلاثُ نقاط) — ⭐ **ومقيسٌ
+  // في البنية الكاسرة أنه يختار `div#player` الذي يحوي الشريط.**
   const nearest = nearestPlayerAncestor(video);
-  if (nearest && nearest.requestFullscreen) return nearest;
+  if (nearest && nearest.requestFullscreen && !hostControlsLostBy(video, nearest)) return nearest;
 
   const videoRect = video.getBoundingClientRect();
   const videoArea = Math.max(1, videoRect.width * videoRect.height);

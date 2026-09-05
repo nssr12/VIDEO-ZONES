@@ -186,6 +186,33 @@ window.__cases = [
     }
   },
   {
+    // ⭐⭐ #140 — **الشكل الذي كسر، وكان غائباً عن العشر**: الشريطُ **خارج أضيقِ
+    // حاويةٍ تشبه مشغّلاً ويملؤها الفيديو**. وهي بصمةُ فيميو المقيسة في CLAUDE.md
+    // منذ #94: «div.vp-video» **بصفر ضابط**، **و11 ضابطاً مستوىً أعلى**.
+    // ⚠️ **والفارقُ عن «ي» (d.tube) سطرٌ واحد**: هناك الشريطُ **داخل** الحاوية
+    // التي يملؤها الفيديو، وهنا **أخوها** — ⇒ **ولهذا خضِرت العشرُ على العطب.**
+    name: "ك — شريطُ المضيف خارج ما يملؤه الفيديو (#140)",
+    build() {
+      sheet(
+        ".v140-player{position:relative;width:960px;height:588px;background:#000}" +
+        ".v140-video{position:relative;width:100%;height:540px}" +
+        ".v140-video>video{width:100%;height:100%;object-fit:contain;background:#333}" +
+        ".v140-bar{position:absolute;left:0;right:0;bottom:0;height:48px;background:rgba(0,0,0,.55)}"
+      );
+      const div = (cls) => { const d = document.createElement("div"); d.className = cls; return d; };
+      const player = div("v140-player");
+      const inner = div("v140-video");
+      const v = mkVideo("none");
+      const bar = div("v140-bar");
+      for (let i = 0; i < 12; i++) bar.appendChild(document.createElement("button"));
+      inner.appendChild(v);
+      player.appendChild(inner);
+      player.appendChild(bar);
+      document.body.appendChild(player);
+      return v;
+    }
+  },
+  {
     name: "ط — منصّة الظل: <video> ابن مباشر لجذر ظل (HANDOFF §9)",
     build() {
       const host = document.createElement("vz-repro-player");
@@ -215,13 +242,87 @@ window.__setup = (i) => {
   return { name: window.__cases[i].name };
 };
 
+// ── #140 — **مِجَسّ قراءةٍ لا حكم**: أينجو شريطُ المضيف داخل ما نُكبّره؟ ─────
+// ⚠️ **يُقرأ ولا يُبنى عليه علاجٌ قبل أن يُقارَن بالعشر** (شرط المالك 2026-09-05).
+// **ونسخةُ السكور هنا تُثبت نفسها قبل أن تُصدَّق**: في كلّ بنيةٍ لا يحسمها الحكمُ
+// القاطع، يجب أن يُطابق ما تُرجعه pickFullscreenContainer نفسُها — **وذاك شاهدُها
+// الموجب** (قرار 26). ⛔ ولا علامةَ اقتباسٍ خلفية في هذي الكتلة: هي قالبٌ نصّيّ.
+window.__scope = () => {
+  const v = window.__v;
+  const CTRL = "button, [role='button'], input[type='range']";
+  const own = (el) => !!(el.closest && el.closest(".vzWrap"));
+  const ctrls = (el) => {
+    if (!el || !el.querySelectorAll) return null;
+    return [...el.querySelectorAll(CTRL)].filter((b) => !own(b)).length;
+  };
+  const nearest = window.nearestPlayerAncestor ? window.nearestPlayerAncestor(v) : null;
+  const picked = window.pickFullscreenContainer ? window.pickFullscreenContainer(v) : null;
+  const vr = v.getBoundingClientRect();
+  const va = Math.max(1, vr.width * vr.height);
+  const cands = []; let cur = v;
+  for (let i = 0; i < 8 && cur; i++) {
+    if (cur !== document.body && cur !== document.documentElement) cands.push(cur);
+    cur = cur.parentElement;
+  }
+  const rows = cands.map((el) => {
+    const cls = (el.className || "").toString();
+    const role = el.getAttribute ? (el.getAttribute("role") || "") : "";
+    const hasButtons = !!el.querySelector(CTRL);
+    const looksPlayer = /player|video|controls|overlay|container/i.test(cls + " " + role);
+    const r = el.getBoundingClientRect();
+    if (!r || r.width <= 0 || r.height <= 0) return null;
+    const areaRatio = (r.width * r.height) / va;
+    const inside =
+      r.left <= vr.left + vr.width / 2 && r.right >= vr.left + vr.width / 2 &&
+      r.top <= vr.top + vr.height / 2 && r.bottom >= vr.top + vr.height / 2;
+    if (!inside) return null;
+    if (areaRatio > 3.5) return null;
+    const score = (hasButtons ? 3 : 0) + (looksPlayer ? 2 : 0) + (el === v ? 0 : 1) +
+                  Math.max(0, 2 - Math.abs(areaRatio - 1.15));
+    return { el, name: desc(el), ctrls: ctrls(el), score: Math.round(score * 1000) / 1000 };
+  }).filter(Boolean).sort((a, b) => b.score - a.score);
+  // ⛔⭐ **أدواتُ مضيفٍ تُفقد** — والسؤال عن **الضوابط نفسِها لا عن العناصر الحاوية**:
+  // أوّلُ صياغةٍ سألت «أثمّة سلفٌ فيه ضوابط لا يحويه المختار؟» **فطبعت «تُفقد» عن
+  // سلفٍ يحوي الضوابطَ نفسَها التي في المختار** (بنية ي: 36 زرّاً داخل المختار،
+  // وأبوه يحويها فحُسب فقداً). ⇒ **مطابقةٌ أوسعُ من سؤالها** (قرار 93)، والصواب:
+  // **عُدَّ الضوابطَ التي لا يحويها المختار.**
+  const lostCtrls = (el) => {
+    if (!el) return null;
+    const seen = new Set();
+    for (const c of cands) {
+      for (const b of c.querySelectorAll(CTRL)) {
+        if (own(b)) continue;              // #141 — أزرارُنا ليست أدواتِ مضيف
+        if (!el.contains(b)) seen.add(b);
+      }
+    }
+    return seen.size;
+  };
+  return {
+    nearest: nearest ? desc(nearest) : null,
+    nearestCtrls: ctrls(nearest),
+    picked: picked ? desc(picked) : null,
+    pickedCtrls: ctrls(picked),
+    ctrlsAnywhere: cands.reduce((n, el) => n + (ctrls(el) > 0 ? 1 : 0), 0),
+    lostFromPicked: lostCtrls(picked),
+    lostFromNearest: lostCtrls(nearest),
+    scorerArgmax: rows.length ? rows[0].name : null,
+    scorerAgrees: !nearest && picked ? (rows.length ? rows[0].el === picked : picked === v) : null,
+    rows: rows.slice(0, 4).map((r) => r.name + "=" + r.score + "(ctrl:" + r.ctrls + ")")
+  };
+};
+
 // أي فرع في pickFullscreenContainer حسم؟ — للبند #59 كومِت ب: هل يُدخَل الاحتياطي؟
 window.__branch = () => {
   const v = window.__v;
   const KPW = "#movie_player,.html5-video-player,.video-player,[data-a-target='video-player'],.jw-wrapper,.video-js,.plyr,.vjs-fluid";
   const known = v.closest(KPW);
   if (known && known.requestFullscreen) return "known-wrapper";
-  if (window.nearestPlayerAncestor && window.nearestPlayerAncestor(v)) return "decisive(#58)";
+  // ⚠️ #140 — **ونسخةُ الفرع تتبع شرطَه الثالث**: بدونها يطبع «decisive(#58)» عن
+  // بنيةٍ سقطت إلى السكور — **نسخةٌ تتخلّف تصف مساراً لم يُسلَك.**
+  const near140 = window.nearestPlayerAncestor && window.nearestPlayerAncestor(v);
+  const lost140 = near140 && window.hostControlsLostBy && window.hostControlsLostBy(v, near140);
+  if (near140 && !lost140) return "decisive(#58)";
+  if (near140 && lost140) return "score(#140: القاطعُ يُخرج أدواتِ المضيف)";
   const vr = v.getBoundingClientRect();
   const va = Math.max(1, vr.width * vr.height);
   const cands = []; let cur = v;
@@ -277,6 +378,32 @@ window.__after = () => {
   };
 };
 
+// ── ⭐⭐ #140 — **الحكم الجديد: أنجت أدواتُ المضيف داخل عنصر ملء الشاشة؟** ─────
+// ⚠️ **وهو نصفُ البند الذي لا تراه بنيةٌ وحدها** (قرار 146): حكمُ هذا الرِكاز كان
+// «fills» — **«أملأ الفيديو الشاشة؟»** — **وفي البنية الكاسرة الفيديو يملأ الشاشة
+// فعلاً والشريطُ وحدَه لا يُرسم** ⇒ **فبنيةٌ بلا حكمٍ جديد كانت ستُضاف وتخضرّ.**
+// ⛔ **ويُقاس بعد الدخول لا قبله**: المتصفّح لا يرسم إلا شجرةَ عنصر ملء الشاشة،
+// **فالمقيس «contains» لا شفافيةٌ ولا مستطيل** — والشريطُ يحمل مستطيلاً محسوباً
+// وهو غيرُ مرسوم (العمى الأوّل، «S7»).
+// ⚠️ **وأزرارُنا تُقصى** (#141) — وإلا عدَّ الحارسُ طبقتَنا أدواتِ مضيف.
+window.__survived = () => {
+  const v = window.__v;
+  const fsEl = document.fullscreenElement;
+  const CTRL = "button, [role='button'], input[type='range']";
+  const seen = new Set();
+  let el = v.parentElement;
+  for (let i = 0; i < 8 && el && el !== document.body && el !== document.documentElement; i++) {
+    for (const b of el.querySelectorAll(CTRL)) {
+      if (b.closest && b.closest(".vzWrap")) continue;
+      seen.add(b);
+    }
+    el = el.parentElement;
+  }
+  const all = [...seen];
+  const lost = fsEl ? all.filter((b) => !fsEl.contains(b)) : [];
+  return { total: all.length, lost: lost.length, fsEl: desc(fsEl) };
+};
+
 // بعد الخروج: لا سمة تبقى على الـ DOM
 window.__marksAfterExit = () => document.querySelectorAll("[data-vz-fs],[data-vz-fs-video]").length;
 
@@ -288,11 +415,38 @@ const PAGE = `<!doctype html><meta charset="utf-8"><body style="margin:0;backgro
 <script src="/content.js"></script>
 <script>${CASES}</script></body>`;
 
+// ── ⭐⭐ شاهدُ الحمرة لـ#140 — **يُنزع الشرطُ وحدَه، ويُتحقَّق أن النزع وقع** ────
+// ⛔ **ولا يُفتعَل عطبٌ مشابه** (قرار المالك): المنزوعُ هو **نصُّ السطر السابق
+// بحروفه** — ما كان قبل كومِت #140 بالضبط. **ويُفضَّل على `git show HEAD:` لأنه
+// يبقى صادقاً بعد أن يصير الإصلاحُ هو HEAD.**
+// ⚠️ **وكلُّ استبدالٍ آليّ يُتحقَّق من وقوعه** (درسُ `String.replace` الصامتة):
+// **لا مطابقةَ ⇒ لا شاهد، ويُرفض بصوتٍ عالٍ ولا يُتخطّى صامتاً.**
+const ARGS = process.argv.slice(2);
+const UNKNOWN = ARGS.filter((a) => a !== "--witness");
+if (UNKNOWN.length) {
+  console.log("⛔ وسمٌ مجهول: " + UNKNOWN.join(" ") + " — والمعروف: --witness");
+  console.log("   (قرار 136: وسمٌ يُتجاهَل صامتاً يُنتج تشغيلةً لم تقع تُقرأ شاهداً)");
+  process.exit(1);
+}
+const WITNESS = ARGS.includes("--witness");
+const GATE_140 = " && !hostControlsLostBy(video, nearest)";
+const CONTENT_RAW = fs.readFileSync(path.join(ROOT, "content.js"), "utf8");
+let CONTENT_JS = CONTENT_RAW;
+if (WITNESS) {
+  const hits = CONTENT_RAW.split(GATE_140).length - 1;
+  if (hits !== 1) {
+    console.log(`⛔ شاهدُ #140 يشترط موضعاً واحداً للشرط، والموجود ${hits} — لا شاهد.`);
+    process.exit(1);
+  }
+  CONTENT_JS = CONTENT_RAW.replace(GATE_140, "");
+  console.log("\n⚠️ **وضعُ الشاهد**: شرطُ #140 منزوعٌ من النسخة المخدومة — والمنتظَر حمرةٌ في «ك».\n");
+}
+
 const srv = http.createServer((req, res) => {
   const u = req.url.split("?")[0];
   const send = (b, t) => { res.writeHead(200, { "content-type": t }); res.end(b); };
   if (u === "/") return send(PAGE, "text/html; charset=utf-8");
-  if (u === "/content.js") return send(fs.readFileSync(path.join(ROOT, "content.js")), "text/javascript");
+  if (u === "/content.js") return send(CONTENT_JS, "text/javascript");
   res.writeHead(404); res.end("x");
 });
 await new Promise((r) => srv.listen(PORT, "127.0.0.1", r));
@@ -376,9 +530,11 @@ for (let i = 0; i < count; i++) {
   await sleep(700);
   const before = await evalJs("window.__before()");
   const branch = await evalJs("window.__branch()");
+  const scope = await evalJs("window.__scope()");
   await evalJs("window.__fire()", true);
   await sleep(1100);
   const after = await evalJs("window.__after()");
+  const survived = await evalJs("window.__survived()");
   await evalJs("window.__exit()");
   await sleep(600);
   const leftover = await evalJs("window.__marksAfterExit()");
@@ -392,8 +548,14 @@ for (let i = 0; i < count; i++) {
   console.log(`  البوابة (#58ب)          → ${after.stamped ? "وسمت" : "**رفضت**"}   ·   CSS محقونة: ${after.cssInjected ? "نعم" : "لا"}   ·   سمات بعد الخروج: ${leftover}`);
   console.log(`  ${after.fills ? "✅ الفيديو يملأ الشاشة" : "❌ الفيديو بقي بمقاسه — شاشة سوداء حوله"}`);
   console.log("");
+  const ctrlOk = !survived || survived.lost === 0;
+  console.log(`  ${ctrlOk ? "✅" : "❌"} #140 · أدواتُ المضيف داخل عنصر ملء الشاشة` + ` → موجودة=${survived && survived.total} · **تُفقد=${survived && survived.lost}**`);
+  console.log(`  #140 · نجاةُ أدوات المضيف → مختار=${scope.picked} (ضوابط:${scope.pickedCtrls})` +
+    ` · قاطع=${scope.nearest} (ضوابط:${scope.nearestCtrls})` +
+    ` · أسلافٌ بضوابط=${scope.ctrlsAnywhere} · تُفقد بالمختار=${scope.lostFromPicked} · بالقاطع=${scope.lostFromNearest}` +
+    ` · السكور=${scope.scorerArgmax} · يطابق=${scope.scorerAgrees}`);
   rows.push({ name: setup.name, ok: after.fills, fs: after.fsElement, pct: after.areaPct,
-              stamped: after.stamped, leftover, branch });
+              stamped: after.stamped, leftover, branch, scope, survived, ctrlOk });
 }
 
 console.log("=== الخلاصة ===");
@@ -414,4 +576,24 @@ console.log(`    ⇒ **دخول المسار الاحتياطي: ${fb.length}** 
 console.log("");
 console.log("⚠️ اقرأ tools/KNOWN-DEFECTS.md قبل تفسير أي ❌ أعلاه.");
 console.log("");
-chrome.kill(); srv.close(); process.exit(0);
+// ── ⭐ الحكم الذي يستطيع أن يُحمّر — وهو ما ينقص أيَّ رِكازٍ بلا حكمٍ لسؤاله ────
+const lostRows = rows.filter((r) => r.survived && r.survived.lost > 0);
+console.log("");
+console.log("=== #140 · أدواتُ المضيف داخل عنصر ملء الشاشة ===");
+for (const r of rows) {
+  console.log(`    ${r.ctrlOk ? "✅" : "❌"} ${pad(r.name.split(" — ")[0], 5)}` +
+    `موجودة=${pad(r.survived ? r.survived.total : "?", 4)}تُفقد=${r.survived ? r.survived.lost : "?"}`);
+}
+console.log(`    ⇒ **بنياتٌ تُفقد فيها أدواتُ المضيف: ${lostRows.length}** ` +
+  (lostRows.length === 0 ? "✅" : "❌ " + lostRows.map((r) => r.name.split(" — ")[0]).join(" · ")));
+console.log("");
+chrome.kill(); srv.close();
+if (WITNESS) {
+  const ok = lostRows.some((r) => r.name.startsWith("ك"));
+  console.log(ok
+    ? "✅ **الشاهد أحمر كما يجب**: بنزع الشرط تُفقد أدواتُ المضيف في «ك» ⇒ الحكمُ يرى."
+    : "⛔ **الشاهد لم يُحمّر بنزع الشرط** — فالحكمُ لا يقيس ما يدّعيه، ولا يُصدَّق أخضرُه.");
+  process.exit(ok ? 0 : 1);
+}
+// ⛔ **والخرْجُ غيرُ صفريّ على فقدٍ واقع** — حكمٌ لا يستطيع أن يُوقف كومِتاً ليس حارساً
+process.exit(lostRows.length === 0 ? 0 : 1);

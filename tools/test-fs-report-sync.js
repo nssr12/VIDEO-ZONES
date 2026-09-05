@@ -81,6 +81,25 @@ console.log("\n[4] محدِّدات زر ملء الشاشة الأصلي متط
   check("خمسة محدّدات لا أكثر ولا أقل", !!a && a.split(",").length === 5, a && a.split(",").length);
 }
 
+console.log("\n[6] #140 — الشرط الثالث على الحكم القاطع، في الملفين معاً");
+{
+  // ⛔ **نسخةٌ تتخلّف هنا تطبع حاويةً لم يعد المنتَجُ يختارها** — وهو أسوأ من صمتها:
+  // المِجَسّ يُلصَق في الكونسول عند بلاغ عطب، **فيُبنى على سطره تشخيصٌ عن كودٍ لا يعمل.**
+  const gate = /!hostControlsLostBy\(video,nearest\)\)/;
+  check("الشرط في content.js", gate.test(CS));
+  check("والشرط نفسه في المقطع", gate.test(RS));
+  const sel = (s) => (s.match(/(button,\[role='button'\],input\[type='range'\])/) || [])[1];
+  check("ومحدِّدُ ضوابط المضيف متطابق", !!sel(CS) && sel(CS) === sel(RS),
+    `\n    content: ${sel(CS)}\n    report : ${sel(RS)}`);
+  // **وإقصاءُ عناصرنا شرطٌ في الاثنين** (#141): مسحٌ يعدّ أزرارَنا يقيس نفسه
+  check("وإقصاءُ عناصرنا في content.js", /if\(isOwnElement\(ctrl\)\)continue;/.test(CS));
+  check("وإقصاؤها في المقطع", /if\(isOwnElement\(ctrl\)\)continue;/.test(RS));
+  // **والمدى واحد**: مسحٌ أوسعُ من الحكم يُحمّر على ما لا يملك الحكمُ تغييره
+  const depth = (s) => (s.match(/i<(FS_CONTAINER_MAX_DEPTH)&&el&&/g) || []).length;
+  check("ومدى المسح هو مدى الحكم القاطع في الملفين",
+    depth(CS) >= 2 && depth(RS) >= 2, `${depth(CS)} / ${depth(RS)}`);
+}
+
 console.log("\n[5] المقطع تشخيصي لا يُشحن، ولا يلمس التخزين ولا chrome.*");
 {
   check("غير مذكور في manifest.json",

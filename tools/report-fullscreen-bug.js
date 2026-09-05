@@ -89,12 +89,32 @@
     return null;
   };
 
+  // #140 — نسخةُ الشرط الثالث. **نسخةٌ تتخلّف تطبع حاويةً لم يعد المنتَجُ يختارها**،
+  // ويحرسها tools/test-fs-report-sync.js كما يحرس السكور.
+  const isOwnElement = (el) => !!(el && el.closest && el.closest(".vzWrap"));
+  const hostControlsLostBy = (video, container) => {
+    if (!video || !container) return false;
+    let el = video.parentElement;
+    for (let i = 0; i < FS_CONTAINER_MAX_DEPTH && el &&
+         el !== document.body && el !== document.documentElement; i++) {
+      const found = el.querySelectorAll("button, [role='button'], input[type='range']");
+      for (const ctrl of found) {
+        if (isOwnElement(ctrl)) continue;
+        if (!container.contains(ctrl)) return true;
+      }
+      el = el.parentElement;
+    }
+    return false;
+  };
+
   const pickContainer = (video) => {
     const known = video.closest(KNOWN_PLAYER_WRAPPER_SELECTOR);
     if (known && known.requestFullscreen) return { el: known, via: "known-wrapper" };
 
     const nearest = nearestPlayerAncestor(video);
-    if (nearest && nearest.requestFullscreen) return { el: nearest, via: "nearest-player (#58)" };
+    if (nearest && nearest.requestFullscreen && !hostControlsLostBy(video, nearest)) {
+      return { el: nearest, via: "nearest-player (#58)" };
+    }
 
     const videoRect = video.getBoundingClientRect();
     const videoArea = Math.max(1, videoRect.width * videoRect.height);
