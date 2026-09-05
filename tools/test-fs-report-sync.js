@@ -95,6 +95,21 @@ console.log("\n[6] #140 — الشرط الثالث على الحكم القاط
   check("وإقصاءُ عناصرنا في content.js", /if\(isOwnElement\(ctrl\)\)continue;/.test(CS));
   check("وإقصاؤها في المقطع", /if\(isOwnElement\(ctrl\)\)continue;/.test(RS));
   // **والمدى واحد**: مسحٌ أوسعُ من الحكم يُحمّر على ما لا يملك الحكمُ تغييره
+  // #140ج — وفصلُ صنفِ ضوابط المتصفّح في الملفّين، **وقبل السكور في كليهما**
+  check("فصلُ الصنف في content.js", /if\(videoOwnsBrowserControls\(video\)\)returnvideo;/.test(CS));
+  check("وفي المقطع", /if\(videoOwnsBrowserControls\(video\)\)return\{el:video,/.test(RS));
+  // ⚠️ **الترتيبُ يُقاس داخل الدالّة لا في الملفّ**: أوّلُ صياغةٍ قارنت أوّلَ ورودٍ
+  // في الملفّ كلِّه **فأمسكت نداءً في `hostControlsLostBy` يسبق الدالّةَ نصّاً**
+  // ⇒ **مطابقةٌ أوسعُ من سؤالها، في حارسٍ عن مطابقاتٍ أوسعَ من سؤالها.**
+  const body = (t) => {
+    const i = t.indexOf("functionpickFullscreenContainer(video){");
+    return i < 0 ? "" : t.slice(i, i + 2600);
+  };
+  const before = (t, a, b) => t.indexOf(a) > -1 && t.indexOf(b) > -1 && t.indexOf(a) < t.indexOf(b);
+  check("وقبل السكور في content.js",
+    before(body(CS), "videoOwnsBrowserControls(video)", "constvideoRect=video.getBoundingClientRect();constvideoArea"));
+  check("وبعد الحاوية المعروفة في content.js",
+    before(body(CS), "constknownPlayer=video.closest", "videoOwnsBrowserControls(video)"));
   const depth = (s) => (s.match(/i<(FS_CONTAINER_MAX_DEPTH)&&el&&/g) || []).length;
   check("ومدى المسح هو مدى الحكم القاطع في الملفين",
     depth(CS) >= 2 && depth(RS) >= 2, `${depth(CS)} / ${depth(RS)}`);

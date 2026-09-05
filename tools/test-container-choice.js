@@ -472,8 +472,10 @@ console.log("\n[11] #140ج — ضوابطُ المتصفّح صنفٌ يُفصل
   check("وضوابطُ المتصفّح ⇒ لا شيءَ يُفقد بالصعود",
     withC.ctx.hostControlsLostBy(withC.video, nearC) === false);
   const pickC = withC.ctx.pickFullscreenContainer(withC.video);
-  check("فيبقى الغلافُ هو المختار — لا صفحةٌ فوقه",
-    pickC === nearC, pickC && pickC.__name);
+  // ⭐ **الفيديو نفسُه هو الهدف** (بنصّ المالك): ضوابطُه داخله، فلا صعودَ يشتري شيئاً
+  // — **ولا صفحةٌ فوقه**، وهو العطبُ الذي رآه على شترستوك.
+  check("فالفيديو نفسُه هو المختار", pickC === withC.video, pickC && pickC.__name);
+  check("⛔ ولا صفحةٌ فوقه", !pickC || pickC.__name !== "DIV.page", pickC && pickC.__name);
 
   // ⛔ **والسالب هو ما يجعل الموجبَ خبراً**: بلا `controls` تُقرأ أزرارُ الصفحة
   // أدواتِ مضيفٍ تُفقد ⇒ **يصعد إلى الصفحة** — وهو العطبُ الذي رآه المالك.

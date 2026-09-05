@@ -5608,6 +5608,19 @@ document.addEventListener("fullscreenerror", clearFsFillMarks);
 // تسري على كلّ مسحٍ لا على مسح الصوت وحده.**
 // ⚠️ **والمدى مدى الحكم القاطع نفسِه** (`FS_CONTAINER_MAX_DEPTH` من أب الفيديو):
 // **مسحٌ أوسعُ من الحكم الذي يحرسه يُحمّر على ما لا يملك الحكمُ تغييره.**
+// ── ⭐⭐ #140ج — **صنفٌ ثالث: مشغّلٌ ضوابطُه من المتصفّح** — **موضعُ حقيقةٍ واحد** ──
+// `<video controls>`: **ضوابطُه داخل عنصره في ظلّ وكيل المستخدم** ⇒ **لا شيءَ يقع
+// خارجه ليُفقد بالصعود، والفيديو نفسُه هو الهدف.**
+// ⚠️ **ولا يُبنى له استدلالٌ جديد**: الشرطان هما شرطا #94 بحرفهما، **مقروءين هنا
+// لسؤالٍ آخر** — «أضوابطُه من المتصفّح وحدَه؟» لا «أيملك أدواته؟».
+// ⛔ **والثاني (`scopeShowsOwnControls`) شرطٌ لا زينة**: مشغّلٌ يضع `controls` على
+// الفيديو **وله شريطُه الخاصّ** ليس من هذا الصنف، **وإرجاعُ الفيديو فيه يُفقد شريطَه**
+// — وهو العطبُ الذي جئنا نُغلقه (#140).
+function videoOwnsBrowserControls(video) {
+  return !!video && video.controls === true &&
+         !scopeShowsOwnControls(playerScopeForVideo(video));
+}
+
 const HOST_CONTROL_SELECTOR = "button, [role='button'], input[type='range']";
 
 function hostControlsLostBy(video, container) {
@@ -5624,7 +5637,7 @@ function hostControlsLostBy(video, container) {
   // «أثمّة أدواتُ مشغّلٍ؟».**
   // ✅ **ويُفصل بما هو موجودٌ عندنا سلفاً ولا يُبنى له شيء** — وهما الشرطان اللذان
   // يُجيب بهما #94 عن «أيملك هذا الفيديو أدواته؟»، مقروءين هنا لسؤالٍ آخر.
-  if (video.controls === true && !scopeShowsOwnControls(playerScopeForVideo(video))) return false;
+  if (videoOwnsBrowserControls(video)) return false;
   let el = video.parentElement;
   for (let i = 0; i < FS_CONTAINER_MAX_DEPTH && el &&
        el !== document.body && el !== document.documentElement; i++) {
@@ -5647,6 +5660,16 @@ function pickFullscreenContainer(video) {
   // continue to work after we toggle fullscreen.
   const knownPlayer = video.closest(KNOWN_PLAYER_WRAPPER_SELECTOR);
   if (knownPlayer && knownPlayer.requestFullscreen) return knownPlayer;
+
+  // ⛔⭐⭐ **#140ج — والفصلُ هنا لا داخل بوّابة #140** (بلاغ المالك 2026-09-05،
+  // الموقع: شترستوك). **وأوّلُ تنفيذٍ وضعه في `hostControlsLostBy` فكان نصفَ علاج:**
+  // تلك **لا تُسأل إلا إن وُجد حكمٌ قاطع** — **وشترستوك لا حكمَ قاطعَ له** (صنفُ
+  // غلافِ فيديوه لا يحمل `player|video|…`) ⇒ **فيمضي إلى السكور، والسكورُ يختار ما
+  // فيه أزرار فيصعد إلى الصفحة** — **والمقيسُ عند المالك: `Video formats` و`HD/SD/Web`
+  // داخل عنصر ملء الشاشة.**
+  // ⇒ ⭐ **وبعد الحاوية المعروفة لا قبلها**: مشغّلٌ معروف (Video.js…) يضع `controls`
+  // على فيديوه **وحاويتُه هي الهدف الصحيح**، ولا يُسقطها هذا الصنف.
+  if (videoOwnsBrowserControls(video)) return video;
 
   // #58 — الحكم القاطع قبل السكور. لم يتحقّق؟ يسقط إلى السكور القائم بلا تعديل حرف.
   // ⛔ **#140 — وشرطٌ ثالث: ألّا يُخرج اختيارُه أدواتِ المضيف من الرسم.** والسكورُ
