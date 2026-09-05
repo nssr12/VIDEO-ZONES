@@ -57,6 +57,7 @@ function build(spec, scale) {
         width: r[0], height: r[1], left: r[2] ?? 0, top: r[3] ?? 0,
         right: (r[2] ?? 0) + r[0], bottom: (r[3] ?? 0) + r[1]
       }),
+      controls: !!s.controls,
       __name: s.name,
       __ctrls: []
     };
@@ -66,8 +67,10 @@ function build(spec, scale) {
     const total = (sp.ctrls || 0) + (sp.ownCtrls || 0);
     for (let k = 0; k < total; k++) {
       const mine = k >= (sp.ctrls || 0);   // #141 — أزرارُنا تحمل صنفَنا
+      // #140ج — **مستطيلٌ غير صفريّ**: `isVisibleEl` تقرؤه، وبلا مستطيلٍ ترمي
       const btn = { nodeType: 1, tagName: "BUTTON", className: mine ? "vzSpeedBtn" : "", id: "",
-                    parentElement: nodes[i] };
+                    parentElement: nodes[i],
+                    getBoundingClientRect: () => ({ width: 40, height: 32, left: 0, top: 0, right: 40, bottom: 32 }) };
       btn.matches = (sel) => sel.split(",").some((x) => x.trim() === "button");
       btn.closest = (sel) => {
         for (let q = btn; q; q = q.parentElement) if (q.matches && q.matches(sel)) return q;
@@ -121,7 +124,10 @@ function load(spec, scale) {
     createElement: () => ({ id: "", textContent: "" }),
     querySelectorAll: () => []
   };
-  const ctx = { document: doc, console };
+  // ⛔⭐ **`getComputedStyle` تُقدَّم صراحةً** — وبدونها يبتلع `isVisibleEl` رميتَه
+  // ويُرجع `false` **دائماً**، فيخضرّ فحصُ الصنف الثالث عن عمى لا عن حكم.
+  const ctx = { document: doc, console,
+    getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1" }) };
   vm.createContext(ctx);
   vm.runInContext(OWN + "\n" + KNOWN + "\n" + PICK, ctx);
   return { ctx, video: nodes[0], nodes };
@@ -446,6 +452,49 @@ console.log("\n[10] #140 — ما نُكبّره لا يُخرج أدواتِ ا
   check("المسحُ يستعمل حدَّ العمق نفسَه",
     /for\(leti=0;i<FS_CONTAINER_MAX_DEPTH&&el&&/.test(CONTENT.replace(/\s+/g, "")));
   }
+}
+}
+
+if (READY) {
+console.log("\n[11] #140ج — ضوابطُ المتصفّح صنفٌ يُفصل قبل الصعود");
+{
+  // ⭐⭐ **متغيّرٌ واحد لا غير: `video.controls`.** البنيةُ نفسُها، والأزرارُ نفسُها
+  // (أزرارُ صفحةٍ حول المشغّل: Save · Try · HD…) — **والحكمُ ينقلب.**
+  const spec = (controls) => ([
+    { name: "VIDEO", tag: "VIDEO", cls: "", controls, rect: (s) => [800 * s, 450 * s] },
+    { name: "DIV.shell", cls: "video-shell", rect: (s) => [800 * s, 450 * s] },
+    { name: "DIV.page", cls: "page", rect: (s) => [900 * s, 700 * s], ctrls: 5 },
+    { name: "BODY", tag: "BODY", cls: "", rect: (s) => [1440 * s, 900] }
+  ]);
+  const withC = load(spec(true), 1);
+  const nearC = withC.ctx.nearestPlayerAncestor(withC.video);
+  check("الحكم القاطع يجد غلافَ الفيديو", nearC && nearC.__name === "DIV.shell", nearC && nearC.__name);
+  check("وضوابطُ المتصفّح ⇒ لا شيءَ يُفقد بالصعود",
+    withC.ctx.hostControlsLostBy(withC.video, nearC) === false);
+  const pickC = withC.ctx.pickFullscreenContainer(withC.video);
+  check("فيبقى الغلافُ هو المختار — لا صفحةٌ فوقه",
+    pickC === nearC, pickC && pickC.__name);
+
+  // ⛔ **والسالب هو ما يجعل الموجبَ خبراً**: بلا `controls` تُقرأ أزرارُ الصفحة
+  // أدواتِ مضيفٍ تُفقد ⇒ **يصعد إلى الصفحة** — وهو العطبُ الذي رآه المالك.
+  const noC = load(spec(false), 1);
+  const nearN = noC.ctx.nearestPlayerAncestor(noC.video);
+  check("سالب: بلا ضوابط متصفّح ⇒ البوّابةُ تُطلق",
+    noC.ctx.hostControlsLostBy(noC.video, nearN) === true);
+  // ⛔⭐⭐ **وحدُّ هذا الملفّ يُكتب هنا لا يُسكت عنه:** الشجرةُ المزيّفة تُعطي
+  // **كلَّ سلفٍ أزراراً** (`querySelector` ثابتةُ الصدق — نموذجُ d.tube المقيس)
+  // ⇒ **فأثرُ البوّابة على اختيار السكور لا يُقاس هنا**، والسكورُ يُبقي الغلافَ
+  // في الحالين. **والمقيسُ هنا حكمُ الصنف وحدَه، وأثرُه في `repro-58` (بنية ك).**
+  // ⚠️ **وأوّلُ صياغةٍ ادّعت «فيصعد إلى الصفحة» فسقطت بالقياس** — **ومعها فحصٌ
+  // قارَن كائنين من سياقين (`pickC !== pickN`) فكان أخضرَ دائماً بلا معنى.**
+  check("⇒ والمتغيّرُ واحد وحدَه: الحكمان متعاكسان على البنية نفسِها",
+    withC.ctx.hostControlsLostBy(withC.video, nearC) === false &&
+    noC.ctx.hostControlsLostBy(noC.video, nearN) === true);
+
+  // **وشرطُ الصنف يُقرأ من الدالّة لا من نصٍّ**: زوالُه يُحمّر السطر أعلاه
+  check("الشرطُ في content.js بحروفه",
+    /video\.controls===true&&!scopeShowsOwnControls\(playerScopeForVideo\(video\)\)/
+      .test(CONTENT.replace(/\s+/g, "")));
 }
 }
 
