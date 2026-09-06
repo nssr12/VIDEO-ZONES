@@ -64,6 +64,8 @@ function makeWorld({ zone = 5, zoneClick = null, zoneKey = null, site = null, gl
     // #147 — **خارجَ القائمة هو الافتراض**، وسؤالُ هذا الملفّ الأولويّةُ لا
     // الروابط: بوّابةُ الروابط مُزيَّفةٌ أصلاً أعلاه.
     hostAllowsLinkedVideo: () => false,
+    // #148 — **خارجَ المصغّر هو الافتراض**، وسؤالُ هذا الملفّ الأولويّةُ لا المصغّر.
+    isInMiniPlayer: () => false,
     runAction: (a, e) => { ran.push({ action: a, via: e && e.type }); return true; },
     zoneSettings: {
       click: { map: zoneClick ? { [String(zone)]: zoneClick } : {} },

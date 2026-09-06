@@ -1600,6 +1600,32 @@ const KNOWN_PLAYER_WRAPPER_SELECTOR =
   ".plyr," +                      // Plyr
   ".vjs-fluid";                   // Video.js variant
 
+
+// ── ⭐⭐ #148 · #149 — **المشغّلُ المصغّر: نفسُ العنصر، وسياقٌ آخر** ────────────
+// **بلاغُ المالك 2026-09-06:** على الصفحة الرئيسية ليوتيوب، **المشغّلُ المصغّر**
+// (يُتابع آخرَ مقطعٍ أسفلَ الصفحة) — `Mouse2` يملأ الشاشةَ بالصفحة كلِّها،
+// **وأزرارُنا تُرسم عليه وهو بلا شريط تقدّم.**
+//
+// ⛔⭐⭐ **ولا يُفصل بالمشغّل نفسِه**: `#movie_player` هو **العنصرُ نفسُه** في
+// صفحة المشاهدة وفي المصغّر — **يوتيوب ينقله نقلاً** ⇒ **فأيُّ قاعدةٍ تُبنى عليه
+// تعمى عن الفرق.** ✅ **ويُفصل بالسلف، مقيساً في لقطة الشجرة الحقيقية**:
+// `<ytd-miniplayer>` **موجودٌ في صفحة المشاهدة** (مرّتان) — **فمجرّدُ وجوده ليس
+// إشارة** — **و`#movie_player` خارجَ مداه هناك** (موضعُه 4541173 والمصغّرُ
+// [4498990, 4500492]) ⇒ **فالاحتواءُ هو السؤال، لا الوجود.**
+//
+// ⭐ **واسمُ الوسم لا الصنف**: `ytdMiniplayerComponentHost` يبدو مولَّداً بالبناء
+// **فلا يُطابَق** (قرار 148)، **و`ytd-miniplayer` اسمُ عنصرٍ مخصَّصٍ يُبقيه يوتيوب**
+// كما أبقى `ytd-player` و`ytd-watch-flexy`.
+//
+// ⚠️ **وخطرٌ يُسمّى لأن العنصرَ ينتقل**: كلُّ حكمٍ مُثبَّتٍ عليه قد يعبر معه —
+// **ومزلاجا `speedBtnControlsLatch` و`zoneContainerCache` من هذا الشكل.** ⇒
+// **ولذلك يُسأل هذا الشرطُ في كلّ مرّةٍ ولا يُثبَّت**: `closest` رخيصةٌ، والتثبيتُ
+// هو الذي كلّفنا #142ج.
+const MINI_PLAYER_SELECTOR = "ytd-miniplayer";
+
+function isInMiniPlayer(node) {
+  try { return !!node?.closest?.(MINI_PLAYER_SELECTOR); } catch { return false; }
+}
 const zoneContainerCache = new WeakMap(); // video → { container|null, parent } (null = negative lookup, cached too)
 
 // A player frame legitimately exceeds the video area only by the letterbox
@@ -2558,6 +2584,7 @@ function setFilterBtnShown(on) {
     video = speedBtnVideo();
     if (!video) return;
     if (!videoOwnsControls(video)) on = false;   // #94 — فيديوٌ يملك أدواته
+    else if (isInMiniPlayer(video)) on = false;   // #149 — مشغّلٌ مصغّر: لا نرسم فيه
     else ensureVideoOverlay(video);
   }
   if (!vzFilterBtn) return;
@@ -2615,6 +2642,9 @@ function setSpeedBtnShown(on) {
     // أن يمرّ سكون**، فلو خرجنا صامتين لبقي الزرّ معروضاً فوقها — وهو العَرَض
     // نفسه الذي نعالجه.
     if (!videoOwnsControls(video)) on = false;
+    // #149 — **مشغّلٌ مصغّر: لا نرسم فيه.** وأزرارُه الثلاثة (تشغيلٌ وإغلاقٌ
+    // وتوسيع) تُمرِّر شرطَ #94 الموجب — **وهي أدواتُ نافذةٍ لا أدواتُ مشغّل.**
+    else if (isInMiniPlayer(video)) on = false;
     else ensureVideoOverlay(video);   // ⭐ يضمن عنصره قبل أن يطلبه
   }
   if (!vzSpeedBtn) return;
@@ -3448,6 +3478,7 @@ function setCopyBtnShown(on) {
     video = speedBtnVideo();
     if (!video) return;
     if (!videoOwnsControls(video)) on = false;   // #94 — فيديوٌ يملك أدواته
+    else if (isInMiniPlayer(video)) on = false;   // #149 — مشغّلٌ مصغّر: لا نرسم فيه
     else ensureVideoOverlay(video);
   }
   if (!vzCopyBtn) return;
@@ -6554,6 +6585,14 @@ function handleMouse(e) {
   // Checked on mousedown too, which is the whole point: that is where this path
   // used to fire the general action ahead of the zone one (audit #48).
   if (zoneClickBinding(e)) return;
+
+  // ⛔⭐ **#148 — لا اختصاراتِ فأرةٍ عامّةً في المشغّل المصغّر** (قرار المالك
+  // 2026-09-06). **وموضعُه بعد المربّعات لا قبلها شرطٌ لا ترتيب**: أمرُه بنصّه
+  // «امنع اختصاراتِ الماوس وأزرارَ الشريط، **واترك الشبكةَ تعمل بالعجلة**»
+  // ⇒ **فطبقةُ المربّعات تمرّ، والعامُّ وحدَه يُمنع.**
+  // ⭐ **ويُسأل على هدف الحدث لا على فيديوٍ مُحلول**: أرخصُ، وأدقُّ — **فالمؤشّرُ
+  // فوق المصغّر هدفُه داخلَه بالبناء**، ولا يُنفَق حلُّ فيديو على كلّ حدث.
+  if (isInMiniPlayer(e.target)) return;
 
   const sig = normalizeMouseEvent(e); // Mouse1..Mouse5
   const to = lookupRemap(sig);
