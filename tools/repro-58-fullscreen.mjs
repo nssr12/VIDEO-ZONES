@@ -562,10 +562,57 @@ window.__marksAfterExit = () => document.querySelectorAll("[data-vz-fs],[data-vz
 window.__exit = () => (document.fullscreenElement ? document.exitFullscreen() : Promise.resolve());
 `;
 
+// ── ⭐ #146 — **مِجَسُّ قراءةٍ لا حكم** (شكلُ مِجَسّ #140 نفسِه) ──────────────
+// السؤال: **أيُعلن الموقعُ عنصرَ ملء شاشته في ورقة أنماطه؟** — ولو أعلن، أيختلف
+// عمّا نختاره اليوم؟ ⛔ **يُطبع ولا يدخل القبول** حتى يُقرَّر العلاج.
+const CAND_146 = String.raw`
+window.__cand146 = function (video) {
+  const FS = /:(?:-webkit-full-screen|-moz-full-screen|fullscreen)\b/;
+  const GENERIC = new Set(["video", "*", "html", "body", ""]);
+  const sels = [];
+  const walk = (rules) => {
+    for (const r of rules) {
+      // ⛔⭐ **كائنٌ صادقٌ ليس قائمةً غيرَ فارغة**: كروم يُعطي كلَّ CSSStyleRule
+      // قائمةَ cssRules فارغةً منذ دعمِ التداخل، **وهي صادقة** — فشرطُ
+      // <if (r.cssRules)> كان يغوص في لا شيء ويتخطّى المُحدِّد قبل قراءته،
+      // **فطبع «صفرَ إطلاق» عن مِجَسٍّ لا يرى** (أُمسك بشاهدٍ موجبٍ لا بالقراءة).
+      const st = r.selectorText;
+      if (r.cssRules && r.cssRules.length) { try { walk(r.cssRules); } catch (e) {} }
+      if (!st || !FS.test(st)) continue;
+      for (const part of st.split(",")) {
+        for (const tok of part.trim().split(/\s*[>+~]\s*|\s+/)) {
+          if (!FS.test(tok)) continue;
+          const clean = tok.replace(FS, "").trim();
+          if (GENERIC.has(clean.toLowerCase())) continue;
+          if (sels.indexOf(clean) === -1) sels.push(clean);
+        }
+      }
+    }
+  };
+  for (const sheet of document.styleSheets) {
+    // ⛔ ورقتُنا تُقصى — تحمل [data-vz-fs]:fullscreen، فبلا هذا نُطابق إعلانَنا
+    if (sheet.ownerNode && sheet.ownerNode.id === "vz_fs_fill_css") continue;
+    let rules; try { rules = sheet.cssRules; } catch (e) { continue; }
+    try { walk(rules); } catch (e) {}
+  }
+  let el = null, sel = null;
+  if (sels.length) {
+    for (let n = video.parentElement, i = 0; n && i < 8; n = n.parentElement, i++) {
+      if (n === document.body || n === document.documentElement) break;
+      for (const sq of sels) { try { if (n.matches(sq)) { el = n; sel = sq; break; } } catch (e) {} }
+      if (el) break;
+    }
+  }
+  const today = pickFullscreenContainer(video);
+  return { declares: sels, cand: el ? desc(el) : null, sel: sel,
+           today: desc(today), same: !!el && el === today };
+};`;
+
 const PAGE = `<!doctype html><meta charset="utf-8"><body style="margin:0;background:#111">
 <script>${STUB}</script>
 <script src="/content.js"></script>
-<script>${CASES}</script></body>`;
+<script>${CASES}</script>
+<script>${CAND_146}</script></body>`;
 
 // ── ⭐⭐ شاهدُ الحمرة لـ#140 — **يُنزع الشرطُ وحدَه، ويُتحقَّق أن النزع وقع** ────
 // ⛔ **ولا يُفتعَل عطبٌ مشابه** (قرار المالك): المنزوعُ هو **نصُّ السطر السابق
@@ -696,6 +743,7 @@ for (let i = 0; i < count; i++) {
   const before = await evalJs("window.__before()");
   const branch = await evalJs("window.__branch()");
   const scope = await evalJs("window.__scope()");
+  const cand146 = await evalJs("window.__cand146(window.__v)");
   await evalJs("window.__fire()", true);
   await sleep(1100);
   const after = await evalJs("window.__after()");
@@ -727,8 +775,11 @@ for (let i = 0; i < count; i++) {
     ` → طبيعيّ=${v3 && v3.natural.join("x")} صندوق=${v3 && v3.box.join("x")}` +
     ` صورة=${v3 && v3.drawn.join("x")} **قائد=${v3 && v3.lead}** fit=${v3 && v3.objectFit}` +
     ` تجاوز=${v3 && v3.overflow} تُفقد=${v3 && v3.lost}`);
+  console.log(`  #146 · إعلانُ الموقع لعنصرِ ملء شاشته` +
+    ` → يُعلن=${JSON.stringify(cand146.declares)} · المرشَّح=${cand146.cand}` +
+    ` · اليوم=${cand146.today} · ${!cand146.cand ? "صامت" : cand146.same ? "نفسُ الاختيار" : "**انقلاب**"}`);
   rows.push({ name: setup.name, ok: after.fills, fs: after.fsElement, pct: after.areaPct,
-              stamped: after.stamped, leftover, branch, scope, survived, ctrlOk, v3, v3ok });
+              stamped: after.stamped, leftover, branch, scope, survived, ctrlOk, v3, v3ok, cand146 });
 }
 
 console.log("=== الخلاصة ===");
@@ -746,6 +797,14 @@ console.log("");
 console.log("=== الفرع الحاسم لكل بنية (البند #59) ===");
 for (const r of rows) console.log(`    ${pad(r.name.split(" — ")[0], 5)}${r.branch}`);
 console.log(`    ⇒ **دخول المسار الاحتياطي: ${fb.length}** ${fb.length === 0 ? "✅" : "❌ " + fb.map((r) => r.name.split(" — ")[0]).join(" · ")}`);
+console.log("");
+// ── ⭐ #146 — **يُطبع ولا يدخل القبول** (شكلُ #142ز): العلاجُ لم يُقرَّر بعد،
+// **وحكمٌ يُدخَل قبل قرارِه يُحمّر على ما لا يملك أحدٌ تغييرَه.**
+const c146fire = rows.filter((r) => r.cand146 && r.cand146.cand);
+const c146flip = c146fire.filter((r) => !r.cand146.same);
+console.log("=== #146 · إعلانُ الموقع لعنصرِ ملء شاشته (قراءةٌ لا حكم) ===");
+console.log(`    أطلق في ${c146fire.length} من ${rows.length}: ${c146fire.map((r) => r.name.split(" — ")[0]).join(" · ") || "لا شيء"}`);
+console.log(`    ⇒ **انقلاباتٌ عن اختيار اليوم: ${c146flip.length}** ${c146flip.length === 0 ? "✅" : "⚠️ " + c146flip.map((r) => r.name.split(" — ")[0]).join(" · ")}`);
 console.log("");
 console.log("⚠️ اقرأ tools/KNOWN-DEFECTS.md قبل تفسير أي ❌ أعلاه.");
 console.log("");

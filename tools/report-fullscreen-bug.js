@@ -315,6 +315,44 @@ window.__vz58 = () => {
     return out.length ? out.join(" ← ") : "(الفيديو ابنٌ مباشر)";
   })();
 
+  // ── ⭐ #146 — **أيُعلن الموقعُ عنصرَ ملء شاشته في ورقة أنماطه؟** ───────────
+  // ⛔ **وأوراقُ نطاقٍ آخرَ لا تُقرأ** (`cssRules` ترمي) — **فيُطبع عددُ ما
+  // تعذّرت قراءتُه**، لأن «لم أجد» و«لم أستطع أن أرى» ليسا واحداً.
+  const declared = (() => {
+    const FS = /:(?:-webkit-full-screen|-moz-full-screen|fullscreen)\b/;
+    const GENERIC = new Set(["video", "*", "html", "body", ""]);
+    const sels = []; let blind = 0;
+    const walk = (rules) => {
+      for (const r of rules) {
+        // ⛔ كائنٌ صادقٌ ليس قائمةً غيرَ فارغة: كروم يُعطي كلَّ قاعدةٍ
+        // `cssRules` فارغةً منذ دعمِ التداخل، وهي صادقة.
+        const st = r.selectorText;
+        if (r.cssRules && r.cssRules.length) { try { walk(r.cssRules); } catch {} }
+        if (!st || !FS.test(st)) continue;
+        for (const part of st.split(",")) {
+          for (const tok of part.trim().split(/\s*[>+~]\s*|\s+/)) {
+            if (!FS.test(tok)) continue;
+            const clean = tok.replace(FS, "").trim();
+            if (GENERIC.has(clean.toLowerCase())) continue;
+            if (sels.indexOf(clean) === -1) sels.push(clean);
+          }
+        }
+      }
+    };
+    for (const sh of document.styleSheets) {
+      if (sh.ownerNode && sh.ownerNode.id === "vz_fs_fill_css") continue;
+      let rules; try { rules = sh.cssRules; } catch { blind++; continue; }
+      try { walk(rules); } catch {}
+    }
+    let el = null, sel = null;
+    for (let n = v.parentElement, i = 0; n && i < 8 && sels.length; n = n.parentElement, i++) {
+      if (n === document.body || n === document.documentElement) break;
+      for (const sq of sels) { try { if (n.matches(sq)) { el = n; sel = sq; break; } } catch {} }
+      if (el) break;
+    }
+    return { sels, blind, el, sel };
+  })();
+
   const marked = {
     ورقة: !!document.getElementById("vz_fs_fill_css"),
     حاوية: !!document.querySelector("[data-vz-fs]"),
@@ -356,6 +394,10 @@ window.__vz58 = () => {
     "حاملُ الوسم=" + desc(markedEl) + (markedEl && fsEl && markedEl === fsEl ? " **هو fsEl**" : " ⛔ **ليس fsEl**"),
     "يطابق قاعدتَنا=" + (matchesRule === null ? "?" : matchesRule ? "نعم" : "⛔ لا"),
     "سلسلة=" + chain,
+    "الموقعُ يُعلن=" + (declared.sels.length ? JSON.stringify(declared.sels) : "لا شيء") +
+      (declared.blind ? " (⛔ " + declared.blind + " ورقةً تعذّرت قراءتُها — نطاقٌ آخر)" : ""),
+    "المرشَّح146=" + (declared.el ? desc(declared.el) + " بـ«" + declared.sel + "»" : "—") +
+      (declared.el && fsEl ? (declared.el === fsEl ? " **هو fsEl**" : " ⚠️ **غيرُ fsEl**") : ""),
     "سواد=" + (gaps ? `أعلى ${gaps.أعلى} أسفل ${gaps.أسفل} يسار ${gaps.يسار} يمين ${gaps.يمين} (fs ${gaps.fs})`
                     : "—"),
     "fsEl يملأ الشاشة=" + (gaps ? (gaps.fs === innerWidth + "x" + innerHeight ? "نعم" : "لا — " + gaps.fs) : "—")
