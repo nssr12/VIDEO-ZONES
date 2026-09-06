@@ -370,6 +370,8 @@ async function applyBoostToAllVideos(pct) {
 
 let lastFsAt = 0;
 let lastMouse2At = 0;
+// #145 — الضغطةُ الوسطى استهلكها أمرُنا، فيُلغى تنقّلُ الرابط في `auxclick`.
+let mouse2ConsumedPress = false;
 let suppressContextMenuUntil = 0;
 
 function nowMs() { return Date.now(); }
@@ -5134,6 +5136,20 @@ function shouldLetNativeLinkHandlingRun(e, video) {
   if (linkLike === video) return false;
   if (video.contains?.(linkLike)) return false;
 
+  // ⭐⭐ **#145 — ورابطٌ يلفّ الفيديو ليس رابطاً قَصَده المستخدم، بل البطاقةُ
+  // حولَه.** كان الشرط «أثمّة رابطٌ فوق الهدف؟» **وهو أوسعُ من سؤاله** (قرار 93):
+  // سؤالُه «أَقصَد الرابطَ أم الفيديو؟» — **وغلافُ المنشور في الخلاصة يُطابق
+  // الأوّل ولا يجيب الثاني**، فكان الزرُّ الأوسط يفتح تبويباً والأيمنُ يفتح
+  // قائمةَ المتصفّح بدل أمر المستخدم.
+  //
+  // ⛔⭐ **والمُميِّزُ `contains` لا الهندسة، وقِيس على الجانبين قبل أن يُكتب:**
+  // في لقطة يوتيوب الحقيقية في `tools/snapshots` **تسعةَ عشرَ رابطاً داخل
+  // `#movie_player`** — منها 12 `ytp-modern-videowall-still` و3
+  // `ytp-ce-covering-overlay` — **وصفرٌ منها يلفّ الفيديو**: كلُّها مرسومةٌ
+  // فوقه. ⇒ **فيوتيوب يبقى ممتنعاً بالبناء لا بالنيّة**، وبطاقاتُ نهايته
+  // تُنقَر كما كانت. **وغلافُ إنستقرام يلفّ** ⇒ فنعمل.
+  if (linkLike.contains?.(video)) return false;
+
   return true;
 }
 
@@ -6428,6 +6444,21 @@ function handleMouse(e) {
   if (sig === "Mouse2") {
     if (!(e.type === "auxclick" || e.type === "mousedown")) return;
 
+    // ⭐⭐ **#145 — العلّةُ الثانية: كنّا نُلغي في الحدث الخطأ.** أمرُنا يقع على
+    // `mousedown` ثمّ نُلغي افتراضيَّه — **وكروم لا يفتح تبويبَ الرابط من
+    // `mousedown` بل من `auxclick`** (مقيس: إلغاءُ `mousedown` ⇒ التبويب يُفتح
+    // 4⇒5 · وإلغاءُ `auxclick` ⇒ لا يُفتح 6⇒6). **و`auxclick` الموافقُ يعود من
+    // مانع التكرار قبل أن يصل إلى أيّ إلغاء** ⇒ **فما كان شيءٌ يُلغيه أبداً.**
+    // ⛔ **وموضعُه فوق مانع التكرار شرطٌ لا ترتيب**: تحته لا يُبلَغ.
+    // ⛔ **و`preventDefault` وحدَها — بلا وقفِ انتشار**: المقيسُ أنها كافية،
+    // **ووقفُ الانتشار يمنع الحدثَ عن كلّ مضيفٍ في كلّ ضغطةٍ وسطى** وذاك
+    // أوسعُ من سؤاله، وهو عينُ ما نُصلحه في الأولى.
+    if (e.type === "auxclick" && mouse2ConsumedPress) {
+      mouse2ConsumedPress = false;
+      e.preventDefault();
+      return;
+    }
+
     const t = nowMs();
     if (t - lastMouse2At < 350) return; // يمنع double-trigger
     lastMouse2At = t;
@@ -6469,6 +6500,9 @@ function handleMouse(e) {
   if (ok && sig === "Mouse3") {
     suppressContextMenuUntil = nowMs() + 800;
   }
+  // **الرايةُ تُرفع على الأمر الواقع لا على الضغطة**، كشكلِ `suppressContextMenuUntil`
+  // فوقها بحرفه: أمرٌ فشل لا يحجب شيئاً (#33).
+  if (ok && sig === "Mouse2" && e.type === "mousedown") mouse2ConsumedPress = true;
   delete e.__videoUnderPointer;
   if (!ok) return;
 

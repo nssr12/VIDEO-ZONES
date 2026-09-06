@@ -59,6 +59,8 @@ function makeWorld({ zone = 5, zoneClick = null, zoneKey = null, site = null, gl
     lastPointer: { x: 100, y: 100 },
     lastMouse2At: 0,
     suppressContextMenuUntil: 0,
+    // #145 — رايةُ «استهلكنا هذه الضغطة» تُستدعى في مسار Mouse2 قبل مانع التكرار.
+    mouse2ConsumedPress: false,
     runAction: (a, e) => { ran.push({ action: a, via: e && e.type }); return true; },
     zoneSettings: {
       click: { map: zoneClick ? { [String(zone)]: zoneClick } : {} },
