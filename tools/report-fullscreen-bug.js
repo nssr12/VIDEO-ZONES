@@ -288,6 +288,33 @@ window.__vz58 = () => {
     };
   })();
 
+  // ⛔⭐⭐ **«موجودٌ» ليس «هو»** — وهذا عيبٌ كان في هذا المِجَسّ نفسِه: طبعتُ
+  // «حاوية✓» عن `querySelector("[data-vz-fs]")`، **وهو يقول إن عنصراً ما يحمل
+  // الوسمَ لا إن عنصرَ ملء الشاشة يحمله** — ومُحدِّدُ قاعدتنا يشترط الثاني.
+  // ⇒ **فيُسأل المُحدِّدُ نفسُه**: أيُطابق الفيديو قاعدتَنا الآن أم لا؟
+  const RULE = "[data-vz-fs]:fullscreen video[data-vz-fs-video]";
+  let matchesRule = null;
+  try { matchesRule = v.matches(RULE); } catch {}
+  const markedEl = document.querySelector("[data-vz-fs]");
+
+  // ⭐ **وسلسلةُ الآباء بين الفيديو وعنصرِ ملء الشاشة، بارتفاعاتها** — لأن
+  // `height:100%` **لا يَحُلّ عبر أبٍ بلا ارتفاعٍ محدَّد** (مقيسٌ: 800×501 بدل
+  // 800×600)، **فأوّلُ أبٍ ارتفاعُه `auto` هو موضعُ الانقطاع.**
+  const chain = (() => {
+    if (!fsEl) return "—";
+    const out = [];
+    let n = v.parentElement, i = 0;
+    while (n && n !== fsEl && i++ < 8) {
+      let hs = "?";
+      try { hs = getComputedStyle(n).height; } catch {}
+      out.push(desc(n) + "[" + Math.round(n.getBoundingClientRect().height) + "·" + hs + "]");
+      n = n.parentElement;
+    }
+    if (n === fsEl) out.push("⇒fsEl");
+    else out.push("⛔ لم أبلغ fsEl — الفيديو ليس داخلَه");
+    return out.length ? out.join(" ← ") : "(الفيديو ابنٌ مباشر)";
+  })();
+
   const marked = {
     ورقة: !!document.getElementById("vz_fs_fill_css"),
     حاوية: !!document.querySelector("[data-vz-fs]"),
@@ -326,6 +353,9 @@ window.__vz58 = () => {
     "يُقصّ=" + (wouldCrop(v) ? "نعم" : "لا"),
     "وسمُنا=" + (marked.ورقة ? "ورقة✓" : "ورقة✗") + (marked.حاوية ? " حاوية✓" : " حاوية✗") +
                 (marked.فيديو ? " فيديو✓" : " فيديو✗"),
+    "حاملُ الوسم=" + desc(markedEl) + (markedEl && fsEl && markedEl === fsEl ? " **هو fsEl**" : " ⛔ **ليس fsEl**"),
+    "يطابق قاعدتَنا=" + (matchesRule === null ? "?" : matchesRule ? "نعم" : "⛔ لا"),
+    "سلسلة=" + chain,
     "سواد=" + (gaps ? `أعلى ${gaps.أعلى} أسفل ${gaps.أسفل} يسار ${gaps.يسار} يمين ${gaps.يمين} (fs ${gaps.fs})`
                     : "—"),
     "fsEl يملأ الشاشة=" + (gaps ? (gaps.fs === innerWidth + "x" + innerHeight ? "نعم" : "لا — " + gaps.fs) : "—")
