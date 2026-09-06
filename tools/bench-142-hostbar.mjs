@@ -252,6 +252,62 @@ try {
           await sleep(600);
         }
       }
+      // ── ⭐ #142هـ — **زرّا التشغيل والصوت: أثرُهما يُقاس ولا يُوعَد به** ──────
+      // ⭐ **وخلافاً لزرّ ملء الشاشة، هذان لا يحتاجان إيماءةَ مستخدم** ⇒ **فالنقرةُ
+      // الاصطناعية تكفي، والحكمُ برقمٍ يجب أن يتغيّر** (قرار 26).
+      if (cell.expect) {
+        out.btns = await evalIn(page, `(() => {
+          const g = (sel) => { const b = document.querySelector(sel); if (!b) return null;
+            const r = b.getBoundingClientRect();
+            return { w: Math.round(r.width), x: Math.round(r.left + r.width / 2),
+                     y: Math.round(r.top + r.height / 2) }; };
+          const v = document.getElementById("v");
+          const ic = (sel) => { const e = document.querySelector(sel);
+            return e ? !e.classList.contains("vzHidden") : null; };
+          return { play: g(".vzHbPlay"), mute: g(".vzHbMute"),
+                   paused: v.paused, muted: v.muted,
+                   iPlay: ic(".vzHbPlayIcon"), iPause: ic(".vzHbPauseIcon"),
+                   iVol: ic(".vzHbVolIcon"), iMuted: ic(".vzHbMutedIcon") }; })()`);
+        // ⛔⭐⭐ **سؤالان لا سؤال، وقياسان لا قياس** (قرار 109):
+        //   **أمُصابٌ بالنقر؟** — `elementFromPoint` على مركزه: **يقيس إمكانَ النقر
+        //   فعلاً** (الطبقةُ شفّافةٌ للأحداث إلا شريطَنا).
+        //   **وأوقع الأثر؟** — نقرةٌ من الشجرة على العنصر نفسِه: **تُشغّل مستمعَنا
+        //   الذي تُشغّله نقرةُ المستخدم بعينه.**
+        // ⚠️ **ولماذا لا تُستعمل نقرةُ `Input.dispatchMouseEvent` هنا:** **مقيسٌ أنها
+        // لا تبلغ عناصرَ طبقتنا في هذا الرِكاز** — لا `paused` تبدّل ولا `muted`
+        // **ولا سطرُ تلميحٍ ظهر** ⇒ **وحالٌ لا تصل لا يُقاس عليها شيء**، **ونقرةُ
+        // المالك الحقيقية تعمل (تحقّقُ `ش6`).** ⇒ **فيُقاس ما يُستطاع، ويُعلَن الحدّ.**
+        // ⚠️ **والمؤشّرُ يُثبَّت على الفيديو الأوّل قبل النقر** — الصفحةُ فيها فيديوان
+        // (نموذجُ الخلاصة)، **والشريطُ يتبع ما تحت المؤشّر** ⇒ **فبلا تثبيتٍ يُقاس
+        // فيديوٌ غيرُ الذي يعمل عليه الزرّ.**
+        await wiggle(page, v0.x + Math.round(v0.w / 2), v0.y + Math.round(v0.h / 2), 3);
+        await sleep(400);
+        // ⛔⭐ **«مُصاب» يُقاس بوجوده في كومة النقر لا بمطابقة العنصر الأعلى:**
+        // **الأعلى هو `<svg>` داخل الزرّ**، **وأوّلُ صياغةٍ قارنت الأعلى بالزرّ
+        // فطبعت «غيرُ مُصاب» عن زرٍّ مُصاب** — **مطابقةٌ أضيقُ من سؤالها هذي المرّة.**
+        out.hit = await evalIn(page, `(() => {
+          const at = (sel) => { const b = document.querySelector(sel); if (!b) return null;
+            const r = b.getBoundingClientRect();
+            const st = document.elementsFromPoint(Math.round(r.left + r.width / 2),
+                                                  Math.round(r.top + r.height / 2));
+            const i = st.indexOf(b);
+            return i >= 0 && i <= 3; };
+          return { play: at(".vzHbPlay"), mute: at(".vzHbMute"), fs: at(".vzHbFs") }; })()`);
+        await evalIn(page, `(() => { document.querySelector(".vzHbPlay").click();
+                                     document.querySelector(".vzHbMute").click(); })()`);
+        await sleep(350);
+        out.btnsAfter = await evalIn(page, `(() => {
+          const v = document.getElementById("v");
+          const ic = (sel) => { const e = document.querySelector(sel);
+            return e ? !e.classList.contains("vzHidden") : null; };
+          return { paused: v.paused, muted: v.muted,
+                   iPlay: ic(".vzHbPlayIcon"), iPause: ic(".vzHbPauseIcon"),
+                   iVol: ic(".vzHbVolIcon"), iMuted: ic(".vzHbMutedIcon") }; })()`);
+        // ⚠️ **تُعاد الحالُ كما كانت**: خطوةٌ تُخلّف حالاً لمن بعدها تُفسد قياسَه (قرار 125)
+        await evalIn(page, `(async () => { const v = document.getElementById("v");
+          v.muted = true; try { await v.play(); } catch (e) {} })()`);
+        await sleep(300);
+      }
       // ⚠️ **والسكونُ يُقاس بعد الحركة لا قبلها**: الشريطُ يظهر بالحركة، **فاختفاؤه
       // بعد المهلة نصفُ العقد** — ومن قاس الظهور وحدَه قاس نصفَ الوعد.
       // ⛔⭐ **والمؤشّرُ يُزاح عن الشريط أوّلاً**: القاعدةُ العامّة (#95) **لا يُخفى
@@ -282,6 +338,16 @@ for (const r of rows) {
       ` · بثّ=${r.moved.live} · مدّة=${r.moved.dur}`);
   }
   if (r.ready) console.log(`   الحالُ المُنتَجة: مُشغَّل=${!r.ready.paused} · نافذةُ التنقّل=${r.ready.seekable} · نهايتُها=${r.ready.end}`);
+  if (r.hit) {
+    console.log(`   ⇒ إصابةُ النقر (elementFromPoint): تشغيل=${r.hit.play} صوت=${r.hit.mute} ملءُ شاشة=${r.hit.fs}`);
+  }
+  if (r.btns) {
+    console.log(`   ⇒ زرّا التشغيل والصوت: مقاس=${r.btns.play && r.btns.play.w}/${r.btns.mute && r.btns.mute.w}` +
+      ` · قبل: paused=${r.btns.paused} muted=${r.btns.muted} أيقونة(تشغيل/إيقاف)=${r.btns.iPlay}/${r.btns.iPause}` +
+      ` · بعد: paused=${r.btnsAfter && r.btnsAfter.paused} muted=${r.btnsAfter && r.btnsAfter.muted}` +
+      ` أيقونة=${r.btnsAfter && r.btnsAfter.iPlay}/${r.btnsAfter && r.btnsAfter.iPause}` +
+      ` صوت=${r.btnsAfter && r.btnsAfter.iVol}/${r.btnsAfter && r.btnsAfter.iMuted}`);
+  }
   if (r.fsBtn) {
     console.log(`   ⇒ زرُّ ملء الشاشة: موجود=${r.fsBtn.exists} مقاس=${r.fsBtn.w}x${r.fsBtn.h}` +
       ` أيقونة=${r.fsBtn.icon} · بعد النقر: عنصر=${r.fsAfter && r.fsAfter.fsEl}` +
@@ -313,10 +379,19 @@ const posOk = !!pos && pos.moved && pos.moved.shown === true && pos.seeked === t
               // (`Runtime.evaluate` بـ`userGesture`): **دخل ملءَ الشاشة على
               // `DIV.feed-video-shell`** — **فالمقيسُ أن المسار يعمل، لا أن النقرة تصل.**
               // ⇒ ⚠️ **و«أتصل النقرةُ؟» سؤالٌ بيد المالك في `ش6`، ولا يُدَّعى هنا.**
-              poss.every((r) => r.fsBtn && r.fsBtn.w > 0 && r.fsBtn.icon && r.fsBtn.icon[0] > 0);
+              poss.every((r) => r.fsBtn && r.fsBtn.w > 0 && r.fsBtn.icon && r.fsBtn.icon[0] > 0) &&
+              // **الثلاثةُ مُصابةٌ بالنقر فعلاً** — والطبقةُ شفّافةٌ لما سواها
+              poss.every((r) => r.hit && r.hit.play && r.hit.mute && r.hit.fs) &&
+              // **الزرّان: مرئيّان · وأثرُهما وقع · والأيقونةُ تبعت الحال**
+              poss.every((r) => r.btns && r.btnsAfter &&
+                                r.btns.play && r.btns.play.w > 0 && r.btns.mute && r.btns.mute.w > 0 &&
+                                r.btnsAfter.paused !== r.btns.paused &&
+                                r.btnsAfter.muted !== r.btns.muted &&
+                                r.btnsAfter.iPause === !r.btnsAfter.paused &&
+                                r.btnsAfter.iMuted === !!r.btnsAfter.muted);
 const negOk = negs.every((r) => r.moved && r.moved.shown === false);
 console.log("── الشاهدان (قرار 26)");
-console.log("   موجبان (يظهر · يُنقِّل · يختفي بالسكون · يبقى مع أزرار الخلاصة · يتبع المؤشّر · وزرُّ ملء الشاشة موجودٌ بمقاسٍ صحيح): " + (posOk ? "✅" : "❌"));
+console.log("   موجبان (يظهر · يُنقِّل · يختفي بالسكون · يبقى مع أزرار الخلاصة · يتبع المؤشّر · وأزرارُه الثلاثة تُصاب ويقع أثرُها): " + (posOk ? "✅" : "❌"));
 console.log("   وسوالبُه الثلاثة (مطفأ · مضيفٌ له منزلق · يوتيوب): " + (negOk ? "✅" : "❌"));
 if (!(posOk && negOk)) {
   console.log("\n⛔ **لا يُقرأ من هذا رقمٌ عن الميزة حتى يخضرّ الشاهدان.**");

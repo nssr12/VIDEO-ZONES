@@ -3588,6 +3588,15 @@ function updateHostBar() {
       ? hostBarTime(cur) + " / " + hostBarTime(dur)
       : hostBarTime(cur);
   }
+  // ⭐ **الأيقونتان تتبدّلان بالحال لا بالنقرة** — **فحالُ الفيديو قد تتغيّر من
+  // المضيف نفسِه** (تشغيلٌ تلقائيّ · كتمٌ من الصفحة)، **وزرٌّ يعرض غيرَ الحال
+  // يَعِد بما لا يفعل.** ⛔ **ولا مستمعَ وسائط** (شرطُ #70 البنيويّ).
+  const paused = !!video.paused;
+  vzHostBar.querySelector(".vzHbPlayIcon")?.classList.toggle("vzHidden", !paused);
+  vzHostBar.querySelector(".vzHbPauseIcon")?.classList.toggle("vzHidden", paused);
+  const muted = !!video.muted || Number(video.volume) === 0;
+  vzHostBar.querySelector(".vzHbVolIcon")?.classList.toggle("vzHidden", muted);
+  vzHostBar.querySelector(".vzHbMutedIcon")?.classList.toggle("vzHidden", !muted);
   if (!known) return;
   const pct = Math.max(0, Math.min(1, cur / dur)) * 100;
   if (vzHbFill) vzHbFill.style.width = pct + "%";
@@ -3661,6 +3670,27 @@ function hostBarPointerDown(e) {
 // ⛔ **والفيديو يُمرَّر صراحةً بالعلامة** (`__videoUnderPointer`) **كما يفعل زرّ
 // السرعة**: فوق شريطنا يُرجع الباحثُ `null` بالتصميم، **فبلا التمرير يُنفَّذ
 // الأمرُ على لا شيء.**
+// ── ⭐ #142هـ — **زرّا التشغيل والصوت** (طلب المالك 2026-09-06) ───────────────
+// **والأمران قائمان لا مساران جديدان**: `ACTION:TOGGLE_PLAY` و`ACTION:TOGGLE_MUTE`.
+// ⛔⭐⭐ **والحالُ تُقرأ في حلقة الرسم لا بمستمعٍ للوسائط** — **وهذا شرطٌ بنيويّ
+// لا اختيار**: `tools/test-idle-engine.js` **يشترط ألّا يوجد `volumechange` ولا
+// `timeupdate` في الكود إطلاقاً** (أحداثُ الوسائط ليست نشاطاً، #70) ⇒ **فالأيقونةُ
+// تتبدّل من `paused`/`muted` في الحلقة القائمة، بلا مستمعٍ ولا مؤقّتٍ ثانٍ.**
+function hostBarActionClick(e, action) {
+  if (e.button !== 0) return;
+  if (!hostBarEnabled()) return;
+  const video = vzOverlayVideo;
+  if (!video) return;
+  e.preventDefault();
+  e.stopPropagation();
+  runAction(action, Object.assign(e, { __videoUnderPointer: video }));
+  updateHostBar();          // **الأيقونةُ تتبدّل الآن لا بعد إطارٍ** — فالنقرةُ تُرى
+  markIdleActivity();
+}
+
+function hostBarPlayClick(e) { hostBarActionClick(e, "ACTION:TOGGLE_PLAY"); }
+function hostBarMuteClick(e) { hostBarActionClick(e, "ACTION:TOGGLE_MUTE"); }
+
 function hostBarFsClick(e) {
   if (e.button !== 0) return;              // اليسرى وحدَها
   if (!hostBarEnabled()) return;
@@ -4211,7 +4241,14 @@ const OVERLAY_CSS = `
       display:flex; align-items:center; justify-content:center;
     }
     .vzHostBar .vzHbBtn:hover{ background:rgba(255,255,255,.18); }
-    .vzHbIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; }
+    .vzHbIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; fill:#fff; }
+    .vzHbPlayIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; fill:#fff; }
+    .vzHbPauseIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; fill:#fff; }
+    .vzHbVolIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; fill:#fff; }
+    .vzHbMutedIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; fill:#fff; }
+    /* ⭐ **صنفٌ لكلّ أيقونةٍ مشحونة** — حارسُ المقاس يقرأ الصنفَ من
+       نداء الراسم ويشترط لكلٍّ قاعدةَ مقاسٍ صريحة، **وصنفٌ جامعٌ يُخفي واحدةً
+       بلا مقاس** (وهي التي قِيست 0×0 في #108). */
     /* **مدّةٌ مجهولة (بثّ) ⇒ لا يُعرض قضيبٌ يكذب** — الوقتُ وحدَه */
     .vzHostBar[data-vz-live="1"] .vzHbTrack{ visibility:hidden; }
     .vzWrap[popover]{
@@ -4242,7 +4279,8 @@ let vzFilterBtn = null;          // #108 — زرّ الفلاتر ولوحتُ�
 let vzFilterPanel = null;
 // #142 — شريطُ التقدّم لمضيفٍ بلا أدوات، وأجزاؤه
 let vzHostBar = null, vzHbTrack = null, vzHbFill = null, vzHbBuf = null,
-    vzHbKnob = null, vzHbTime = null, vzHbFsBtn = null;
+    vzHbKnob = null, vzHbTime = null, vzHbFsBtn = null,
+    vzHbPlayBtn = null, vzHbMuteBtn = null;
 let vzOverlayHost = null;        // parent it's currently attached to (body or fullscreen el)
 let vzTrackRafId = null;
 
@@ -4270,6 +4308,8 @@ function buildOverlayElement() {
       ${vzSvg(VZ_OWN_ICONS["copy-link"], { cls: "vzCopyIcon", mode: "fill" })}</div>
     <div class="vzCopyMsg vzHidden"></div>
     <div class="vzHostBar vzHidden" data-vz-owns="wheel click">
+      <div class="vzHbBtn vzHbPlay" role="button" tabindex="-1" aria-label="تشغيل / إيقاف">${vzSvg(VZ_OWN_ICONS["play"], { cls: "vzHbPlayIcon", mode: "fill" })}${vzSvg(VZ_OWN_ICONS["pause"], { cls: "vzHbPauseIcon", mode: "fill" })}</div>
+      <div class="vzHbBtn vzHbMute" role="button" tabindex="-1" aria-label="كتم الصوت">${vzSvg(VZ_OWN_ICONS["volume"], { cls: "vzHbVolIcon", mode: "fill" })}${vzSvg(VZ_OWN_ICONS["muted"], { cls: "vzHbMutedIcon", mode: "fill" })}</div>
       <div class="vzHbTime">0:00</div>
       <div class="vzHbTrack" role="slider" aria-label="موضع التشغيل"><div class="vzHbRail"></div><div class="vzHbBuf"></div><div class="vzHbFill"></div><div class="vzHbKnob"></div></div>
       <div class="vzHbBtn vzHbFs" role="button" tabindex="-1" aria-label="ملء الشاشة">${vzSvg(VZ_OWN_ICONS["fit"], { cls: "vzHbIcon" })}</div>
@@ -4452,6 +4492,7 @@ function teardownOverlay() {
   vzFilterPanel = null;
   vzHostBar = null; vzHbTrack = null; vzHbFill = null; vzHbBuf = null;
   vzHbKnob = null; vzHbTime = null; vzHbFsBtn = null;
+  vzHbPlayBtn = null; vzHbMuteBtn = null;
   vzOverlayVideo = null;
   vzOverlayHost = null;
   if (vzTrackRafId != null) {
@@ -4503,7 +4544,13 @@ const VZ_OWN_ICONS = {
   "speed": { viewBox: "0 0 24 24", d: '<path stroke-linecap="butt" d="M19.63 9.23 A9.0 9.0 0 0 1 21 14 L21.0 17.4 A1.6 1.6 0 0 1 19.4 19.0 L4.6 19.0 A1.6 1.6 0 0 1 3.0 17.4 L3.0 14.0 A9.0 9.0 0 0 1 16.23 6.05"/> <path fill="currentColor" stroke="none" d="M18.79 7.21 L13.68 15.09 A2.0 2.0 0 1 1 10.91 12.32 Z"/>' },
   // #142د — **من السجلّ بحروفها**: زرُّ ملء الشاشة في شريطنا، ومقاسُها
   // بالأنماط لا بالمسار. **و`tools/test-icons.js` يُحمّر على تباعدها عن السجلّ.**
-  "fit": { viewBox: "0 0 24 24", d: '<rect x="2.5" y="5" width="19" height="14" rx="2"/> <path d="M6.6 16.4h3.3"/><path d="M6.6 16.4v-3.3"/> <path d="M17.4 7.6h-3.3"/><path d="M17.4 7.6v3.3"/> <path d="m6.6 16.4 10.8-8.8"/>' }
+  "fit": { viewBox: "0 0 24 24", d: '<rect x="2.5" y="5" width="19" height="14" rx="2"/> <path d="M6.6 16.4h3.3"/><path d="M6.6 16.4v-3.3"/> <path d="M17.4 7.6h-3.3"/><path d="M17.4 7.6v3.3"/> <path d="m6.6 16.4 10.8-8.8"/>' },
+  // #142هـ — **منقولةٌ بحروفها من `tools/icons.js`** — و`tools/test-icons.js`
+  // يُحمّر على تباعدها. **والمصدرُ سجلُّ المنتَج لا سجلُّ المرآة** (#145).
+  "play": { viewBox: "25 11 22 26", d: '<path d="M 45,24 27,14 27,34"/>' },
+  "pause": { viewBox: "0 0 36 36", d: '<path d="M 12.75 4.5 L 9.75 4.5 C 9.15 4.5 8.58 4.73 8.15 5.15 C 7.73 5.58 7.5 6.15 7.5 6.75 L 7.5 29.25 C 7.5 29.84 7.73 30.41 8.15 30.84 C 8.58 31.26 9.15 31.5 9.75 31.5 L 12.75 31.5 C 13.34 31.5 13.91 31.26 14.34 30.84 C 14.76 30.41 15 29.84 15 29.25 L 15 6.75 C 15 6.15 14.76 5.58 14.34 5.15 C 13.91 4.73 13.34 4.5 12.75 4.5 Z M 26.25 4.5 L 23.25 4.5 C 22.65 4.5 22.08 4.73 21.65 5.15 C 21.23 5.58 21 6.15 21 6.75 V 29.25 C 21 29.84 21.23 30.41 21.65 30.84 C 22.08 31.26 22.65 31.5 23.25 31.5 L 26.25 31.5 C 26.84 31.5 27.41 31.26 27.84 30.84 C 28.26 30.41 28.5 29.84 28.5 29.25 V 6.75 L 28.5 6.75 C 28.5 6.15 28.26 5.58 27.84 5.15 C 27.41 4.73 26.84 4.5 26.25 4.5 Z"/>' },
+  "volume": { viewBox: "0 0 24 24", d: '<path d="M 11.60 2.08 L 11.48 2.14 L 3.91 6.68 C 3.02 7.21 2.28 7.97 1.77 8.87 C 1.26 9.77 1.00 10.79 1 11.83 V 12.16 L 1.01 12.56 C 1.07 13.52 1.37 14.46 1.87 15.29 C 2.38 16.12 3.08 16.81 3.91 17.31 L 11.48 21.85 C 11.63 21.94 11.80 21.99 11.98 21.99 C 12.16 22.00 12.33 21.95 12.49 21.87 C 12.64 21.78 12.77 21.65 12.86 21.50 C 12.95 21.35 13 21.17 13 21 V 3 C 12.99 2.83 12.95 2.67 12.87 2.52 C 12.80 2.37 12.68 2.25 12.54 2.16 C 12.41 2.07 12.25 2.01 12.08 2.00 C 11.92 1.98 11.75 2.01 11.60 2.08 Z"/><path d=" M 15.53 7.05 C 15.35 7.22 15.25 7.45 15.24 7.70 C 15.23 7.95 15.31 8.19 15.46 8.38 L 15.53 8.46 L 15.70 8.64 C 16.09 9.06 16.39 9.55 16.61 10.08 L 16.70 10.31 C 16.90 10.85 17 11.42 17 12 L 16.99 12.24 C 16.96 12.73 16.87 13.22 16.70 13.68 L 16.61 13.91 C 16.36 14.51 15.99 15.07 15.53 15.53 C 15.35 15.72 15.25 15.97 15.26 16.23 C 15.26 16.49 15.37 16.74 15.55 16.92 C 15.73 17.11 15.98 17.21 16.24 17.22 C 16.50 17.22 16.76 17.12 16.95 16.95 C 17.6 16.29 18.11 15.52 18.46 14.67 L 18.59 14.35 C 18.82 13.71 18.95 13.03 18.99 12.34 L 19 12 C 18.99 11.19 18.86 10.39 18.59 9.64 L 18.46 9.32 C 18.15 8.57 17.72 7.89 17.18 7.3 L 16.95 7.05 L 16.87 6.98 C 16.68 6.82 16.43 6.74 16.19 6.75 C 15.94 6.77 15.71 6.87 15.53 7.05"/><path d="M18.36 4.22C18.18 4.39 18.08 4.62 18.07 4.87C18.05 5.12 18.13 5.36 18.29 5.56L18.36 5.63L18.66 5.95C19.36 6.72 19.91 7.60 20.31 8.55L20.47 8.96C20.82 9.94 21 10.96 21 11.99L20.98 12.44C20.94 13.32 20.77 14.19 20.47 15.03L20.31 15.44C19.86 16.53 19.19 17.52 18.36 18.36C18.17 18.55 18.07 18.80 18.07 19.07C18.07 19.33 18.17 19.59 18.36 19.77C18.55 19.96 18.80 20.07 19.07 20.07C19.33 20.07 19.59 19.96 19.77 19.77C20.79 18.75 21.61 17.54 22.16 16.20L22.35 15.70C22.72 14.68 22.93 13.62 22.98 12.54L23 12C22.99 10.73 22.78 9.48 22.35 8.29L22.16 7.79C21.67 6.62 20.99 5.54 20.15 4.61L19.77 4.22L19.70 4.15C19.51 3.99 19.26 3.91 19.02 3.93C18.77 3.94 18.53 4.04 18.36 4.22 Z"/>' },
+  "muted": { viewBox: "0 0 24 24", d: '<path d="M11.60 2.08L11.48 2.14L3.91 6.68C3.02 7.21 2.28 7.97 1.77 8.87C1.26 9.77 1.00 10.79 1 11.83V12.16L1.01 12.56C1.07 13.52 1.37 14.46 1.87 15.29C2.38 16.12 3.08 16.81 3.91 17.31L11.48 21.85C11.63 21.94 11.80 21.99 11.98 21.99C12.16 22.00 12.33 21.95 12.49 21.87C12.64 21.78 12.77 21.65 12.86 21.50C12.95 21.35 13 21.17 13 21V3C12.99 2.83 12.95 2.67 12.87 2.52C12.80 2.37 12.68 2.25 12.54 2.16C12.41 2.07 12.25 2.01 12.08 2.00C11.92 1.98 11.75 2.01 11.60 2.08ZM4.94 8.4V8.40L11 4.76V19.23L4.94 15.6C4.38 15.26 3.92 14.80 3.58 14.25C3.24 13.70 3.05 13.07 3.00 12.43L3 12.17V11.83C2.99 11.14 3.17 10.46 3.51 9.86C3.85 9.25 4.34 8.75 4.94 8.4ZM21.29 8.29L19 10.58L16.70 8.29L16.63 8.22C16.43 8.07 16.19 7.99 15.95 8.00C15.70 8.01 15.47 8.12 15.29 8.29C15.12 8.47 15.01 8.70 15.00 8.95C14.99 9.19 15.07 9.43 15.22 9.63L15.29 9.70L17.58 12L15.29 14.29C15.19 14.38 15.12 14.49 15.06 14.61C15.01 14.73 14.98 14.87 14.98 15.00C14.98 15.13 15.01 15.26 15.06 15.39C15.11 15.51 15.18 15.62 15.28 15.71C15.37 15.81 15.48 15.88 15.60 15.93C15.73 15.98 15.86 16.01 15.99 16.01C16.12 16.01 16.26 15.98 16.38 15.93C16.50 15.87 16.61 15.80 16.70 15.70L19 13.41L21.29 15.70L21.36 15.77C21.56 15.93 21.80 16.01 22.05 15.99C22.29 15.98 22.53 15.88 22.70 15.70C22.88 15.53 22.98 15.29 22.99 15.05C23.00 14.80 22.93 14.56 22.77 14.36L22.70 14.29L20.41 12L22.70 9.70C22.80 9.61 22.87 9.50 22.93 9.38C22.98 9.26 23.01 9.12 23.01 8.99C23.01 8.86 22.98 8.73 22.93 8.60C22.88 8.48 22.81 8.37 22.71 8.28C22.62 8.18 22.51 8.11 22.39 8.06C22.26 8.01 22.13 7.98 22.00 7.98C21.87 7.98 21.73 8.01 21.61 8.06C21.49 8.12 21.38 8.19 21.29 8.29Z"/>' }
 };
 
 function ensureVideoOverlay(video) {
@@ -4547,6 +4594,10 @@ function ensureVideoOverlay(video) {
   vzHbTrack?.addEventListener("pointerdown", hostBarPointerDown);
   vzHbFsBtn = vzOverlay.querySelector(".vzHbFs");
   vzHbFsBtn?.addEventListener("click", hostBarFsClick);
+  vzHbPlayBtn = vzOverlay.querySelector(".vzHbPlay");
+  vzHbPlayBtn?.addEventListener("click", hostBarPlayClick);
+  vzHbMuteBtn = vzOverlay.querySelector(".vzHbMute");
+  vzHbMuteBtn?.addEventListener("click", hostBarMuteClick);
   vzFilterPanel = buildFilterPanel();
   vzOverlay.appendChild(vzFilterPanel);
   vzFilterPanel.addEventListener("wheel", filterPanelWheel, { passive: false });
