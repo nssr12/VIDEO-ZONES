@@ -214,7 +214,19 @@ console.log("\n[6] البوابة تستعمل الثابت نفسه لا رقم
 {
   const CODE = CONTENT.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
   check("0.95 مرة واحدة في الكود", (CODE.match(/0\.95/g) || []).length === 1, (CODE.match(/0\.95/g) || []).length);
-  check("البوابة تنادي videoFillsElement", /if\s*\(videoFillsElement\(video,\s*el\)\)\s*return false/.test(CONTENT));
+  // ⭐ **#140د — والبوّابةُ سؤالان لا سؤالٌ واحد.** كانت تسأل «أيملأُ الفيديو الحاوية؟»
+  // وحدَها، **والملءُ يقول شيئاً عن المقاس ولا يقول شيئاً عن النسبة** ⇒ **ففيديوٌ
+  // يملأ حاويةً تخالف نسبتَه يمرّ منها وهو المقصوصُ بعينه** (تيك توك وإنستقرام:
+  // المضيف يفرض `object-fit: cover` على فيديو عموديّ). فالحارسُ يشترط الاثنين معاً
+  // كي **يُحمّرَ حذفُ أيّهما**، لا الأوّلَ وحدَه كما كان.
+  check("البوابة تنادي videoFillsElement",
+    /if\s*\(videoFillsElement\(video,\s*el\)\s*&&\s*!videoWouldCrop\(video\)\)\s*return false/.test(CONTENT));
+  check("وسؤالُ القصّ يقرأ object-fit المحسوبة لا السطريّة",
+    /function videoWouldCrop\([\s\S]{0,400}?getComputedStyle\(video\)\.objectFit/.test(CONTENT));
+  check("ويقصر نفسه على cover و fill",
+    /fit !== "cover" && fit !== "fill"/.test(CONTENT));
+  check("ويقارن نسبةَ الصندوق بالطبيعية",
+    /videoWidth[\s\S]{0,400}?r\.width \/ r\.height\)\s*-\s*\(nw \/ nh\)/.test(CONTENT));
   check("ولا نسبة أخرى في مسار البوابة", !/0\.9(?!5)|0\.8|>=\s*0\.[0-9]+/.test(CODE.split("applyFsFillIfNeeded")[1]?.slice(0, 600) || ""));
 }
 

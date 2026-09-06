@@ -289,6 +289,29 @@ window.__cases = [
     }
   },
   {
+    // ⭐⭐ #140د (ف4) — **المضيفُ يفرض «cover» على فيديو نسبتُه تخالف حاويتَه**
+    // (شكلُ تيك توك وإنستقرام المقيس عند المالك): **الفيديو يملأ الحاوية تماماً**
+    // ⇒ **بوّابةُ الملء وحدَها ترفض** — **والصورةُ تُقصّ.**
+    name: "ص — المضيفُ يفرض cover على فيديو عموديّ (#140د · ف4)",
+    build() {
+      sheet(
+        ".v140d-player{position:relative;width:420px;height:740px;background:#000}" +
+        ".v140d-wrap{position:relative;width:100%;height:100%}" +
+        ".v140d-wrap>video{width:100%;height:100%;object-fit:cover;background:#333}" +
+        ".v140d-bar{position:absolute;left:0;right:0;bottom:0;height:40px;background:rgba(0,0,0,.55)}"
+      );
+      const div = (cls) => { const d = document.createElement("div"); d.className = cls; return d; };
+      const player = div("v140d-player");
+      const wrap = div("v140d-wrap");
+      const v = mkVideo("none", 360, 640);
+      const bar = div("v140d-bar");
+      for (let i = 0; i < 6; i++) bar.appendChild(document.createElement("button"));
+      wrap.appendChild(v); player.appendChild(wrap); player.appendChild(bar);
+      document.body.appendChild(player);
+      return v;
+    }
+  },
+  {
     name: "ط — منصّة الظل: <video> ابن مباشر لجذر ظل (HANDOFF §9)",
     build() {
       const host = document.createElement("vz-repro-player");

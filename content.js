@@ -5960,13 +5960,42 @@ function clearFsFillMarks() {
   }
 }
 
+// ── ⛔⭐⭐ #140د (ف4) — **الملءُ ليس الشرطَ الوحيد: القصُّ شرطٌ ثانٍ** ──────────
+// **العطبُ (بلاغ المالك، تيك توك وإنستقرام): الصورةُ تُكبَّر فتُقصّ في ملء الشاشة.**
+// ✅ **والمقيسُ في متصفّحه أوّلاً**: **`object-fit: cover`** — **ليست سطريّةً ولا
+// منّا** (`inlineFit` فارغ) — **ووسمُنا غائبٌ عن الفيديو** (`marked:false`) ⇒
+// **فقاعدةُ #58ب لم تُطابق شيئاً، والقصُّ من ورقة المضيف.**
+// ✅ **ثمّ أُعيد إنتاجُه محلياً بحرفه**: مصدرٌ `360×640` وصندوقٌ `800×600`
+// و`fit:"cover"` ⇒ **قصّ** — **و`marked:false` لأن الفيديو يملأ الحاوية تماماً.**
+// ⇒ ⭐⭐ **والجذرُ في بوّابتنا لا في المضيف: سألت «أيملأ الفيديو الحاوية؟» وحدَها**،
+// **والملءُ يقول شيئاً عن المقاس ولا يقول شيئاً عن النسبة** ⇒ **ففيديوٌ يملأ
+// حاويةً تخالف نسبتَه يمرّ من البوّابة وهو المقصوص بعينه.**
+// ⇒ **والسؤالُ الثاني: أيُقصّ؟** — **وهو سؤالُ الوعد نفسِه** («أكبرُ مقاسٍ بلا قصّ»).
+// ⚠️ **ولا يُقاس القصُّ بالظنّ**: **`object-fit` المحسوبة `cover` أو `fill`**،
+// **ونسبةُ الصندوق تخالف النسبةَ الطبيعية** — ⇒ **فمع `contain` لا قصّ ولو
+// اختلفت النسبتان، ومع تطابقهما لا قصّ ولو كانت `cover`.**
+// ⛔ **والحدُّ 0.02 حارسٌ لا مُميِّز**: **فرقُ تقريبٍ في مستطيلٍ عشريّ** — **ولا
+// يقلب حكماً: النسبتان إمّا متطابقتان بالبناء أو مختلفتان بكثير** (مقيس: 0.56
+// مقابل 1.33 في البنية المُعادة).
+function videoWouldCrop(video) {
+  if (!video) return false;
+  let fit;
+  try { fit = getComputedStyle(video).objectFit; } catch { return false; }
+  if (fit !== "cover" && fit !== "fill") return false;
+  const r = video.getBoundingClientRect();
+  const nw = Number(video.videoWidth), nh = Number(video.videoHeight);
+  if (!(r.width > 0 && r.height > 0 && nw > 0 && nh > 0)) return false;   // مستطيلٌ صفريّ لا يُقاس
+  return Math.abs((r.width / r.height) - (nw / nh)) > 0.02;
+}
+
 function applyFsFillIfNeeded() {
   const video = vzFsRequestedVideo;
   const el = vzFsRequestedEl;
   if (!video || !el) return false;
   if (el === video) return false;                       // كبّرنا الفيديو نفسه
   if (fullscreenElementFor(video) !== el) return false; // لسنا داخل ملء شاشتنا
-  if (videoFillsElement(video, el)) return false;       // ← البوابة ترفض
+  // ← البوابة ترفض إن ملأ الفيديو الحاوية **ولم يكن يُقصّ** (#140د)
+  if (videoFillsElement(video, el) && !videoWouldCrop(video)) return false;
   injectFsFillCSS();
   el.setAttribute(VZ_FS_ATTR, "");
   video.setAttribute(VZ_FS_VIDEO_ATTR, "");
