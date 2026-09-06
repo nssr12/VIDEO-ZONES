@@ -4241,12 +4241,19 @@ const OVERLAY_CSS = `
       display:flex; align-items:center; justify-content:center;
     }
     .vzHostBar .vzHbBtn:hover{ background:rgba(255,255,255,.18); }
-    .vzHbIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; fill:#fff; }
-    .vzHbPlayIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; fill:#fff; }
-    .vzHbPauseIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; fill:#fff; }
-    .vzHbVolIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; fill:#fff; }
-    .vzHbMutedIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; fill:#fff; }
-    /* ⭐ **صنفٌ لكلّ أيقونةٍ مشحونة** — حارسُ المقاس يقرأ الصنفَ من
+    .vzHbIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; }
+    .vzHbPlayIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; }
+    .vzHbPauseIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; }
+    .vzHbVolIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; }
+    .vzHbMutedIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; }
+    /* ⛔⭐⭐ **ولا «fill» في هذي القواعد — والسببُ عطبٌ حيٌّ رآه المالك 2026-09-06:**
+       **الراسمُ يضع «fill="none"» للمخطوطة و«fill="currentColor"» للممتلئة**،
+       **وقاعدةُ CSS تغلب سمةَ العرض** ⇒ **فـ«fill:#fff» ملأت مستطيلَ أيقونة «fit»
+       المخطوطة فظهرت مربّعاً أبيض.** ⭐ **واللونُ يأتي من «color» وحدَه، فالممتلئةُ
+       تأخذه بـ«currentColor» والمخطوطةُ بالحدّ** — **وقاعدةٌ واحدة تكفي الشكلين.**
+       ⚠️ **وأخواتُها الثلاث («vzSpeedIcon» · «vzFilterIcon» · «vzCopyIcon») لم تحمل
+       «fill» قطّ** — **فكان شذوذي أنا لا عرفَ الملفّ.**
+       ⭐ **صنفٌ لكلّ أيقونةٍ مشحونة** — حارسُ المقاس يقرأ الصنفَ من
        نداء الراسم ويشترط لكلٍّ قاعدةَ مقاسٍ صريحة، **وصنفٌ جامعٌ يُخفي واحدةً
        بلا مقاس** (وهي التي قِيست 0×0 في #108). */
     /* **مدّةٌ مجهولة (بثّ) ⇒ لا يُعرض قضيبٌ يكذب** — الوقتُ وحدَه */

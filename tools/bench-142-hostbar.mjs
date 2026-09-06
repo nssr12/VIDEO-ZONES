@@ -293,6 +293,15 @@ try {
             const i = st.indexOf(b);
             return i >= 0 && i <= 3; };
           return { play: at(".vzHbPlay"), mute: at(".vzHbMute"), fs: at(".vzHbFs") }; })()`);
+        // ⛔⭐⭐ **وشكلُ الأيقونة يُقاس لا يُفترض** (عطبٌ حيٌّ 2026-09-06): **قاعدةُ
+        // `fill` في CSS تغلب سمةَ العرض التي يضعها الراسم** ⇒ **أيقونةٌ مخطوطة
+        // مُلئت فظهرت مربّعاً أبيض، وكلُّ الفحوص خضراء** (موجودةٌ · بمقاسٍ صحيح
+        // · ومُصابةٌ بالنقر). ⇒ ⭐ **«موجودٌ ومرئيّ» لا يقول «الشكلُ صحيح».**
+        out.fills = await evalIn(page, `(() => {
+          const f = (sel) => { const e = document.querySelector(sel);
+            return e ? getComputedStyle(e).fill : null; };
+          return { fit: f(".vzHbIcon"), play: f(".vzHbPlayIcon"),
+                   pause: f(".vzHbPauseIcon"), vol: f(".vzHbVolIcon") }; })()`);
         await evalIn(page, `(() => { document.querySelector(".vzHbPlay").click();
                                      document.querySelector(".vzHbMute").click(); })()`);
         await sleep(350);
@@ -338,6 +347,10 @@ for (const r of rows) {
       ` · بثّ=${r.moved.live} · مدّة=${r.moved.dur}`);
   }
   if (r.ready) console.log(`   الحالُ المُنتَجة: مُشغَّل=${!r.ready.paused} · نافذةُ التنقّل=${r.ready.seekable} · نهايتُها=${r.ready.end}`);
+  if (r.fills) {
+    console.log(`   ⇒ تعبئةُ الأيقونات: مخطوطة(fit)=${r.fills.fit} · ممتلئة(تشغيل/إيقاف/صوت)=` +
+      `${r.fills.play}/${r.fills.pause}/${r.fills.vol}`);
+  }
   if (r.hit) {
     console.log(`   ⇒ إصابةُ النقر (elementFromPoint): تشغيل=${r.hit.play} صوت=${r.hit.mute} ملءُ شاشة=${r.hit.fs}`);
   }
@@ -382,6 +395,10 @@ const posOk = !!pos && pos.moved && pos.moved.shown === true && pos.seeked === t
               poss.every((r) => r.fsBtn && r.fsBtn.w > 0 && r.fsBtn.icon && r.fsBtn.icon[0] > 0) &&
               // **الثلاثةُ مُصابةٌ بالنقر فعلاً** — والطبقةُ شفّافةٌ لما سواها
               poss.every((r) => r.hit && r.hit.play && r.hit.mute && r.hit.fs) &&
+              // **المخطوطةُ بلا تعبئة، والممتلئةُ بلونها** — وإلا ظهرت مربّعاً
+              poss.every((r) => r.fills && r.fills.fit === "none" &&
+                                r.fills.play !== "none" && r.fills.pause !== "none" &&
+                                r.fills.vol !== "none") &&
               // **الزرّان: مرئيّان · وأثرُهما وقع · والأيقونةُ تبعت الحال**
               poss.every((r) => r.btns && r.btnsAfter &&
                                 r.btns.play && r.btns.play.w > 0 && r.btns.mute && r.btns.mute.w > 0 &&
