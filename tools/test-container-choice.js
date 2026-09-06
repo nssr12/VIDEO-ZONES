@@ -546,15 +546,23 @@ console.log("\n[12] #146 — إعلانُ الموقع يغلب السكور، �
     pick(SPEC, [{ ownerNode: { id: "vz_fs_fill_css" },
       cssRules: [{ selectorText: "[data-vz-fs]:fullscreen video[data-vz-fs-video]", cssRules: [] }] }])
       === "DIV.player-container");
-  // ⛔ **وشرطُ #140 يسري عليه**: إعلانٌ يُخرج أدواتِ المضيف من الرسم يُرفض
+  // ⭐⭐ **بصمةُ xhamster بحرفها: أزرارُ الصفحة خارج الصندوق الذي أعلنه الموقع.**
+  // ⛔ **وأوّلُ صياغةٍ نقضت الإعلانَ بـ`hostControlsLostBy` هنا فسقطت عند المالك**
+  // (`ف8`): تلك تمسح ثمانيةَ مستوياتٍ فوق الفيديو **وتعدّ كلَّ زرٍّ أداةَ مضيف**،
+  // **وأزرارُ التحميل والمشاركة خارج المشغّل** ⇒ **فترفض إعلانَ الموقع.**
+  // ⇒ ⭐ **والحجّةُ بنيويّةٌ لا تفضيل: فرعُ الحاوية المعروفة لا يُنقض بهذا الشرط**،
+  // **وقائمتُنا تخمينٌ وإعلانُ الموقع نصُّه** ⇒ **نقضُ الأقوى وإمرارُ الأضعف مقلوب.**
   const LOST = [
     { name: "VIDEO", tag: "VIDEO", cls: "", rect: () => [897, 522] },
     { name: "DIV.xp-stage", cls: "xp-stage", ctrls: 0, rect: () => [897, 562] },
     { name: "DIV.player-container", cls: "player-container", ctrls: 3, rect: () => [1024, 678] },
     { name: "BODY", cls: "", rect: () => [1024, 900] }
   ];
-  check("⛔ وإعلانٌ يُفقد أدواتِ المضيف يُرفض (#140)",
-    pick(LOST, SHEET) !== "DIV.xp-stage", pick(LOST, SHEET));
+  check("⭐ وأزرارُ الصفحة خارج المُعلَن لا تنقضه (بصمةُ xhamster · ف8)",
+    pick(LOST, SHEET) === "DIV.xp-stage", pick(LOST, SHEET));
+  // ⛔ **وبلا إعلانٍ يبقى الشرطُ عاملاً كما كان** — الحذفُ خاصٌّ بفرع الإعلان
+  check("وبلا إعلانٍ يبقى #140 عاملاً كما كان",
+    pick(LOST) === "DIV.player-container", pick(LOST));
   // ⭐ **ولا يغلب حكماً قاطعاً**: الحاويةُ المعروفة أوّلاً — موضعُه بعدها لا قبلها
   const KNOWN_FIRST = [
     { name: "VIDEO", tag: "VIDEO", cls: "", rect: () => [897, 522] },
