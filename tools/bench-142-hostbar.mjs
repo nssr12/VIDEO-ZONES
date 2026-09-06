@@ -38,7 +38,8 @@ const PAGE = `<!doctype html><meta charset="utf-8">
   #bar button{height:30px;margin:7px 2px}
 </style>
 <div id="player" class="feed-video-shell"><video id="v" src="/tone.wav" loop muted autoplay playsinline></video><div id="bar"></div></div>
-<div id="player2" class="feed-video-shell" style="margin-top:700px"><video id="v2" src="/tone.wav" loop muted autoplay playsinline></video></div>
+<div id="player2" class="feed-video-shell" style="margin-top:700px;width:420px;height:740px"><video id="v2" src="/tone.wav" loop muted autoplay playsinline></video></div>
+<div id="player3" class="feed-video-shell" style="width:900px;height:506px"><video id="v3" src="/tone.wav" loop muted autoplay playsinline></video></div>
 <script>
   var q = new URLSearchParams(location.search);
   var bar = document.getElementById("bar");
@@ -213,6 +214,42 @@ try {
                    onSecond: !!r && Math.abs((r.top + r.height) - v2.bottom) < 6 }; })()`);
         await evalIn(page, "window.scrollTo(0, 0)");
         await sleep(300);
+        // ── ⭐⭐ #142ز — **تمريرٌ بالعجلة والمؤشّرُ ثابت** (كما يفعل المستخدم) ─────
+        // ⛔⭐⭐ **والمنشوران بعرضين مختلفين شرطٌ لا زينة**: بعرضٍ واحد **يطابق
+        // الغلافُ الفيديوَ الخطأ بالمصادفة** ⇒ **فيخضرّ الشاهدُ عن لا شيء** —
+        // **وقد وقع فعلاً: لم يُحمّر على النصّ السابق حتى فُرّق العرضان.**
+        // ⛔ **والفرقُ عن الفحص أعلاه ليس تفصيلاً**: هناك يتحرّك المؤشّر فيُعاد
+        // الربط، **وهنا لا يتحرّك** — **والعجلةُ حدثٌ يسبق التمرير فتقرأ الصفحةَ
+        // قبل أن تتحرّك** ⇒ **فالربطُ يتأخّر خطوةً والشريطُ يخرج عن مكانه.**
+        // ⛔⭐⭐ **والحالُ تُنتَج قبل أن تُقاس** (قرار 22): **يُثبَّت الربطُ على المنشور
+        // الأوّل بحركةٍ صريحة، ثمّ يُمرَّر حتى يصير تحت المؤشّر منشورٌ آخر** ⇒
+        // **فالربطُ الباتُّ يصير مكشوفاً.** ⚠️ **وبلا هذا التثبيت صادف الربطُ الصوابَ
+        // فخضِر الشاهدُ على النصّ السابق** — **أخضرُ عن لا شيء، وقد وقع فعلاً.**
+        await evalIn(page, "window.scrollTo(0, 0)");
+        await sleep(300);
+        await wiggle(page, out.feed.x, 140, 3);
+        await sleep(450);
+        for (let k = 0; k < 16; k++) {
+          await page.send("Input.dispatchMouseEvent",
+            { type: "mouseWheel", x: out.feed.x, y: 140, deltaX: 0, deltaY: 120 });
+          await sleep(60);
+        }
+        await sleep(700);
+        out.wheelBind = await evalIn(page, `((__PX, __PY) => {
+          const w = document.querySelector(".vzWrap");
+          const r = w ? w.getBoundingClientRect() : null;
+          // ⚠️ **يُقرأ عند المؤشّر لا عند مركز الشاشة** — وأوّلُ صياغةٍ قرأت المركز
+          // **والمنشورُ الثاني لا يبلغه** ⇒ **فأخذت فيديو منشورٍ آخر وطبعت «لا يطابق»
+          // عن ربطٍ صحيح**: **مقيسٌ جارُ المطلوب** (قرار 81)، في مِجَسّي أنا.
+          const at = document.elementFromPoint(__PX, __PY);
+          const v = at ? (at.tagName === "VIDEO" ? at : (at.querySelector && at.querySelector("video"))) : null;
+          const vr = v ? v.getBoundingClientRect() : null;
+          return { has: !!(r && vr),
+                   match: !!(r && vr && Math.abs(r.left - vr.left) < 4 && Math.abs(r.width - vr.width) < 4),
+                   wrap: r ? [Math.round(r.left), Math.round(r.width)] : null,
+                   vid: vr ? [Math.round(vr.left), Math.round(vr.width)] : null }; })(${out.feed.x}, 140)`);
+        await evalIn(page, "window.scrollTo(0, 0)");
+        await sleep(300);
       }
       // ── ⭐ #142د — **زرُّ ملء الشاشة: أموجود؟ أمرئيّ؟ أوقع الأثر؟** (قرار 109)
       // **وثلاثةُ أسئلةٍ لا واحد** — ومنها «مرئيّ» بمقاسٍ غيرِ صفريّ، **فأيقونةٌ
@@ -347,6 +384,10 @@ for (const r of rows) {
       ` · بثّ=${r.moved.live} · مدّة=${r.moved.dur}`);
   }
   if (r.ready) console.log(`   الحالُ المُنتَجة: مُشغَّل=${!r.ready.paused} · نافذةُ التنقّل=${r.ready.seekable} · نهايتُها=${r.ready.end}`);
+  if (r.wheelBind) {
+    console.log(`   ⇒ تمريرٌ بالعجلة والمؤشّرُ ثابت: طابق=${r.wheelBind.match}` +
+      ` غلاف=${r.wheelBind.wrap} فيديو=${r.wheelBind.vid}`);
+  }
   if (r.fills) {
     console.log(`   ⇒ تعبئةُ الأيقونات: مخطوطة(fit)=${r.fills.fit} · ممتلئة(تشغيل/إيقاف/صوت)=` +
       `${r.fills.play}/${r.fills.pause}/${r.fills.vol}`);
@@ -395,6 +436,16 @@ const posOk = !!pos && pos.moved && pos.moved.shown === true && pos.seeked === t
               poss.every((r) => r.fsBtn && r.fsBtn.w > 0 && r.fsBtn.icon && r.fsBtn.icon[0] > 0) &&
               // **الثلاثةُ مُصابةٌ بالنقر فعلاً** — والطبقةُ شفّافةٌ لما سواها
               poss.every((r) => r.hit && r.hit.play && r.hit.mute && r.hit.fs) &&
+              // ⛔⭐⭐ **وفحصُ التمرير يُطبع ولا يدخل الحكم — لأنه لم يُثبَت أنه
+              // يُحمّر** (قرار 47): **جُرّب على النصّ السابق بثلاث هيئاتٍ للصفحة
+              // (منشوران بعرضٍ واحد · ثمّ بعرضين · ثمّ ثلاثةٌ متناوبة) فخضِر في
+              // الثلاث** — **وهندسةُ هذي الصفحة لا تُنتج «الربطَ المتأخّر خطوة».**
+              // ✅ **والعطبُ نفسُه مُعادٌ إنتاجُه بالقياس في مِجَسٍّ منفصل** (ثلاثةُ
+              // منشورات 420/900/420، تمريرٌ بالعجلة والمؤشّرُ ثابت): **الغلاف
+              // `[263,-180,900,506]` والمؤشّرُ على منشورٍ مستطيلُه `[503,366,420,740]`**
+              // ⇒ **ثمّ طابق بعد الإصلاح.**
+              // ⇒ ⛔ **فحكمٌ لا يُحمّر لا يُصدَّق أخضرُه، ويبقى سطراً يُقرأ** —
+              // **ومُطلِقُ ترقيته: أن تُبنى للرِكاز صفحةُ خلاصةٍ تُنتج الحال.**
               // **المخطوطةُ بلا تعبئة، والممتلئةُ بلونها** — وإلا ظهرت مربّعاً
               poss.every((r) => r.fills && r.fills.fit === "none" &&
                                 r.fills.play !== "none" && r.fills.pause !== "none" &&
@@ -408,7 +459,7 @@ const posOk = !!pos && pos.moved && pos.moved.shown === true && pos.seeked === t
                                 r.btnsAfter.iMuted === !!r.btnsAfter.muted);
 const negOk = negs.every((r) => r.moved && r.moved.shown === false);
 console.log("── الشاهدان (قرار 26)");
-console.log("   موجبان (يظهر · يُنقِّل · يختفي بالسكون · يبقى مع أزرار الخلاصة · يتبع المؤشّر · وأزرارُه الثلاثة تُصاب ويقع أثرُها): " + (posOk ? "✅" : "❌"));
+console.log("   موجبان (يظهر · يُنقِّل · يختفي بالسكون · يبقى مع أزرار الخلاصة · يتبع المؤشّر · أزرارُه تُصاب ويقع أثرُها · ويطابق بعد التمرير): " + (posOk ? "✅" : "❌"));
 console.log("   وسوالبُه الثلاثة (مطفأ · مضيفٌ له منزلق · يوتيوب): " + (negOk ? "✅" : "❌"));
 if (!(posOk && negOk)) {
   console.log("\n⛔ **لا يُقرأ من هذا رقمٌ عن الميزة حتى يخضرّ الشاهدان.**");
