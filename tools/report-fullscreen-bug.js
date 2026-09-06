@@ -13,7 +13,7 @@
 // **عالم الصفحة** حيث لا وجود لدوال سكربت المحتوى (عالم معزول). والانحراف محروس:
 // `tools/test-fs-report-sync.js` يقارن الثوابت الخمسة بـ `content.js` ويفشل عند
 // أي اختلاف. إن غيّرت السكور في `content.js` فغيّره هنا معه.
-(() => {
+window.__vz58 = () => {
   // ---- ثوابت مرآة لـ content.js — يحرسها tools/test-fs-report-sync.js ----
   const KNOWN_PLAYER_WRAPPER_SELECTOR =
     "#movie_player," +
@@ -206,6 +206,33 @@
   const v = pickVideo();
   if (!v) { console.log("VZ58 | لا فيديو مرئي في هذه الصفحة — افتح الفيديو ثم ألصق مجدداً"); return; }
 
+  // ⛔⭐⭐ **الحالُ تُنتَج قبل أن يُقرأ منها سطر** (قرار 22) — **وهذه ليست
+  // تحسيناً بل شرطَ صحّة**: فتحُ الكونسول يُخرج الصفحةَ من ملء الشاشة على كثيرٍ
+  // من الترتيبات، **فيُلصَق المِجَسُّ فيقرأ نافذةً عاديّة ويطبع أرقاماً صادقةً
+  // عن لحظةٍ غيرِ التي نسأل عنها** — وهو الشكلُ الذي أوقعني مرّتين في هذا
+  // الخيط (`shown:false` عن مِجَسٍّ ينتظر أطولَ من المهلة · و`null` عن سطرٍ
+  // ظهر واختفى). ⇒ **فإن لم نكن داخل ملء الشاشة، ينتظر المِجَسُّ دخولَه.**
+  if (!document.fullscreenElement) {
+    console.log("VZ58 | لستَ داخل ملء الشاشة — ادخله الآن بأمر الإضافة، وسأطبع وحدي (مهلة 30 ثانية).");
+    let done = false;
+    const fire = () => {
+      if (done || !document.fullscreenElement) return;
+      done = true;
+      document.removeEventListener("fullscreenchange", fire);
+      // **بعد استقرار التخطيط لا في لحظة الحدث**: مستطيلٌ يُقرأ قبل أن يستقرّ
+      // التخطيطُ رقمٌ عن حالٍ عابرة.
+      setTimeout(() => { try { window.__vz58(); } catch (e) { console.log("VZ58 | تعذّر: " + e.message); } }, 700);
+    };
+    document.addEventListener("fullscreenchange", fire);
+    setTimeout(() => {
+      if (done) return;
+      done = true;
+      document.removeEventListener("fullscreenchange", fire);
+      console.log("VZ58 | انتهت المهلة ولم تدخل ملء الشاشة — لا قياس، ولا يُطبع بديلٌ عنه.");
+    }, 30000);
+    return "VZ58 | في الانتظار…";
+  }
+
   const pick = pickContainer(v);
   const c = pick.el;
   const vr = v.getBoundingClientRect();
@@ -295,4 +322,5 @@
   console.log(line);
   try { copy(line); console.log("↑ نُسخ إلى الحافظة"); } catch {}
   return line;
-})();
+};
+window.__vz58();
