@@ -214,6 +214,44 @@ try {
         await evalIn(page, "window.scrollTo(0, 0)");
         await sleep(300);
       }
+      // ── ⭐ #142د — **زرُّ ملء الشاشة: أموجود؟ أمرئيّ؟ أوقع الأثر؟** (قرار 109)
+      // **وثلاثةُ أسئلةٍ لا واحد** — ومنها «مرئيّ» بمقاسٍ غيرِ صفريّ، **فأيقونةٌ
+      // بلا قاعدةِ مقاسٍ تُقاس 0×0 وتُقرأ «موجودة»** (#108).
+      if (cell.expect) {
+        out.fsBtn = await evalIn(page, `(() => {
+          const b = document.querySelector(".vzHbFs");
+          const ic = document.querySelector(".vzHbIcon");
+          const r = b ? b.getBoundingClientRect() : null;
+          const ir = ic ? ic.getBoundingClientRect() : null;
+          return { exists: !!b, w: r ? Math.round(r.width) : null, h: r ? Math.round(r.height) : null,
+                   icon: ir ? [Math.round(ir.width), Math.round(ir.height)] : null,
+                   x: r ? Math.round(r.left + r.width / 2) : null,
+                   y: r ? Math.round(r.top + r.height / 2) : null }; })()`);
+        if (out.fsBtn.exists && out.fsBtn.w > 0) {
+          await page.send("Input.dispatchMouseEvent",
+            { type: "mousePressed", x: out.fsBtn.x, y: out.fsBtn.y, button: "left", buttons: 1, clickCount: 1 });
+          await page.send("Input.dispatchMouseEvent",
+            { type: "mouseReleased", x: out.fsBtn.x, y: out.fsBtn.y, button: "left", buttons: 0, clickCount: 1 });
+          // ⚠️ **يُقرأ قبل أن تنقضي مهلةُ التلميح (900ms)** — وأوّلُ صياغةٍ انتظرت
+          // 900ms **فقرأت `null` عن سطرٍ ظهر واختفى**: حالٌ انقضت لا حالٌ لم تقع.
+          await sleep(250);
+          // ⛔⭐⭐ **حدٌّ مُعلَنٌ مُسجَّلٌ عندنا سلفاً، ولا يُقرأ عطباً:** نقرةٌ
+          // مُرسَلة بـ`Input.dispatchMouseEvent` **لا تُحتسب إيماءةَ مستخدم**،
+          // **فيرفض المتصفّحُ ملءَ الشاشة** — وهو مكتوبٌ بنصّه في رأس
+          // `tools/repro-58-fullscreen.mjs` منذ يومه.
+          // ⇒ ⭐ **فيُقاس ما يُستطاع: أوَصلت النقرةُ إلى مسارنا؟** — **ورفضُ
+          // المتصفّح نفسُه أثرٌ يُرى**: مسارُنا يكتب سببَ الرفض في سطر التلميح
+          // (#9 · #33) ⇒ **فوجودُه إثباتٌ أن الأمرَ دُفع، لا أن ملءَ الشاشة وقع.**
+          // ⚠️ **ولا يُقال «ملءُ الشاشة يعمل»** — ذاك عند المالك في `ش6`.
+          out.fsAfter = await evalIn(page, `(() => {
+            const e = document.fullscreenElement;
+            const h = document.querySelector(".vzHint");
+            return { fsEl: e ? (e.tagName + "." + String(e.className).split(" ")[0]) : null,
+                     hint: h && !h.classList.contains("vzHidden") ? (h.textContent || "").slice(0, 40) : null }; })()`);
+          await evalIn(page, "document.fullscreenElement ? document.exitFullscreen() : 0");
+          await sleep(600);
+        }
+      }
       // ⚠️ **والسكونُ يُقاس بعد الحركة لا قبلها**: الشريطُ يظهر بالحركة، **فاختفاؤه
       // بعد المهلة نصفُ العقد** — ومن قاس الظهور وحدَه قاس نصفَ الوعد.
       // ⛔⭐ **والمؤشّرُ يُزاح عن الشريط أوّلاً**: القاعدةُ العامّة (#95) **لا يُخفى
@@ -244,6 +282,11 @@ for (const r of rows) {
       ` · بثّ=${r.moved.live} · مدّة=${r.moved.dur}`);
   }
   if (r.ready) console.log(`   الحالُ المُنتَجة: مُشغَّل=${!r.ready.paused} · نافذةُ التنقّل=${r.ready.seekable} · نهايتُها=${r.ready.end}`);
+  if (r.fsBtn) {
+    console.log(`   ⇒ زرُّ ملء الشاشة: موجود=${r.fsBtn.exists} مقاس=${r.fsBtn.w}x${r.fsBtn.h}` +
+      ` أيقونة=${r.fsBtn.icon} · بعد النقر: عنصر=${r.fsAfter && r.fsAfter.fsEl}` +
+      ` تلميح=${r.fsAfter && r.fsAfter.hint}`);
+  }
   if (r.afterScroll) {
     console.log(`   ⇒ الخلاصة: بعد التمرير والتحويم على الثاني — يظهر=${r.afterScroll.shown}` +
       ` رأسُه=${r.afterScroll.top} داخلَ الشاشة=${r.afterScroll.onScreen}` +
@@ -262,10 +305,18 @@ const posOk = !!pos && pos.moved && pos.moved.shown === true && pos.seeked === t
               pos.idle && pos.idle.shown === false &&
               poss.every((r) => r.moved && r.moved.shown === true) &&
               poss.every((r) => r.afterScroll && r.afterScroll.onScreen === true &&
-                                r.afterScroll.onSecond === true);
+                                r.afterScroll.onSecond === true) &&
+              // ⛔⭐⭐ **الزرّ: موجودٌ · ومرئيٌّ بمقاسٍ غيرِ صفريّ — ولا يُقاس أثرُه هنا.**
+              // **حدٌّ مُعلَنٌ مُسجَّلٌ عندنا منذ `repro-58`: نقرةُ `Input.dispatchMouseEvent`
+              // لا تُحتسب إيماءةَ مستخدم، فيرفض المتصفّحُ ملءَ الشاشة.**
+              // ✅ **والمسارُ نفسُه أُثبت بنداءٍ مباشرٍ تحت إيماءةٍ حقيقية**
+              // (`Runtime.evaluate` بـ`userGesture`): **دخل ملءَ الشاشة على
+              // `DIV.feed-video-shell`** — **فالمقيسُ أن المسار يعمل، لا أن النقرة تصل.**
+              // ⇒ ⚠️ **و«أتصل النقرةُ؟» سؤالٌ بيد المالك في `ش6`، ولا يُدَّعى هنا.**
+              poss.every((r) => r.fsBtn && r.fsBtn.w > 0 && r.fsBtn.icon && r.fsBtn.icon[0] > 0);
 const negOk = negs.every((r) => r.moved && r.moved.shown === false);
 console.log("── الشاهدان (قرار 26)");
-console.log("   موجبان (يظهر · يُنقِّل · يختفي بالسكون · يبقى مع أزرار الخلاصة · ويتبع المؤشّر في الخلاصة): " + (posOk ? "✅" : "❌"));
+console.log("   موجبان (يظهر · يُنقِّل · يختفي بالسكون · يبقى مع أزرار الخلاصة · يتبع المؤشّر · وزرُّ ملء الشاشة موجودٌ بمقاسٍ صحيح): " + (posOk ? "✅" : "❌"));
 console.log("   وسوالبُه الثلاثة (مطفأ · مضيفٌ له منزلق · يوتيوب): " + (negOk ? "✅" : "❌"));
 if (!(posOk && negOk)) {
   console.log("\n⛔ **لا يُقرأ من هذا رقمٌ عن الميزة حتى يخضرّ الشاهدان.**");

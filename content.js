@@ -3651,6 +3651,27 @@ function hostBarPointerDown(e) {
   markIdleActivity();
 }
 
+// ── ⭐ #142د — **زرُّ ملء الشاشة في شريطنا** ─────────────────────────────────
+// **طلبُ المالك 2026-09-06**: أوّلُ أزرار المرحلة الثانية، **وأُفرد بكومِته.**
+// ⭐ **ولم يحتج أيقونةً تُرسم**: «fit» **في سجلّ المالك سلفاً باسمها العربيّ
+// «ملء الشاشة»** ⇒ **نُقلت بحروفها إلى سجلّ المنتَج ودخلت المشحون** — **ولا
+// تُنسخ من سجلّ المرآة** (#145: ثلاثةُ حرّاسٍ أحمرّت على ذلك).
+// ⚠️ **والأمرُ هو `ACTION:TOGGLE_FULLSCREEN` القائم لا مسارٌ ثانٍ** — **فيرث
+// كلَّ ما في #58 و#17 و#140 من قيودٍ مقيسة**، ومنها اختيارُ الحاوية وزرُّ المضيف.
+// ⛔ **والفيديو يُمرَّر صراحةً بالعلامة** (`__videoUnderPointer`) **كما يفعل زرّ
+// السرعة**: فوق شريطنا يُرجع الباحثُ `null` بالتصميم، **فبلا التمرير يُنفَّذ
+// الأمرُ على لا شيء.**
+function hostBarFsClick(e) {
+  if (e.button !== 0) return;              // اليسرى وحدَها
+  if (!hostBarEnabled()) return;
+  const video = vzOverlayVideo;
+  if (!video) return;
+  e.preventDefault();
+  e.stopPropagation();
+  runAction("ACTION:TOGGLE_FULLSCREEN", Object.assign(e, { __videoUnderPointer: video }));
+  markIdleActivity();
+}
+
 function setHostBarShown(on) {
   let video = null;
   if (on && !hostBarEnabled()) on = false;
@@ -4182,6 +4203,15 @@ const OVERLAY_CSS = `
       border-radius:50%; background:#fff; pointer-events:none;
       box-shadow:0 1px 4px rgba(0,0,0,.6);
     }
+    /* #142د — **زرُّ ملء الشاشة**: أيقونةُ المالك «fit» من سجلّ المنتَج.
+       ⚠️ **والمقاسُ صريحٌ بسببٍ مقيس** (#108): بلا قاعدةٍ تُعطيه مقاساً تُقاس
+       الأيقونةُ 0×0 — **موجودةٌ ولا تُرى، بلا رميةٍ ولا تحذير**. */
+    .vzHostBar .vzHbBtn{
+      flex:none; width:32px; height:32px; border-radius:7px; cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .vzHostBar .vzHbBtn:hover{ background:rgba(255,255,255,.18); }
+    .vzHbIcon{ width:22px; height:22px; flex:none; display:block; color:#fff; }
     /* **مدّةٌ مجهولة (بثّ) ⇒ لا يُعرض قضيبٌ يكذب** — الوقتُ وحدَه */
     .vzHostBar[data-vz-live="1"] .vzHbTrack{ visibility:hidden; }
     .vzWrap[popover]{
@@ -4212,7 +4242,7 @@ let vzFilterBtn = null;          // #108 — زرّ الفلاتر ولوحتُ�
 let vzFilterPanel = null;
 // #142 — شريطُ التقدّم لمضيفٍ بلا أدوات، وأجزاؤه
 let vzHostBar = null, vzHbTrack = null, vzHbFill = null, vzHbBuf = null,
-    vzHbKnob = null, vzHbTime = null;
+    vzHbKnob = null, vzHbTime = null, vzHbFsBtn = null;
 let vzOverlayHost = null;        // parent it's currently attached to (body or fullscreen el)
 let vzTrackRafId = null;
 
@@ -4242,6 +4272,7 @@ function buildOverlayElement() {
     <div class="vzHostBar vzHidden" data-vz-owns="wheel click">
       <div class="vzHbTime">0:00</div>
       <div class="vzHbTrack" role="slider" aria-label="موضع التشغيل"><div class="vzHbRail"></div><div class="vzHbBuf"></div><div class="vzHbFill"></div><div class="vzHbKnob"></div></div>
+      <div class="vzHbBtn vzHbFs" role="button" tabindex="-1" aria-label="ملء الشاشة">${vzSvg(VZ_OWN_ICONS["fit"], { cls: "vzHbIcon" })}</div>
     </div>
   `;
   applyGridVars(el); // يزرع الأرقام بـ textContent بعد بناء الخلايا
@@ -4420,7 +4451,7 @@ function teardownOverlay() {
   vzFilterBtn = null;
   vzFilterPanel = null;
   vzHostBar = null; vzHbTrack = null; vzHbFill = null; vzHbBuf = null;
-  vzHbKnob = null; vzHbTime = null;
+  vzHbKnob = null; vzHbTime = null; vzHbFsBtn = null;
   vzOverlayVideo = null;
   vzOverlayHost = null;
   if (vzTrackRafId != null) {
@@ -4469,7 +4500,10 @@ const VZ_OWN_ICONS = {
   // #134 — **من السجلّ بحروفها، ولم تُسحب ثانيةً: كانت فيه سلفاً** بـviewBox
   // صريحٍ 36 (الحقلُ إجباريٌّ منذ #131) — **ومقاسُها يُضبط بالأنماط لا بالمسار.**
   "copy-link": { viewBox: "4.5 4.5 27 27", fillWeight: 0.4, d: '<path d="M21.9,8.3H11.3c-0.9,0-1.7,.8-1.7,1.7v12.3h1.7V10h10.6V8.3z M24.6,11.8h-9.7c-1,0-1.8,.8-1.8,1.8v12.3  c0,1,.8,1.8,1.8,1.8h9.7c1,0,1.8-0.8,1.8-1.8V13.5C26.3,12.6,25.5,11.8,24.6,11.8z M24.6,25.9h-9.7V13.5h9.7V25.9z"/>' },
-  "speed": { viewBox: "0 0 24 24", d: '<path stroke-linecap="butt" d="M19.63 9.23 A9.0 9.0 0 0 1 21 14 L21.0 17.4 A1.6 1.6 0 0 1 19.4 19.0 L4.6 19.0 A1.6 1.6 0 0 1 3.0 17.4 L3.0 14.0 A9.0 9.0 0 0 1 16.23 6.05"/> <path fill="currentColor" stroke="none" d="M18.79 7.21 L13.68 15.09 A2.0 2.0 0 1 1 10.91 12.32 Z"/>' }
+  "speed": { viewBox: "0 0 24 24", d: '<path stroke-linecap="butt" d="M19.63 9.23 A9.0 9.0 0 0 1 21 14 L21.0 17.4 A1.6 1.6 0 0 1 19.4 19.0 L4.6 19.0 A1.6 1.6 0 0 1 3.0 17.4 L3.0 14.0 A9.0 9.0 0 0 1 16.23 6.05"/> <path fill="currentColor" stroke="none" d="M18.79 7.21 L13.68 15.09 A2.0 2.0 0 1 1 10.91 12.32 Z"/>' },
+  // #142د — **من السجلّ بحروفها**: زرُّ ملء الشاشة في شريطنا، ومقاسُها
+  // بالأنماط لا بالمسار. **و`tools/test-icons.js` يُحمّر على تباعدها عن السجلّ.**
+  "fit": { viewBox: "0 0 24 24", d: '<rect x="2.5" y="5" width="19" height="14" rx="2"/> <path d="M6.6 16.4h3.3"/><path d="M6.6 16.4v-3.3"/> <path d="M17.4 7.6h-3.3"/><path d="M17.4 7.6v3.3"/> <path d="m6.6 16.4 10.8-8.8"/>' }
 };
 
 function ensureVideoOverlay(video) {
@@ -4511,6 +4545,8 @@ function ensureVideoOverlay(video) {
   vzHbKnob = vzOverlay.querySelector(".vzHbKnob");
   vzHbTime = vzOverlay.querySelector(".vzHbTime");
   vzHbTrack?.addEventListener("pointerdown", hostBarPointerDown);
+  vzHbFsBtn = vzOverlay.querySelector(".vzHbFs");
+  vzHbFsBtn?.addEventListener("click", hostBarFsClick);
   vzFilterPanel = buildFilterPanel();
   vzOverlay.appendChild(vzFilterPanel);
   vzFilterPanel.addEventListener("wheel", filterPanelWheel, { passive: false });
