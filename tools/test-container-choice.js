@@ -112,12 +112,15 @@ function build(spec, scale) {
   return nodes;
 }
 
-function load(spec, scale) {
+function load(spec, scale, styleSheets) {
   const nodes = build(spec, scale);
   // كتلة #58 كومِت ب تسجّل مستمعَي خروج وتحقن ورقة أنماط عند التحميل،
   // فالمستند المزيّف يلزمه هذا القدر — ولا يُستعمل في فحوص هذا الملف.
   const last = nodes[nodes.length - 1];
   const doc = {
+    // #146 — **غيابُ `styleSheets` يعني «الموقعُ لا يُعلن»**، وهو حالُ كلّ
+    // البنيات القائمة: `siteDeclaredFsSelectors` ترمي فتُبتلع فتُرجع `null`.
+    styleSheets: styleSheets || [],
     body: last, documentElement: last, head: { appendChild() {} },
     fullscreenElement: null,
     addEventListener() {}, getElementById: () => null,
@@ -498,6 +501,69 @@ console.log("\n[11] #140ج — ضوابطُ المتصفّح صنفٌ يُفصل
     /video\.controls===true&&!scopeShowsOwnControls\(playerScopeForVideo\(video\)\)/
       .test(CONTENT.replace(/\s+/g, "")));
 }
+}
+
+
+// ── [12] #146 — الموقعُ يُعلن عنصرَ ملء شاشته، فنقرأ ما كتبه ولا نحدس ────────
+// ⭐ **بصمةُ xhamster المقيسة عند المالك 2026-09-06**: صندوقان، والموقعُ يُعلن
+// الداخليَّ في ورقته، **والداخليُّ ارتفاعُه مكتوبٌ** فيبقى بمقاسه لو كبّرنا
+// الخارجيَّ ⇒ سوادٌ أسفلَ الصورة (سلسلتُه: xplayer[562·562px] ← fsEl).
+// ⛔⭐⭐ **ولماذا هنا لا في `repro-58`**: بُنيت هناك أوّلاً **فخضِرت على النصّ
+// السابق أيضاً** — السكورُ اختار الداخليَّ من تلقائه. **والسببُ بنيويٌّ لا
+// تفصيلُ أرقام**: حدُّ السكور ذروتُه عند 1.15، **ونسبةُ الخارجيّ أكبرُ من
+// نسبة الداخليّ دائماً** (الخارجيُّ يحويه) ⇒ **ففوزُ الخارجيّ لا يقع إلا في
+// شريطٍ ضيّق، وحكمٌ يركب فارقاً بحجم 0.07 مصادفةٌ مُرتَّبة لا بنية.**
+// ⇒ **وهنا يُصنع الفارقُ حاسماً بمتغيّرٍ واحد: صنفُ الداخليّ لا يشبه مشغّلاً**
+// ⇒ **يفوز الخارجيُّ بنقطتين كاملتين، لا بكسرٍ عشريّ.**
+console.log("\n[12] #146 — إعلانُ الموقع يغلب السكور، ولا يغلب حكماً قاطعاً");
+{
+  const SHEET = [{ ownerNode: null, cssRules: [
+    { selectorText: ".xp-stage:fullscreen", cssRules: [] },
+    { selectorText: ".xp-stage:fullscreen video", cssRules: [] }
+  ] }];
+  const SPEC = [
+    { name: "VIDEO", tag: "VIDEO", cls: "", rect: () => [897, 522] },
+    { name: "DIV.xp-stage", cls: "xp-stage", ctrls: 3, rect: () => [897, 562] },
+    { name: "DIV.player-container", cls: "player-container", ctrls: 0, rect: () => [1024, 678] },
+    { name: "BODY", cls: "", rect: () => [1024, 900] }
+  ];
+  const pick = (spec, sheets) => {
+    const { ctx, video } = load(spec, 1, sheets);
+    const r = ctx.pickFullscreenContainer(video);
+    return r && r.__name;
+  };
+  check("بلا إعلانٍ من الموقع ⇒ السكور يختار الخارجيّ",
+    pick(SPEC) === "DIV.player-container", pick(SPEC));
+  check("⭐ ومع إعلانه ⇒ نختار ما أعلنه هو",
+    pick(SPEC, SHEET) === "DIV.xp-stage", pick(SPEC, SHEET));
+  // ⛔ **ومُحدِّدٌ عامٌّ ليس هويّةَ عنصر**: تصريحٌ عن شكلٍ لا عن هويّة —
+  // **وقبولُه يجعلنا نُكبّر ما لم يقصده أحد.**
+  check("ومُحدِّدٌ عامّ (video:fullscreen) يُقصى",
+    pick(SPEC, [{ ownerNode: null, cssRules: [{ selectorText: "video:fullscreen", cssRules: [] }] }])
+      === "DIV.player-container");
+  // ⛔ **وورقتُنا تُقصى** — تحمل [data-vz-fs]:fullscreen، وبلا الإقصاء نُطابق إعلانَنا
+  check("وورقتُنا نحن تُقصى",
+    pick(SPEC, [{ ownerNode: { id: "vz_fs_fill_css" },
+      cssRules: [{ selectorText: "[data-vz-fs]:fullscreen video[data-vz-fs-video]", cssRules: [] }] }])
+      === "DIV.player-container");
+  // ⛔ **وشرطُ #140 يسري عليه**: إعلانٌ يُخرج أدواتِ المضيف من الرسم يُرفض
+  const LOST = [
+    { name: "VIDEO", tag: "VIDEO", cls: "", rect: () => [897, 522] },
+    { name: "DIV.xp-stage", cls: "xp-stage", ctrls: 0, rect: () => [897, 562] },
+    { name: "DIV.player-container", cls: "player-container", ctrls: 3, rect: () => [1024, 678] },
+    { name: "BODY", cls: "", rect: () => [1024, 900] }
+  ];
+  check("⛔ وإعلانٌ يُفقد أدواتِ المضيف يُرفض (#140)",
+    pick(LOST, SHEET) !== "DIV.xp-stage", pick(LOST, SHEET));
+  // ⭐ **ولا يغلب حكماً قاطعاً**: الحاويةُ المعروفة أوّلاً — موضعُه بعدها لا قبلها
+  const KNOWN_FIRST = [
+    { name: "VIDEO", tag: "VIDEO", cls: "", rect: () => [897, 522] },
+    { name: "DIV.xp-stage", cls: "xp-stage", ctrls: 3, rect: () => [897, 562] },
+    { name: "DIV.video-js", cls: "video-js", ctrls: 3, rect: () => [1024, 678] },
+    { name: "BODY", cls: "", rect: () => [1024, 900] }
+  ];
+  check("والحاويةُ المعروفة تبقى أوّلاً",
+    pick(KNOWN_FIRST, SHEET) === "DIV.video-js", pick(KNOWN_FIRST, SHEET));
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);

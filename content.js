@@ -6100,6 +6100,83 @@ function hostControlsLostBy(video, container) {
   return false;
 }
 
+// ── ⭐⭐ #146 — **الموقعُ يُعلن عنصرَ ملء شاشته، فنقرأ ما كتبه ولا نحدس** ──────
+// **العطبُ (بلاغ المالك 2026-09-06، xhamster): المشغّلُ في أعلى الشاشة وسوادٌ
+// عريضٌ تحته.** ✅ **وقياسان في متصفّحه فصلا الأمرَ حين قوبلا** — والمتغيّرُ
+// بينهما مَن دخل ملءَ الشاشة: **بزرّ الموقع** الفيديو `897×949` وسوادٌ `0·0·0·0`
+// · **وبأمرِنا** `1497×562` في عنصرٍ `949` وسوادٌ أسفلَ `387`.
+// ⇒ **فالجذرُ في اختيار الحاوية**: طلبناها لعنصرٍ **لا يُنسّق الموقعُ تخطيطَه
+// الداخليَّ لأجله**، فبقي غلافُه الداخليُّ بمقاس الصفحة.
+// ✅ **والآليّةُ مقيسةٌ محلّيّاً بمتغيّرٍ واحد**: `height:100%` **لا يَحُلّ عبر أبٍ
+// بلا ارتفاعٍ محدَّد** — بلا ارتفاع `800×501` · بارتفاع 100% `800×600` ·
+// بـ`display:contents` `800×600` — **والمُحدِّدُ يُطابق في الثلاث** ⇒ **العلّةُ في
+// دلالة النسبة المئويّة لا في المُحدِّد.** ✅ **وسلسلةُ المالك تقولها بحرفها**:
+// `…xplayer…[562·562px] ← ⇒fsEl` — **صندوقٌ واحدٌ ارتفاعُه مكتوبٌ 562.**
+//
+// ⭐⭐ **والمُميِّزُ ليس حدساً بل نصَّ الموقع**: `.xplayer:fullscreen{…}` في ورقته
+// **تصريحٌ منه بأن هذا هو عنصرُ ملء شاشته** — ونحن نقرؤه ونسأل أيَّ أسلافِ
+// الفيديو يُطابقه. **وقِيس عند المالك أن الجواب `.xplayer`**، وهو بعينه العنصرُ
+// الذي يضعه زرُّ الموقع في ملء الشاشة.
+//
+// ⛔ **وموضعُه شرطٌ لا ترتيب: بعد كلّ حكمٍ قاطعٍ قائم وقبل السكور.** ⇒ **لا يزاحم
+// حاويةً معروفةً ولا ضوابطَ متصفّح** — **فصفرُ انقلابٍ على البنيات الخمسَ عشرة
+// بالبناء لا بالرجاء**، ✅ **ومقيسٌ كذلك: أطلق في اثنتين (و · ز) وفي كلتيهما
+// اختار نفسَ ما تختاره الدالّةُ اليوم.**
+//
+// ⚠️ **وحدٌّ يُعلَن**: **أوراقُ نطاقٍ آخرَ لا تُقرأ** (`cssRules` ترمي) ⇒ **موقعٌ
+// يُعلن في ورقةٍ بعيدةٍ لا نراه** — **و«لم أجد» غيرُ «لم أستطع أن أرى»**، ومِجَسُّ
+// `report-fullscreen-bug.js` يطبع عددَ ما تعذّر.
+const FS_DECLARED_RE = /:(?:-webkit-full-screen|-moz-full-screen|fullscreen)\b/;
+// ⛔ **مُحدِّداتٌ عامّةٌ تُقصى**: `video:fullscreen` و`body:fullscreen` تصريحٌ عن
+// شكلٍ لا عن هويّةِ عنصر — **وقبولُها يجعلنا نُكبّر الصفحةَ كلَّها.**
+const FS_DECLARED_GENERIC = new Set(["video", "*", "html", "body", ""]);
+
+function siteDeclaredFsSelectors() {
+  const sels = [];
+  const walk = (rules) => {
+    for (const r of rules) {
+      // ⛔⭐ **كائنٌ صادقٌ ليس قائمةً غيرَ فارغة**: كروم يُعطي كلَّ `CSSStyleRule`
+      // قائمةَ `cssRules` فارغةً منذ دعمِ تداخل CSS، **وهي صادقة** — فشرطُ
+      // `if (r.cssRules)` كان يغوص في لا شيء ويتخطّى المُحدِّدَ قبل قراءته،
+      // **فيُخرج صفراً يشبه النجاح.** وقاعدةٌ قد تحمل الاثنين، فلا `continue`.
+      const st = r.selectorText;
+      if (r.cssRules && r.cssRules.length) { try { walk(r.cssRules); } catch {} }
+      if (!st || !FS_DECLARED_RE.test(st)) continue;
+      for (const part of st.split(",")) {
+        for (const tok of part.trim().split(/\s*[>+~]\s*|\s+/)) {
+          if (!FS_DECLARED_RE.test(tok)) continue;
+          const clean = tok.replace(FS_DECLARED_RE, "").trim();
+          if (FS_DECLARED_GENERIC.has(clean.toLowerCase())) continue;
+          if (!sels.includes(clean)) sels.push(clean);
+        }
+      }
+    }
+  };
+  for (const sheet of document.styleSheets) {
+    // ⛔ ورقتُنا تُقصى — تحمل `[data-vz-fs]:fullscreen`، فبلا هذا نُطابق إعلانَنا
+    if (sheet.ownerNode && sheet.ownerNode.id === "vz_fs_fill_css") continue;
+    let rules;
+    try { rules = sheet.cssRules; } catch { continue; }   // ورقةٌ من نطاقٍ آخر
+    try { walk(rules); } catch {}
+  }
+  return sels;
+}
+
+function siteDeclaredFsElement(video) {
+  if (!video) return null;
+  let sels;
+  try { sels = siteDeclaredFsSelectors(); } catch { return null; }
+  if (!sels.length) return null;
+  let el = video.parentElement;
+  for (let i = 0; i < FS_CONTAINER_MAX_DEPTH && el; i++, el = el.parentElement) {
+    if (el === document.body || el === document.documentElement) break;
+    for (const sel of sels) {
+      try { if (el.matches(sel)) return el; } catch {}
+    }
+  }
+  return null;
+}
+
 function pickFullscreenContainer(video) {
   if (!video) return null;
 
@@ -6123,6 +6200,12 @@ function pickFullscreenContainer(video) {
   // ⛔ **#140 — وشرطٌ ثالث: ألّا يُخرج اختيارُه أدواتِ المضيف من الرسم.** والسكورُ
   // هو المستأنَف لأنه **يملك حكمَه سلفاً** (`hasButtons` ثلاثُ نقاط) — ⭐ **ومقيسٌ
   // في البنية الكاسرة أنه يختار `div#player` الذي يحوي الشريط.**
+  // #146 — **بعد كلّ حكمٍ قاطعٍ قائم وقبل السكور** (انظر رأسَ `siteDeclaredFsElement`).
+  // ⛔ **وشرطُ #140 يسري عليه كما يسري على القاطع**: تصريحُ الموقع لا يُعفي من
+  // ألّا يُخرج اختيارُنا أدواتِه من الرسم.
+  const declaredFs = siteDeclaredFsElement(video);
+  if (declaredFs && declaredFs.requestFullscreen && !hostControlsLostBy(video, declaredFs)) return declaredFs;
+
   const nearest = nearestPlayerAncestor(video);
   if (nearest && nearest.requestFullscreen && !hostControlsLostBy(video, nearest)) return nearest;
 
