@@ -230,6 +230,41 @@
     document.querySelector(".shaka-video-container") ? "shaka" :
     v.closest("#movie_player") ? "youtube" : "مخصّص/غير معروف";
 
+  // ── #140د · نسخةٌ حرفيّةٌ من `videoWouldCrop` في content.js ────────────────
+  // ⛔ **نسخةٌ تتخلّف هنا تطبع «لا قصّ» عن كودٍ يقصّ** — ويحرسها
+  // `tools/test-fs-report-sync.js` قسم [7].
+  const wouldCrop = (video) => {
+    if (!video) return false;
+    let fit;
+    try { fit = getComputedStyle(video).objectFit; } catch { return false; }
+    if (fit !== "cover" && fit !== "fill") return false;
+    const r = video.getBoundingClientRect();
+    const nw = Number(video.videoWidth), nh = Number(video.videoHeight);
+    if (!(r.width > 0 && r.height > 0 && nw > 0 && nh > 0)) return false;
+    return Math.abs((r.width / r.height) - (nw / nh)) > 0.02;
+  };
+
+  // ── أين السواد؟ — أربعُ فجواتٍ بين الفيديو وعنصرِ ملء الشاشة ───────────────
+  // ⭐ **هذا هو ما يفصل الأصنافَ الثلاثة التي تُرى متشابهةً في اللقطة:**
+  // سوادٌ **متماثل** حول الفيديو ⇒ نسبةٌ مختلفة، وهو صواب (قرار 149).
+  // سوادٌ **أسفلَ وحدَه** ⇒ الحاوية أطولُ من المشغّل: **اختيارُ حاويةٍ خاطئ**.
+  // سوادٌ **ولا وسمَ لنا** ⇒ **قاعدةُ الملء لم تُطبَّق أصلاً**، وهو غيرُ الأوّلين.
+  const gaps = (() => {
+    if (!fsEl || !fsEl.getBoundingClientRect) return null;
+    const f = fsEl.getBoundingClientRect();
+    return {
+      أعلى: Math.round(vr.top - f.top), أسفل: Math.round(f.bottom - vr.bottom),
+      يسار: Math.round(vr.left - f.left), يمين: Math.round(f.right - vr.right),
+      fs: Math.round(f.width) + "x" + Math.round(f.height)
+    };
+  })();
+
+  const marked = {
+    ورقة: !!document.getElementById("vz_fs_fill_css"),
+    حاوية: !!document.querySelector("[data-vz-fs]"),
+    فيديو: v.hasAttribute("data-vz-fs-video")
+  };
+
   const line = [
     "VZ58",
     "url=" + location.href,
@@ -246,7 +281,15 @@
     "computed=" + cs.width + "/" + cs.height + " object-fit=" + cs.objectFit,
     "مشغّل=" + player,
     "في ظلّ=" + (v.getRootNode() && v.getRootNode().host ? "نعم" : "لا"),
-    "شاشة=" + innerWidth + "x" + innerHeight
+    "شاشة=" + innerWidth + "x" + innerHeight,
+    // ── #140د / #58ب — حالُ قاعدةِ الملء عندنا ──────────────────────────────
+    "طبيعي=" + (v.videoWidth || 0) + "x" + (v.videoHeight || 0),
+    "يُقصّ=" + (wouldCrop(v) ? "نعم" : "لا"),
+    "وسمُنا=" + (marked.ورقة ? "ورقة✓" : "ورقة✗") + (marked.حاوية ? " حاوية✓" : " حاوية✗") +
+                (marked.فيديو ? " فيديو✓" : " فيديو✗"),
+    "سواد=" + (gaps ? `أعلى ${gaps.أعلى} أسفل ${gaps.أسفل} يسار ${gaps.يسار} يمين ${gaps.يمين} (fs ${gaps.fs})`
+                    : "—"),
+    "fsEl يملأ الشاشة=" + (gaps ? (gaps.fs === innerWidth + "x" + innerHeight ? "نعم" : "لا — " + gaps.fs) : "—")
   ].join(" | ");
 
   console.log(line);

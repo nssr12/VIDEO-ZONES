@@ -115,6 +115,23 @@ console.log("\n[6] #140 — الشرط الثالث على الحكم القاط
     depth(CS) >= 2 && depth(RS) >= 2, `${depth(CS)} / ${depth(RS)}`);
 }
 
+console.log("\n[7] #140د — سؤالُ القصّ منسوخٌ حرفاً، لا مُعادَ صياغته");
+{
+  // ⛔ **نسخةٌ تتخلّف هنا تطبع «لا قصّ» عن كودٍ يقصّ** — وهو أسوأُ من صمتها،
+  // لأن المِجَسّ يُلصَق عند بلاغ عطبٍ فيُبنى على سطره تشخيص.
+  const shape = (t) => {
+    const i = t.search(/(function videoWouldCrop\(video\) \{|const wouldCrop = \(video\) => \{)/);
+    return i < 0 ? null : squash(t.slice(i, i + 700));
+  };
+  const a = shape(CONTENT), b = shape(REPORT);
+  check("موجود في content.js", !!a);
+  check("وموجود في المقطع", !!b);
+  for (const frag of ['fit!=="cover"&&fit!=="fill"', "video.videoWidth", "video.videoHeight",
+                      "Math.abs((r.width/r.height)-(nw/nh))>0.02"])
+    check(`و«${frag}» في الاثنين`, !!a && !!b && a.includes(frag) && b.includes(frag),
+      `${!!a && a.includes(frag)} / ${!!b && b.includes(frag)}`);
+}
+
 console.log("\n[5] المقطع تشخيصي لا يُشحن، ولا يلمس التخزين ولا chrome.*");
 {
   check("غير مذكور في manifest.json",
