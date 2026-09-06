@@ -5,6 +5,8 @@ let map = new Map();
 let siteProfile = { enabled: false, mappings: [] };
 let siteMap = new Map();
 let blockedHosts = [];
+// #147 — مواقعُ يغلب فيها أمرُ المستخدم روابطَ الصفحة. **فارغةٌ = سلوكُ ما قبل #145 حرفاً.**
+let linkedVideoHosts = [];
 let lastPointer = { x: null, y: null };
 let soundDisplaySettings = { color: "#ffffff", fontSize: 48 };
 let subtitleSettings = {
@@ -462,6 +464,28 @@ async function ensureZonesDefaults(pre) {
   const zones = (data.settings || {}).zones;
   if (!zones) return structuredClone(FIRST_RUN_ZONES);
   return zones;
+}
+
+// ── #147 — قائمةُ «الفيديو داخل رابطٍ، والفيديو هو المقصود» ──────────────────
+// **العطبُ الذي وُلدت منه (بلاغ المالك 2026-09-06): #145 يعمل على إنستقرام
+// و«كسر اليوتيوب والمواقع الأخرى».** ⇒ **مصغّراتُ يوتيوب `a#thumbnail` تلفّ
+// معاينةَ التحويم وهي `<video>`** ⇒ **فهي «رابطٌ يلفّ فيديو» بحرف شرطنا** —
+// **والفرقُ عن إنستقرام دلاليٌّ لا هندسيّ: هناك الفيديو هو المقصود، وهنا
+// المقصودُ الرابط.**
+// ⛔⭐⭐ **والمُميِّزُ البنيويّ جُرّب فسقط بالقياس لا بالرأي**: قاعدةُ #94 تمتنع
+// عن معاينة يوتيوب (نطاقٌ لا يُظهر أدواته) — **وقِيس عند المالك أن زرَّ السرعة
+// لا يظهر على فيديو خلاصة إنستقرام أيضاً** ⇒ **الموقعان في جانبٍ واحدٍ منها،
+// فلا تفصلهما.**
+// ⇒ ⭐ **فالإعلانُ بدل الاستدلال، كما في #143 بحرفه**: قائمةٌ فارغةٌ افتراضاً
+// ⇒ **كلُّ موقعٍ غيرِ مُضافٍ يعود إلى سلوك ما قبل #145 بالبناء لا بالرجاء.**
+function hostAllowsLinkedVideo() {
+  return linkedVideoHosts.includes(baseDomain(location.host));
+}
+
+async function loadLinkedVideoHosts(pre) {
+  const data = await settingsRead(pre);
+  const settings = data.settings || {};
+  linkedVideoHosts = Array.isArray(settings.linkedVideoHosts) ? settings.linkedVideoHosts : [];
 }
 
 async function loadBlockedHosts(pre) {
@@ -5039,7 +5063,7 @@ async function flushReload() {
 
   await Promise.all([
     loadRulesForThisHost(data), loadSiteProfile(data), loadZoneSettings(data),
-    loadOverlaySettings(data), loadBlockedHosts(data), loadSoundDisplaySettings(data),
+    loadOverlaySettings(data), loadBlockedHosts(data), loadLinkedVideoHosts(data), loadSoundDisplaySettings(data),
     loadMasterEnabled(data), loadGridAppearance(data), loadSubtitleSettings(data), loadYtAutoQualitySettings(data),
     loadYtShortsRedirectSetting(data), loadCleanPlayerSettings(data), loadIdleSettings(data),
     loadFilterPresets(data)   // #109
@@ -5067,6 +5091,7 @@ function runStartupSteps() {
   startup("zones", () => read.then(loadZoneSettings)); // ✅ مهم: تشغيل zones بعد refresh مباشرة
   const overlayReady = startup("overlay", () => read.then(loadOverlaySettings));
   startup("blockedHosts", () => read.then(loadBlockedHosts));
+  startup("linkedVideoHosts", () => read.then(loadLinkedVideoHosts));
   startup("soundDisplay", () => read.then(loadSoundDisplaySettings));
   startup("filterPresets", () => read.then(loadFilterPresets));   // #109
   startup("gridAppearance", () => read.then(loadGridAppearance));
@@ -5144,7 +5169,8 @@ function shouldLetNativeLinkHandlingRun(e, video) {
   // `ytp-ce-covering-overlay` — **وصفرٌ منها يلفّ الفيديو**: كلُّها مرسومةٌ
   // فوقه. ⇒ **فيوتيوب يبقى ممتنعاً بالبناء لا بالنيّة**، وبطاقاتُ نهايته
   // تُنقَر كما كانت. **وغلافُ إنستقرام يلفّ** ⇒ فنعمل.
-  if (linkLike.contains?.(video)) return false;
+  // #147 — **وعلى المواقع المُعلَنة وحدَها** (انظر رأسَ `hostAllowsLinkedVideo`).
+  if (hostAllowsLinkedVideo() && linkLike.contains?.(video)) return false;
 
   return true;
 }
@@ -6600,7 +6626,9 @@ function handleMouse(e) {
   }
   // **الرايةُ تُرفع على الأمر الواقع لا على الضغطة**، كشكلِ `suppressContextMenuUntil`
   // فوقها بحرفه: أمرٌ فشل لا يحجب شيئاً (#33).
-  if (ok && sig === "Mouse2" && e.type === "mousedown") mouse2ConsumedPress = true;
+  // #147 — **مقيَّدٌ بالقائمة كذلك**: بلا هذا يبقى نصفُ #145 عاملاً في كلّ
+  // مكان، **و«يعود كما كان» تصير وعداً لا ضمانة.**
+  if (ok && sig === "Mouse2" && e.type === "mousedown" && hostAllowsLinkedVideo()) mouse2ConsumedPress = true;
   delete e.__videoUnderPointer;
   if (!ok) return;
 

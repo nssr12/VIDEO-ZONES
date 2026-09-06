@@ -78,8 +78,8 @@ console.log("\n[4] المُطبِّع — يقبل ما يكتبه المستخ�
   const ctx = { console, URL };
   vm.createContext(ctx);
   vm.runInContext(slice(STORAGE, "const MULTI_LABEL_SUFFIXES", "// ---- END baseDomain ----"), ctx);
-  vm.runInContext(slice(OPTIONS, "function hostBarHostFromInput", "function renderHostBarHosts"), ctx);
-  const f = ctx.hostBarHostFromInput;
+  vm.runInContext(slice(OPTIONS, "function hostFromUserInput", "function renderHostBarHosts"), ctx);
+  const f = ctx.hostFromUserInput;
 
   // ⭐ **المقبولةُ من نصّ المالك بحرفه، ومن أشكالٍ يكتبها الناس فعلاً**
   for (const [inp, want] of [

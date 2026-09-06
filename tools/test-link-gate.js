@@ -39,23 +39,35 @@ function node(tag, parent) {
   return n;
 }
 
-const ctx = { console };
+// #147 — **الشرطُ صار مقيَّداً بقائمة مواقع**، فيُزوَّد السياقُ بها ويُقلَب.
+const ctx = { console, __onList: false };
+ctx.hostAllowsLinkedVideo = () => ctx.__onList;
 vm.createContext(ctx);
 vm.runInContext(slice("function shouldLetNativeLinkHandlingRun", "function togglePlay"), ctx);
 const gate = ctx.shouldLetNativeLinkHandlingRun;
+const onList = (v) => { ctx.__onList = v; };
 
 console.log("\n[1] البنياتُ الثلاث — والمتغيّرُ موضعُ الرابط من الفيديو");
 {
+  onList(false);   // الافتراضُ: خارج القائمة — وهو حالُ كلّ موقعٍ لم يُضفه المستخدم
   // (أ) لا رابطَ إطلاقاً ⇒ لا نتنحّى
   {
     const root = node("DIV"), v = node("VIDEO", root);
     check("لا رابطَ ⇒ أمرُنا يقع", gate({ target: v }, v) === false);
   }
-  // (ب) رابطٌ **يلفّ** الفيديو — غلافُ منشورٍ في خلاصة إنستقرام ⇒ أمرُنا يقع
+  // (ب) رابطٌ **يلفّ** الفيديو — والحكمُ صار للقائمة (#147)
+  // ⛔⭐⭐ **العطبُ الذي وُلد منه هذا التقييد**: مصغّراتُ يوتيوب `a#thumbnail`
+  // **تلفّ معاينةَ التحويم وهي `<video>`** ⇒ **الشكلُ نفسُه بحرفه، والمقصودُ
+  // ضدُّه** — **فمقياسٌ واحدٌ لحالين متضادّين، والفرقُ دلاليٌّ لا هندسيّ.**
+  // ⛔ **والمُميِّزُ البنيويّ (#94) جُرّب فسقط بالقياس**: زرُّ السرعة لا يظهر على
+  // خلاصة إنستقرام أيضاً ⇒ **الموقعان في جانبٍ واحدٍ منه.**
   {
     const root = node("DIV"), a = node("A", root); a.__link = true;
     const v = node("VIDEO", a);
-    check("رابطٌ يلفّ الفيديو (إنستقرام) ⇒ أمرُنا يقع", gate({ target: v }, v) === false);
+    onList(true);
+    check("رابطٌ يلفّ الفيديو **وموقعٌ في القائمة** ⇒ أمرُنا يقع", gate({ target: v }, v) === false);
+    onList(false);
+    check("⭐ والموقعُ خارجَها ⇒ نتنحّى كما قبل #145 (يوتيوب)", gate({ target: v }, v) === true);
   }
   // (ج) رابطٌ **مرسومٌ فوقه** ولا يلفّه — بطاقةُ نهاية يوتيوب ⇒ نتنحّى
   {
@@ -91,8 +103,27 @@ console.log("\n[2] العلّةُ الثانية — الإلغاءُ في `auxc
   check("⛔ ولا وقفَ انتشارٍ — أوسعُ من سؤاله", !/stopPropagation|stopImmediatePropagation/.test(blk));
   // **والرايةُ تُرفع على الأمر الواقع لا على الضغطة** (شكلُ #33)
   const tail = SRC.replace(/\s+/g, "");
-  check("والرايةُ مشروطةٌ بوقوع الأمر",
-    /if\(ok&&sig==="Mouse2"&&e\.type==="mousedown"\)mouse2ConsumedPress=true;/.test(tail));
+  check("والرايةُ مشروطةٌ بوقوع الأمر **وبالقائمة معاً** (#147)",
+    /if\(ok&&sig==="Mouse2"&&e\.type==="mousedown"&&hostAllowsLinkedVideo\(\)\)mouse2ConsumedPress=true;/.test(tail));
+}
+
+
+console.log("\n[3] #147 — القائمةُ تحكم الشرطين معاً، فالرجوعُ تامٌّ لا نصفيّ");
+{
+  const CODE = SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  check("القائمةُ تُقرأ من التخزين",
+    /linkedVideoHosts = Array\.isArray\(settings\.linkedVideoHosts\)/.test(CODE));
+  check("والمضيفُ يُقاس بـ`baseDomain` كأخواتها",
+    /linkedVideoHosts\.includes\(baseDomain\(location\.host\)\)/.test(CODE));
+  check("والمُحمِّلُ مسجَّلٌ في البدء",
+    /startup\("linkedVideoHosts"/.test(CODE));
+  check("وفي مسار إعادة القراءة",
+    /loadBlockedHosts\(data\), loadLinkedVideoHosts\(data\)/.test(CODE));
+  // ⛔ **موضعان اثنان لا واحد**: بلا الثاني يبقى نصفُ #145 عاملاً في كلّ مكان
+  // ⛔ **والتعريفُ ليس نداءً**: أوّلُ صياغةٍ عدّته فقالت «ثلاثة» عن موضعين —
+  // **مطابقةٌ أوسعُ من سؤالها، في حارسٍ عن مطابقاتٍ أوسعَ من سؤالها.**
+  const uses = (CODE.match(/(?<!function )hostAllowsLinkedVideo\(\)/g) || []).length;
+  check(`ونداءاها موضعان (الشرطُ والراية) — الموجود ${uses}`, uses === 2, uses);
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} نجح ${pass} / فشل ${fail}\n`);

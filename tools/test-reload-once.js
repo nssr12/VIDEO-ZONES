@@ -68,7 +68,10 @@ const LOADERS = ["loadRulesForThisHost", "loadSiteProfile", "loadZoneSettings", 
   // #109 — مُحمِّل الفلاتر المحفوظة. **ويُضاف هنا ولا تُشتقّ القائمة**: نصُّها
   // يقول إنها **مرساةٌ مقصودة تُعلن نفسها برمية** (قرار 33)، وقد أعلنت فعلاً
   // يوم وُلد هذا المُحمِّل — **فتصحيحُ تصميمٍ يعمل ليس من عمل هذا البند.**
-  "loadFilterPresets"];
+  "loadFilterPresets",
+  // #147 — مُحمِّل قائمة «الفيديو داخل رابط». **أعلنت المرساةُ نفسَها برمية**
+  // يوم وُلد هذا المُحمِّل، كما وعد نصُّها أعلاه — فيُضاف ولا تُشتقّ القائمة.
+  "loadLinkedVideoHosts"];
 
 function makeFrame({ awake = true, value = "A" } = {}) {
   const st = { reads: 0, applied: 0, loaders: 0, value };

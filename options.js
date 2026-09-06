@@ -474,7 +474,7 @@ function renderGrid(actionsByZone) {
 // والإضافةُ كلُّها تعرف المواقعَ بـ`baseDomain` وحدَها (مفاتيحُ `sp:` والمحجوبةُ
 // و`isBlockedHost`). ⇒ **فيُختصر إلى الشكل الواحد، ولا يُبنى محلّلُ أنماطٍ ثانٍ.**
 // ⛔ **ولا `new URL` وحدَها**: `new URL("tiktok.com")` ترمي، **فيُسبَق بمخطَّطٍ**.
-function hostBarHostFromInput(text) {
+function hostFromUserInput(text) {
   let t = String(text || "").trim();
   if (!t) return "";
   t = t.replace(/^\*:\/\//, "https://");            // نمطُ الإضافات: *://…
@@ -487,6 +487,51 @@ function hostBarHostFromInput(text) {
   // **حارسُ الخرج لا حارسُ الدخل**: ما لا يشبه مضيفاً يُرفض بصوت، لا يُخزَّن
   if (!/^[a-z0-9.-]+(:\d+)?$/i.test(base) || !base.includes(".")) return "";
   return base;
+}
+
+// ── #147 · مواقعُ «الفيديو داخل رابط» ──────────────────────────────────────
+// **تُعيد استعمال `hostFromUserInput` نفسِها** — اشتقاقٌ واحدٌ لمُضيفَين، لا نسخة.
+function renderLinkedVideoHosts(s) {
+  const list = $("linkedVideoList");
+  if (!list) return;
+  const empty = $("linkedVideoEmpty");
+  const note = $("linkedVideoNote");
+  list.innerHTML = "";
+  const hosts = Array.isArray(s.linkedVideoHosts) ? [...s.linkedVideoHosts].sort() : [];
+  empty.hidden = hosts.length > 0;
+  if (note) {
+    note.textContent = hosts.length === 0
+      ? "بعضُ المواقع تلفّ الفيديو برابطٍ يفتح صفحتَه (خلاصةُ إنستقرام مثلاً)، فيسبق الرابطُ أمرَ الفأرة عندك. أضف الموقعَ هنا ليغلب أمرُك. ⚠️ ولا تُضف يوتيوب: مصغّراتُه روابطُ بقصدٍ، وإضافتُه تمنع فتحَها بالزرّ الأوسط."
+      : "في هذه المواقع يغلب أمرُ الفأرة رابطَ الصفحة. وما عداها يعمل كما كان تماماً.";
+  }
+  for (const host of hosts) {
+    const item = document.createElement("div");
+    item.className = "blockedItem";
+    const label = document.createElement("div");
+    label.className = "blockedHost";
+    label.textContent = host;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btnGhost";
+    btn.textContent = "إزالة";
+    btn.addEventListener("click", () => saveLinkedVideoHosts((cur) => cur.filter((x) => x !== host)));
+    item.appendChild(label);
+    item.appendChild(btn);
+    list.appendChild(item);
+  }
+}
+
+async function saveLinkedVideoHosts(mutate) {
+  const s = await getSettings();
+  const cur = Array.isArray(s.linkedVideoHosts) ? s.linkedVideoHosts : [];
+  s.linkedVideoHosts = Array.from(new Set(mutate(cur))).sort();
+  if (!(await saveSettings(s))) return false;
+  const tabs = await chrome.tabs.query({});
+  for (const t of tabs) {
+    if (t.id) chrome.tabs.sendMessage(t.id, { type: "GVZ_RELOAD" }).catch(() => {});
+  }
+  renderLinkedVideoHosts(s);
+  return true;
 }
 
 function renderHostBarHosts(s) {
@@ -541,6 +586,7 @@ async function saveHostBarHosts(mutate) {
     if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_OVERLAY_SETTINGS" }).catch(() => {});
   }
   renderHostBarHosts(s);
+  renderLinkedVideoHosts(s);
   return true;
 }
 
@@ -1247,7 +1293,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const addHostBarHost = async () => {
     const el = $("hostBarHostInput");
     if (!el) return;
-    const host = hostBarHostFromInput(el.value);
+    const host = hostFromUserInput(el.value);
     // ⛔ **رفضٌ بصوت لا صمت** (درس #57): حقلٌ يُمسح بلا شيء يُقرأ نجاحاً
     if (!host) { showToast("bad", "لم أفهم هذا الموقع. مثال: https://www.tiktok.com/*"); return; }
     if (!(await saveHostBarHosts((cur) => [...cur, host]))) return;
@@ -1255,6 +1301,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     showToast("ok", `أُضيف ${host}`);
   };
   $("hostBarHostAdd")?.addEventListener("click", addHostBarHost);
+
+  const addLinkedVideo = async () => {
+    const el = $("linkedVideoInput");
+    if (!el) return;
+    const host = hostFromUserInput(el.value);
+    if (!host) { showToast("bad", "لم أفهم هذا الموقع. مثال: https://www.instagram.com/*"); return; }
+    if (!(await saveLinkedVideoHosts((cur) => [...cur, host]))) return;
+    el.value = "";
+    showToast("ok", `أُضيف ${host}`);
+  };
+  $("linkedVideoAdd")?.addEventListener("click", addLinkedVideo);
+  $("linkedVideoInput")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); addLinkedVideo(); }
+  });
+
   $("hostBarHostInput")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); addHostBarHost(); }
   });

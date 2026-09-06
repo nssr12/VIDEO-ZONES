@@ -691,6 +691,18 @@ async function loadBlockedSiteUI() {
   // ⚠️ **والحالُ ثلاثيّةٌ لا ثنائيّة، وتُقال كلُّها** (#24): مُضافٌ · غيرُ
   // مُضاف · **والمفتاحُ الرئيسيّ مطفأ فالإضافةُ بلا أثر**. **وزرٌّ يُضيف بلا
   // أثرٍ ولا يقول لماذا هو الوعدُ الكاذب بعينه.**
+  // ── #147 — حالُ الموقع من قائمة «أمري يغلب الروابط» ────────────────────
+  const linkBtn = $("linkedVideoBtn");
+  if (linkBtn) {
+    const lv = Array.isArray(settings.linkedVideoHosts) ? settings.linkedVideoHosts : [];
+    const onList = !!currentHost && lv.includes(currentHost);
+    linkBtn.classList.toggle("onList", onList);
+    linkBtn.disabled = !currentHost;
+    linkBtn.title = !currentHost ? "لا موقعَ لهذه الصفحة"
+      : onList ? `أمرُك يغلب روابطَ ${currentHost} — اضغط للإلغاء`
+               : `اضغط ليغلب أمرُ الفأرة روابطَ ${currentHost}`;
+  }
+
   const barBtn = $("hostBarSiteBtn");
   if (barBtn) {
     const hosts = Array.isArray(settings.overlay?.hostBarHosts) ? settings.overlay.hostBarHosts : [];
@@ -711,6 +723,23 @@ async function loadBlockedSiteUI() {
 // #143 — نفسُ شكل `saveBlockedSiteState` حرفاً: قراءةٌ، قلبٌ، `safeSyncSet`،
 // ثمّ رسالةٌ للتبويب. **والرسالةُ `RELOAD_OVERLAY_SETTINGS` لا `GVZ_RELOAD`**:
 // المفتاحُ يعيش في `settings.overlay`، وكلٌّ يوقظ قارئَه.
+// #147 — نفسُ شكل `saveBlockedSiteState` حرفاً. **والرسالةُ `GVZ_RELOAD`**:
+// القائمةُ في `settings` جذراً، ومُحمِّلُها يُستأنف في مسار إعادة القراءة نفسِه.
+async function toggleLinkedVideoSite() {
+  if (!currentHost) return;
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const settings = data.settings || {};
+  const set = new Set(Array.isArray(settings.linkedVideoHosts) ? settings.linkedVideoHosts : []);
+  const add = !set.has(currentHost);
+  if (add) set.add(currentHost); else set.delete(currentHost);
+  settings.linkedVideoHosts = Array.from(set).sort();
+  const res = await safeSyncSet({ settings });
+  if (!res.ok) { setStatus("bad", `تعذّر الحفظ: ${res.message}`); return; }
+  setStatus("ok", add ? `أمرُك يغلب روابطَ ${currentHost}` : `أُزيل ${currentHost}`);
+  const tab = await getActiveTab();
+  if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: "GVZ_RELOAD" }).catch(() => {});
+}
+
 async function toggleHostBarSite() {
   if (!currentHost) return;
   const data = await chrome.storage.sync.get({ settings: {} });
@@ -923,6 +952,15 @@ document.addEventListener("mousedown", (e) => {
   // «لم يقع شيء» وهي «وقع خطأ لم يُقَل». والنجاح يبقى صامتاً (قرار 7): لا يظهر
   // سطر إلا عند خلل فعليّ. وفشل الحفظ المعروف يُعالَج داخل saveBlockedSiteState
   // برسالته المفصَّلة، وهذا يلتقط ما لا تلتقطه: رفض القراءة نفسها.
+  $("linkedVideoBtn")?.addEventListener("click", async () => {
+    try {
+      await toggleLinkedVideoSite();
+      await loadBlockedSiteUI();
+    } catch (err) {
+      setStatus("bad", `تعذّر التغيير: ${syncErrorText(err)}`);
+    }
+  });
+
   $("hostBarSiteBtn")?.addEventListener("click", async () => {
     try {
       await toggleHostBarSite();

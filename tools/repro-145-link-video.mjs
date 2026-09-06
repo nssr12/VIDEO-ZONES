@@ -49,9 +49,13 @@ const READ = `(() => { const v = document.querySelector("video");
   return { vol: Math.round(v.volume * 100) / 100, ctx: window.__r.ctx, aux: window.__r.aux,
            wraps: !!(a && a.contains(v)) }; })()`;
 
-const cfg = (from, to) => ({
+// ⭐ #147 — **والموقعُ صار مُعلَناً**: قائمةٌ فارغةٌ تعني سلوكَ ما قبل #145.
+// ⛔ **وقيمتُها تُشتقّ من العنوان المُحمَّل لا تُكتب بيد**: `baseDomain` تُبقي
+// المنفذ في عنوان IPv4، **فقائمةٌ مكتوبةٌ بيدٍ تُخطئ المنفذ فتُطبع «امتنع» عن
+// ضبطٍ لم يصل** — وهو عيبُ «حالٌ لم تُنتَج» بحرفه (قرار 22).
+const cfg = (from, to, hosts = []) => ({
   globalSiteRules: { enabled: true, mappings: [{ from, to }] },
-  settings: { enabled: true, blockedHosts: [], zones: { enabled: false } },
+  settings: { enabled: true, blockedHosts: [], linkedVideoHosts: hosts, zones: { enabled: false } },
 });
 
 async function targets(port) {
@@ -62,10 +66,15 @@ async function targets(port) {
 // `want` هو الحكمُ المنتظَر: أيقع أمرُنا أم نمتنع عمداً؟
 const CASES = [
   { key: "m2_plain", label: "Mouse2 · لا رابطَ (شاهد موجب)",              shape: "plain", from: "Mouse2", button: "middle", want: true },
-  { key: "m2_wrap",  label: "Mouse2 · رابطٌ **يلفّ** الفيديو (إنستقرام)",  shape: "wrap",  from: "Mouse2", button: "middle", want: true },
+  { key: "m2_wrap",  label: "Mouse2 · رابطٌ **يلفّ** + الموقعُ **في القائمة** (إنستقرام)",  shape: "wrap",  from: "Mouse2", button: "middle", onList: true, want: true },
+  // ⭐⭐ **شاهدُ رجوعِ يوتيوب (#147)**: الشكلُ نفسُه **خارجَ القائمة** ⇒ نتنحّى
+  // كما قبل #145. **ومصغّراتُ يوتيوب هذا الشكلُ بحرفه** (`a#thumbnail` تلفّ
+  // معاينةَ التحويم) — **فامتناعُنا هنا هو ما يُعيد فتحَها بالزرّ الأوسط.**
+  { key: "m2_off",   label: "⭐ Mouse2 · رابطٌ يلفّ + **خارج القائمة** (يوتيوب) ⇒ نتنحّى", shape: "wrap", from: "Mouse2", button: "middle", want: false },
   { key: "m2_over",  label: "Mouse2 · رابطٌ **فوق** الفيديو (يوتيوب) ⇒ نمتنع", shape: "over", from: "Mouse2", button: "middle", want: false },
   { key: "m3_plain", label: "Mouse3 · لا رابطَ (شاهد موجب)",              shape: "plain", from: "Mouse3", button: "right",  want: true },
-  { key: "m3_wrap",  label: "Mouse3 · رابطٌ **يلفّ** الفيديو (إنستقرام)",  shape: "wrap",  from: "Mouse3", button: "right",  want: true },
+  { key: "m3_wrap",  label: "Mouse3 · رابطٌ **يلفّ** + الموقعُ **في القائمة** (إنستقرام)",  shape: "wrap",  from: "Mouse3", button: "right",  onList: true, want: true },
+  { key: "m3_off",   label: "⭐ Mouse3 · رابطٌ يلفّ + **خارج القائمة** (يوتيوب) ⇒ نتنحّى", shape: "wrap", from: "Mouse3", button: "right", want: false },
   { key: "m3_over",  label: "Mouse3 · رابطٌ **فوق** الفيديو (يوتيوب) ⇒ نمتنع", shape: "over", from: "Mouse3", button: "right",  want: false },
 ];
 
@@ -74,7 +83,8 @@ async function run(c, port) {
   let h = null, p = null, srv = null;
   try {
     h = await launch(port, { extra: ["--window-size=1400,900"] });
-    const w = await configure(port, h.extensionId, cfg(c.from, "ACTION:VOLUME:+10"));
+    const w = await configure(port, h.extensionId,
+      cfg(c.from, "ACTION:VOLUME:+10", c.onList ? [`127.0.0.1:${port + 900}`] : []));
     if (!w.ok) { out.skipped = "تعذّر الضبط: " + (w.why || w.error); return out; }
     const s = await serveTestPage(port + 900, page(c.shape)); srv = s.srv;
     p = await openPage(port, s.url);

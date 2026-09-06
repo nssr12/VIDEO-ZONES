@@ -61,6 +61,9 @@ function makeWorld({ zone = 5, zoneClick = null, zoneKey = null, site = null, gl
     suppressContextMenuUntil: 0,
     // #145 — رايةُ «استهلكنا هذه الضغطة» تُستدعى في مسار Mouse2 قبل مانع التكرار.
     mouse2ConsumedPress: false,
+    // #147 — **خارجَ القائمة هو الافتراض**، وسؤالُ هذا الملفّ الأولويّةُ لا
+    // الروابط: بوّابةُ الروابط مُزيَّفةٌ أصلاً أعلاه.
+    hostAllowsLinkedVideo: () => false,
     runAction: (a, e) => { ran.push({ action: a, via: e && e.type }); return true; },
     zoneSettings: {
       click: { map: zoneClick ? { [String(zone)]: zoneClick } : {} },
