@@ -258,7 +258,10 @@ window.__vz58 = () => {
   const fillsW = ref ? vr.width >= ref.width - 2 : false;
   const fillsH = ref ? vr.height >= ref.height - 2 : false;
   const fills = fillsW || fillsH;
-  const pct = ref && ref.width ? Math.round((vr.width * vr.height) / (ref.width * ref.height) * 100) : null;
+  // **قسمةٌ على صفرٍ تطبع `Infinity%`** — ومستطيلُ `HTML` صفريُّ الارتفاع فعلاً
+  // في سطر المالك. **ورقمٌ لا معنى له أسوأُ من شرطةٍ تقول «لا يُقاس».**
+  const refArea = ref ? ref.width * ref.height : 0;
+  const pct = refArea > 0 ? Math.round((vr.width * vr.height) / refArea * 100) : null;
   const gate = !inFs ? "غير مؤكَّد (لست داخل ملء الشاشة)" : (fills ? "ترفض — الفيديو يملأ أصلاً" : "تضيف السمة");
 
   const player =
@@ -319,8 +322,13 @@ window.__vz58 = () => {
       out.push(desc(n) + "[" + Math.round(n.getBoundingClientRect().height) + "·" + hs + "]");
       n = n.parentElement;
     }
+    // ⛔⭐ **«لم أبلغه» ليس «ليس داخلَه»** — وقد طبعتُ الثانية عن الأولى في سطرِ
+    // المالك: المسحُ يقف عند ثمانية آباء، **والمصغّرُ أعمقُ منها والفيديو داخلَه
+    // قطعاً.** ⇒ **جملةٌ كاذبةٌ في مِجَسٍّ يُبنى على سطره تشخيص** — وهي عائلةُ
+    // «مطابقةٌ أوسعُ من سؤالها» في الطبع لا في الحكم.
     if (n === fsEl) out.push("⇒fsEl");
-    else out.push("⛔ لم أبلغ fsEl — الفيديو ليس داخلَه");
+    else if (fsEl.contains(v)) out.push("… (انتهى المسحُ عند 8 آباء — والفيديو **داخل** fsEl)");
+    else out.push("⛔ الفيديو **ليس** داخل fsEl");
     return out.length ? out.join(" ← ") : "(الفيديو ابنٌ مباشر)";
   })();
 
