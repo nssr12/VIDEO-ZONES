@@ -129,6 +129,22 @@
           <!-- #77: يُرسم من settings-ui.js — لا ضابطَ مكتوبٌ بيد هنا -->
           <div class="vzGenerated" id="timingList"></div>
         </section>
+
+        <!-- ⭐ #143 — قائمةُ مواقع الشريط. **مكتوبةٌ بيدٍ عمداً وخارج `#timingList`**:
+             سجلُّ `VZ_UI_TIMING` يولّد ضابطاً واحداً لكلّ مدخل (`input` واحد،
+             ويحرسه `tools/test-settings-ui.js`)، **وقائمةٌ تُضاف ويُحذف منها
+             ليست ضابطاً مفرداً** — فإقحامُها هناك يكسر الحارسَ بحقّ. -->
+        <section class="panel" id="hostBarHostsPanel">
+          <h3 class="panelTitle">مواقعُ شريط التقدّم</h3>
+          <p class="panelNote" id="hostBarHostsNote"></p>
+          <div class="rowAdd">
+            <input type="text" id="hostBarHostInput" placeholder="https://www.tiktok.com/*"
+                   aria-label="أضف موقعاً يُرسم فيه شريطُ التقدّم">
+            <button type="button" class="btnGhost" id="hostBarHostAdd">أضف</button>
+          </div>
+          <div class="blockedList" id="hostBarHostsList"></div>
+          <div class="emptyState" id="hostBarHostsEmpty">لا موقعَ بعد — الشريطُ لا يُرسم في أيّ مكان.</div>
+        </section>
       </section>
 
       <!-- #113 — قسمُ المضيف يُولَّد من `VZ_UI_HOSTS`. وإضافةُ تيك توك غداً

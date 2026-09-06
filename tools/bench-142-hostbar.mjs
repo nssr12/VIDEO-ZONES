@@ -80,10 +80,16 @@ const M = `(() => {
   };
 })()`;
 
-const SETTINGS = (hostBar) => ({
+// ⭐ **#143 — والموقعُ صار مُعلَناً لا مُستدَلّاً**، فالضبطُ يحمل القائمة.
+// ⛔ **وقيمتُها تُشتقّ من العنوان الذي يُحمَّل فعلاً لا تُكتب بيد**: صفحاتُ
+// الرِكاز على `127.0.0.1:<منفذ>`، و`baseDomain` تُبقي المنفذ في عنوان IPv4
+// ⇒ **قائمةٌ مكتوبةٌ بيدٍ تُخطئ المنفذ فتُطبع «لا يُرسم» عن ضبطٍ لم يصل.**
+const LOCAL_HOST = `127.0.0.1:${HTTP}`;
+const SETTINGS = (hostBar, hostBarHosts = [LOCAL_HOST]) => ({
   settings: {
     enabled: true, idle: { ms: 1200 },
-    overlay: { autoHideMs: 900, volumeAutoHideMs: 900, enabled: true, hintEnabled: true, hostBar },
+    overlay: { autoHideMs: 900, volumeAutoHideMs: 900, enabled: true, hintEnabled: true,
+               hostBar, hostBarHosts },
     zones: { enabled: true, fullscreenOnly: false,
       wheel: { map: { "4": { up: ["ACTION:SPEED:+0.25"], down: ["ACTION:SPEED:-0.25"] } } } }
   },
@@ -142,14 +148,24 @@ try {
   h = await launch(PORT, { withExtension: true, extra: ["--window-size=1440,900"] });
 
   for (const cell of [
-    { label: "موجب — مفتاحٌ مُشغَّل ومضيفٌ بلا أدوات", on: true, ctrl: "0", yt: false, expect: true },
+    { label: "موجب — مفتاحٌ مُشغَّل وموقعٌ مُضاف", on: true, ctrl: "0", yt: false, expect: true },
     { label: "سالب ١ — المفتاحُ مطفأ", on: false, ctrl: "0", yt: false, expect: false },
-    { label: "سالب ٢ — مضيفٌ له شريطٌ يُنقِّل (منزلق)", on: true, ctrl: "bar", yt: false, expect: false },
-    { label: "سالب ٣ — يوتيوب (والمفتاحُ مُشغَّل وبلا أدوات)", on: true, ctrl: "0", yt: true, expect: false },
+    // ⭐⭐ **#143 — السالبُ الذي وُلد من بلاغ المالك «يطبع على بعض المواقع
+    // السليمة»**: كلُّ شيءٍ مُشغَّل **إلا أن الموقعَ ليس في قائمته** ⇒ لا يُرسم.
+    { label: "⭐ سالب ٢ — موقعٌ **خارج القائمة** (بلاغُ المالك #143)", on: true, ctrl: "0", yt: false,
+      hosts: ["example.com"], expect: false },
+    // ⭐ **وانقلب حكمُ هذه الخليّة بقرار المالك**: كانت «مضيفٌ له شريطٌ يُنقِّل ⇒
+    // نمتنع» بالاستدلال. **والآن القائمةُ وحدَها تحكم** ⇒ **يُرسم فوق شريطه،
+    // وهو ثمنٌ مُعلَنٌ ومقبول** — والخليّةُ باقيةٌ لأنها تقيس الانقلابَ نفسَه.
+    { label: "⭐ موجب ٣ — موقعٌ مُضافٌ **وله شريطُه** ⇒ يُرسم فوقه (ثمنٌ مقبول)", on: true, ctrl: "bar", yt: false, expect: true },
+    // ⛔ **ويوتيوب في القائمة صراحةً** — **فالامتناعُ يُقاس مستقلّاً عن القائمة
+    // لا مسنوداً بغيابه منها**: ضمانتان، وهذه تُثبت الأولى وحدَها.
+    { label: "سالب ٣ — يوتيوب **وهو في القائمة** (شرطُ المالك، بنيويّاً)", on: true, ctrl: "0", yt: true,
+      hosts: [LOCAL_HOST, "youtube.com"], expect: false },
     { label: "⭐ موجب ٢ — أزرارُ خلاصةٍ بلا تنقّل (حالُ تيك توك وإنستقرام)", on: true, ctrl: "feed", yt: false, expect: true }
   ]) {
     const out = { label: cell.label, expect: cell.expect };
-    const cfg = await configure(PORT, h.extensionId, SETTINGS(cell.on));
+    const cfg = await configure(PORT, h.extensionId, SETTINGS(cell.on, cell.hosts || [LOCAL_HOST]));
     if (!cfg.ok) throw new Error("تعذّر ضبط التخزين");
     const path = `/?ctrl=${cell.ctrl}`;
     const page = cell.yt

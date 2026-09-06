@@ -24,6 +24,7 @@
     }
     .iconBtn:hover{background:#f0f1f3}
     .iconBtn.blocked{background:#fee2e2;border-color:#fca5a5}
+    .iconBtn.onList{background:#dcfce7;border-color:#86efac}
 
     .muted{color:var(--muted);font-size:12px;margin-bottom:10px}
     .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin-bottom:10px}
@@ -89,6 +90,9 @@
     <h3>ريماب اختصارات الفيديو</h3>
     <div style="display:flex;gap:6px">
       <button class="iconBtn" id="blockSiteBtn" type="button" title="منع/السماح لهذا الموقع" aria-label="منع الموقع">🚫</button>
+      <!-- #143 — إضافةُ الموقع الحاليّ إلى قائمة شريط التقدّم بضغطةٍ واحدة،
+           بلا نسخِ رابطٍ ولا فتحِ إعدادات. **والقائمةُ نفسُها في الإعدادات.** -->
+      <button class="iconBtn" id="hostBarSiteBtn" type="button" title="شريط التقدّم على هذا الموقع" aria-label="شريط التقدّم على هذا الموقع">▬</button>
       <button class="iconBtn" id="openOptions" type="button" title="الإعدادات" aria-label="الإعدادات">⚙️</button>
     </div>
   </div>

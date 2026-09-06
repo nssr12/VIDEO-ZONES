@@ -468,6 +468,82 @@ function renderGrid(actionsByZone) {
   }
 }
 
+// ── #143 · قائمةُ مواقع شريط التقدّم ────────────────────────────────────────
+// ⭐ **المُطبِّعُ يقبل ما يكتبه المستخدم فعلاً، ويخرج بما تفهمه الإضافة فعلاً.**
+// المالكُ يلصق `https://www.tiktok.com/*` — **وهو نمطُ مطابقةٍ لا مضيف**،
+// والإضافةُ كلُّها تعرف المواقعَ بـ`baseDomain` وحدَها (مفاتيحُ `sp:` والمحجوبةُ
+// و`isBlockedHost`). ⇒ **فيُختصر إلى الشكل الواحد، ولا يُبنى محلّلُ أنماطٍ ثانٍ.**
+// ⛔ **ولا `new URL` وحدَها**: `new URL("tiktok.com")` ترمي، **فيُسبَق بمخطَّطٍ**.
+function hostBarHostFromInput(text) {
+  let t = String(text || "").trim();
+  if (!t) return "";
+  t = t.replace(/^\*:\/\//, "https://");            // نمطُ الإضافات: *://…
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) t = "https://" + t;
+  let host;
+  try { host = new URL(t).host; } catch { return ""; }
+  host = String(host || "").replace(/^\*\./, "");     // *.tiktok.com
+  if (!host) return "";
+  const base = baseDomain(host);
+  // **حارسُ الخرج لا حارسُ الدخل**: ما لا يشبه مضيفاً يُرفض بصوت، لا يُخزَّن
+  if (!/^[a-z0-9.-]+(:\d+)?$/i.test(base) || !base.includes(".")) return "";
+  return base;
+}
+
+function renderHostBarHosts(s) {
+  const list = $("hostBarHostsList");
+  if (!list) return;
+  const empty = $("hostBarHostsEmpty");
+  const note = $("hostBarHostsNote");
+  list.innerHTML = "";
+
+  const hosts = Array.isArray(s.overlay?.hostBarHosts) ? [...s.overlay.hostBarHosts].sort() : [];
+  empty.hidden = hosts.length > 0;
+
+  // ⚠️ **#24 — حالٌ لا تفعل شيئاً تُقال بسببها المكتوب، لا تُترك تُخمَّن.**
+  // مفتاحٌ مشغّلٌ وقائمةٌ فارغة **يعمل بلا أثرٍ في أيّ مكان** — والصمتُ هنا
+  // يجعل المستخدم يظنّ الميزةَ معطوبة.
+  const on = s.overlay?.hostBar === true;
+  if (note) {
+    note.classList.toggle("warn", on && hosts.length === 0);
+    note.textContent = !on
+      ? "المفتاحُ أعلاه مطفأ — فلا يُرسم الشريطُ ولو أضفتَ مواقع."
+      : hosts.length === 0
+        ? "⚠️ المفتاحُ مشغّلٌ والقائمةُ فارغة ⇒ الشريطُ لا يُرسم في أيّ مكان. أضف موقعاً."
+        : "يُرسم الشريطُ في هذه المواقع وحدَها. الصق الرابط كما هو — يُختصر إلى اسم الموقع.";
+  }
+
+  for (const host of hosts) {
+    const item = document.createElement("div");
+    item.className = "blockedItem";
+    const label = document.createElement("div");
+    label.className = "blockedHost";
+    label.textContent = host;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btnGhost";
+    btn.textContent = "إزالة";
+    btn.addEventListener("click", () => saveHostBarHosts((cur) => cur.filter((x) => x !== host)));
+    item.appendChild(label);
+    item.appendChild(btn);
+    list.appendChild(item);
+  }
+}
+
+// **صفٌّ يختفي بعد حذفٍ لم يُحفظ يعِد بما لم يقع** (#69) — فالرسمُ بعد الحفظ
+async function saveHostBarHosts(mutate) {
+  const s = await getSettings();
+  s.overlay ||= {};
+  const cur = Array.isArray(s.overlay.hostBarHosts) ? s.overlay.hostBarHosts : [];
+  s.overlay.hostBarHosts = Array.from(new Set(mutate(cur))).sort();
+  if (!(await saveSettings(s))) return false;
+  const tabs = await chrome.tabs.query({});
+  for (const t of tabs) {
+    if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_OVERLAY_SETTINGS" }).catch(() => {});
+  }
+  renderHostBarHosts(s);
+  return true;
+}
+
 function renderBlockedSites(blockedHosts) {
   const list = $("blockedList");
   const empty = $("blockedEmpty");
@@ -1167,6 +1243,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderGridAppearance(s.gridAppearance);
   });
 
+  // #143 — الإضافةُ بالزرّ وبـEnter معاً: **حقلٌ لا يقبل Enter يُقرأ معطوباً.**
+  const addHostBarHost = async () => {
+    const el = $("hostBarHostInput");
+    if (!el) return;
+    const host = hostBarHostFromInput(el.value);
+    // ⛔ **رفضٌ بصوت لا صمت** (درس #57): حقلٌ يُمسح بلا شيء يُقرأ نجاحاً
+    if (!host) { showToast("bad", "لم أفهم هذا الموقع. مثال: https://www.tiktok.com/*"); return; }
+    if (!(await saveHostBarHosts((cur) => [...cur, host]))) return;
+    el.value = "";
+    showToast("ok", `أُضيف ${host}`);
+  };
+  $("hostBarHostAdd")?.addEventListener("click", addHostBarHost);
+  $("hostBarHostInput")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); addHostBarHost(); }
+  });
+
   $("soundColor").addEventListener("change", async () => {
     const s = await getSettings();
     s.soundDisplay ||= { color: "#ffffff", fontSize: 48 };
@@ -1442,6 +1534,7 @@ async function renderAllFromStorage() {
   renderSoundSettings(s.soundDisplay);
   renderGridAppearance(s.gridAppearance);
   renderOverlayTiming(s);
+  renderHostBarHosts(s);
   renderSubtitles(s.subtitles);
   renderYtAutoQuality(s.ytAutoQuality);
   renderYtShortsRedirect(s.ytShortsRedirect);
@@ -1648,4 +1741,7 @@ async function persistTiming(id) {
   for (const t of tabs) {
     if (t.id) chrome.tabs.sendMessage(t.id, { type: "RELOAD_OVERLAY_SETTINGS" }).catch(() => {});
   }
+  // #143 — **سببُ اللاأثر يُعاد حسابُه فور تغيّره**: مفتاحٌ يُشغَّل والقائمةُ
+  // فارغة **لا يفعل شيئاً**، ولا يُترك المستخدمُ يكتشف ذلك بالتجربة (#24).
+  if (id === "hostBarEnabled") renderHostBarHosts(s);
 }

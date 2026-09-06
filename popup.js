@@ -686,6 +686,51 @@ async function loadBlockedSiteUI() {
   const isBlocked = isHostBlocked(currentHost, settings.blockedHosts);
   $("blockSiteBtn").classList.toggle("blocked", isBlocked);
   $("blockSiteBtn").title = isBlocked ? "الموقع محظور — اضغط للسماح" : "اضغط لمنع هذا الموقع";
+
+  // ── #143 — حالُ الموقع الحاليّ من قائمة شريط التقدّم ────────────────────
+  // ⚠️ **والحالُ ثلاثيّةٌ لا ثنائيّة، وتُقال كلُّها** (#24): مُضافٌ · غيرُ
+  // مُضاف · **والمفتاحُ الرئيسيّ مطفأ فالإضافةُ بلا أثر**. **وزرٌّ يُضيف بلا
+  // أثرٍ ولا يقول لماذا هو الوعدُ الكاذب بعينه.**
+  const barBtn = $("hostBarSiteBtn");
+  if (barBtn) {
+    const hosts = Array.isArray(settings.overlay?.hostBarHosts) ? settings.overlay.hostBarHosts : [];
+    const onList = !!currentHost && hosts.includes(currentHost);
+    const featureOn = settings.overlay?.hostBar === true;
+    barBtn.classList.toggle("onList", onList);
+    barBtn.disabled = !currentHost;
+    barBtn.title = !currentHost
+      ? "لا موقعَ لهذه الصفحة"
+      : !featureOn
+        ? (onList ? `${currentHost} في القائمة — لكن مفتاحَ الشريط مطفأ في الإعدادات`
+                  : "مفتاحُ شريط التقدّم مطفأ في الإعدادات — شغّله أوّلاً")
+        : (onList ? `الشريطُ يُرسم على ${currentHost} — اضغط للإزالة`
+                  : `اضغط لرسم الشريط على ${currentHost}`);
+  }
+}
+
+// #143 — نفسُ شكل `saveBlockedSiteState` حرفاً: قراءةٌ، قلبٌ، `safeSyncSet`،
+// ثمّ رسالةٌ للتبويب. **والرسالةُ `RELOAD_OVERLAY_SETTINGS` لا `GVZ_RELOAD`**:
+// المفتاحُ يعيش في `settings.overlay`، وكلٌّ يوقظ قارئَه.
+async function toggleHostBarSite() {
+  if (!currentHost) return;
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const settings = data.settings || {};
+  settings.overlay = settings.overlay || {};
+  const hosts = new Set(Array.isArray(settings.overlay.hostBarHosts) ? settings.overlay.hostBarHosts : []);
+  const add = !hosts.has(currentHost);
+  if (add) hosts.add(currentHost); else hosts.delete(currentHost);
+  settings.overlay.hostBarHosts = Array.from(hosts).sort();
+
+  const res = await safeSyncSet({ settings });
+  if (!res.ok) { setStatus("bad", `تعذّر الحفظ: ${res.message}`); return; }
+  // **ولا يُعلَن نجاحٌ صامت**: إن كان المفتاحُ مطفأً فالإضافةُ لم تُنتج شيئاً بعد
+  if (add && settings.overlay.hostBar !== true) {
+    setStatus("bad", `أُضيف ${currentHost} — لكن مفتاحَ شريط التقدّم مطفأ في الإعدادات، فلا يُرسم بعد.`);
+  } else {
+    setStatus("ok", add ? `الشريطُ يُرسم على ${currentHost}` : `أُزيل ${currentHost}`);
+  }
+  const tab = await getActiveTab();
+  if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: "RELOAD_OVERLAY_SETTINGS" }).catch(() => {});
 }
 
 async function saveBlockedSiteState() {
@@ -878,6 +923,15 @@ document.addEventListener("mousedown", (e) => {
   // «لم يقع شيء» وهي «وقع خطأ لم يُقَل». والنجاح يبقى صامتاً (قرار 7): لا يظهر
   // سطر إلا عند خلل فعليّ. وفشل الحفظ المعروف يُعالَج داخل saveBlockedSiteState
   // برسالته المفصَّلة، وهذا يلتقط ما لا تلتقطه: رفض القراءة نفسها.
+  $("hostBarSiteBtn")?.addEventListener("click", async () => {
+    try {
+      await toggleHostBarSite();
+      await loadBlockedSiteUI();     // **هي التي ترسم حالَ الزرّين معاً**
+    } catch (err) {
+      setStatus("bad", `تعذّر تغيير حالة الشريط: ${syncErrorText(err)}`);
+    }
+  });
+
   $("blockSiteBtn").addEventListener("click", async () => {
     try {
       await saveBlockedSiteState();
