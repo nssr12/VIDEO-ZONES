@@ -213,6 +213,15 @@ window.__vz58 = () => {
   // الخيط (`shown:false` عن مِجَسٍّ ينتظر أطولَ من المهلة · و`null` عن سطرٍ
   // ظهر واختفى). ⇒ **فإن لم نكن داخل ملء الشاشة، ينتظر المِجَسُّ دخولَه.**
   if (!document.fullscreenElement) {
+    // ⛔⭐⭐ **الاختيارُ يقع قبل الدخول، فيجب أن يُقرأ الإعلانُ قبله.** موقعٌ
+    // يحقن قاعدةَ `:fullscreen` **عند الدخول** يبدو مُعلِناً لمن يقرأ بعده،
+    // **ولا إعلانَ عنده لحظةَ اخترنا** — **رقمٌ صادقٌ عن لحظةٍ غيرِ التي نسأل
+    // عنها**، وهو ثالثُ وقوعِ هذا الشكل في هذا الخيط (قرار 22).
+    try {
+      const pre = readDeclared(v);
+      window.__vz58pre = { sels: pre.sels, blind: pre.blind,
+                           el: pre.el ? desc(pre.el) : null, sel: pre.sel };
+    } catch (e) { window.__vz58pre = { err: String(e && e.message || e) }; }
     console.log("VZ58 | لستَ داخل ملء الشاشة.\n" +
       "  ⛔ أغلِق أدواتِ المطوّر أوّلاً (⌥⌘J) — وهي ملتصقةً تأكل عرضَ الصفحة فتُقاس نافذةٌ لا شاشة.\n" +
       "  ثمّ ادخل ملءَ الشاشة بأمر الإضافة. سأطبع وحدي، وافتحِ الأدواتِ بعدها لتقرأ (مهلة 60 ثانية).");
@@ -318,7 +327,9 @@ window.__vz58 = () => {
   // ── ⭐ #146 — **أيُعلن الموقعُ عنصرَ ملء شاشته في ورقة أنماطه؟** ───────────
   // ⛔ **وأوراقُ نطاقٍ آخرَ لا تُقرأ** (`cssRules` ترمي) — **فيُطبع عددُ ما
   // تعذّرت قراءتُه**، لأن «لم أجد» و«لم أستطع أن أرى» ليسا واحداً.
-  const declared = (() => {
+  // ⛔ **دالّةٌ مُعلَنةٌ لا ثابتٌ سهميّ**: تُنادى من فرع الانتظار الذي يسبقها
+  // نصّاً — **وثابتٌ يُنادى قبل تعريفه يرمي**، وقد رمى فعلاً في أوّل صياغة.
+  function readDeclared(vid) {
     const FS = /:(?:-webkit-full-screen|-moz-full-screen|fullscreen)\b/;
     const GENERIC = new Set(["video", "*", "html", "body", ""]);
     const sels = []; let blind = 0;
@@ -345,13 +356,14 @@ window.__vz58 = () => {
       try { walk(rules); } catch {}
     }
     let el = null, sel = null;
-    for (let n = v.parentElement, i = 0; n && i < 8 && sels.length; n = n.parentElement, i++) {
+    for (let n = vid && vid.parentElement, i = 0; n && i < 8 && sels.length; n = n.parentElement, i++) {
       if (n === document.body || n === document.documentElement) break;
       for (const sq of sels) { try { if (n.matches(sq)) { el = n; sel = sq; break; } } catch {} }
       if (el) break;
     }
     return { sels, blind, el, sel };
-  })();
+  }
+  const declared = readDeclared(v);
 
   const marked = {
     ورقة: !!document.getElementById("vz_fs_fill_css"),
@@ -394,6 +406,14 @@ window.__vz58 = () => {
     "حاملُ الوسم=" + desc(markedEl) + (markedEl && fsEl && markedEl === fsEl ? " **هو fsEl**" : " ⛔ **ليس fsEl**"),
     "يطابق قاعدتَنا=" + (matchesRule === null ? "?" : matchesRule ? "نعم" : "⛔ لا"),
     "سلسلة=" + chain,
+    // ⭐ **قبل الدخول** — وهي اللحظةُ التي يقع فيها الاختيار
+    "⭐قبلَ الدخول: يُعلن=" + (window.__vz58pre
+      ? (window.__vz58pre.err ? "خطأ:" + window.__vz58pre.err
+         : (window.__vz58pre.sels && window.__vz58pre.sels.length
+            ? JSON.stringify(window.__vz58pre.sels) + " ⇒ " + (window.__vz58pre.el || "لا سلفَ يُطابق")
+            : "لا شيء") +
+           (window.__vz58pre.blind ? " (⛔ " + window.__vz58pre.blind + " ورقةً تعذّرت)" : ""))
+      : "لم يُقرأ (لُصق داخل ملء الشاشة)"),
     "الموقعُ يُعلن=" + (declared.sels.length ? JSON.stringify(declared.sels) : "لا شيء") +
       (declared.blind ? " (⛔ " + declared.blind + " ورقةً تعذّرت قراءتُها — نطاقٌ آخر)" : ""),
     "المرشَّح146=" + (declared.el ? desc(declared.el) + " بـ«" + declared.sel + "»" : "—") +
