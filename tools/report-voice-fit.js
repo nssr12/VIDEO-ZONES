@@ -15,7 +15,8 @@
 // ما سجّلناه لا يُخمَّن (K4).** **وكلُّ رفضٍ يُسمّي شرطَه بقيمته (قرار 140).**
 //
 // ── ⛔ الشواهد — ولا حكمَ بدونها (قرار 26 · قرار 150) ────────────────────────────────────────────
-//  · **المُقسِّمُ دالّةٌ خالصة تُسأل أوّلاً عن حالين جوابُهما معلوم** (json3 اصطناعيٌّ تلقائيٌّ ويدويّ) — وإلا ⛔.
+//  · **المُقسِّمُ دالّةٌ خالصة تُسأل أوّلاً عن ⛔ ~~حالين~~ ثلاث حالاتٍ جوابُها معلوم** (json3 اصطناعيٌّ تلقائيٌّ ويدويّ، **وأحداثٌ تُشقّ عند ترقيمها
+//    وتُقصّ بسقفٍ مثبَّتٍ عند 25 بالضبط وتتداخل أزمنتُها** — 2026-11-01) — وإلا ⛔.
 //  · **سالبُ الأداة:** جملةٌ ثابتةٌ تُنطق مرّتين ⇒ **مدّتان لا تفترقان بأكثرَ من 5٪** — وإلا ⛔ «غيرُ ثابت».
 //  · **شاهدا المسار (§٦ صفّ 5) بدالّة s نفسِها:** كلمةٌ في نافذة 5 ث ⇒ **s < 1** · 40 كلمةً في نافذة 0.5 ث ⇒ **s > 3** — وإلا ⛔.
 //  · **compare:** المتقابلان بالزمن **أشبهُ كلماتٍ بضعفٍ على الأقلّ من المُزاحَين** بنصف القائمة — وإلا ⛔ ولا أزواج.
@@ -25,6 +26,10 @@
 //  · **التلقائيّة** (فيها `tOffsetMs`): كلماتٌ بزمنٍ مطلق tStartMs+tOffsetMs **وأحداثُ الإلحاق تُترك**، وتُقسم عند **فجوةِ بدءٍ
 //    ≥600ms** أو . ? ! أو 20 كلمة · **اليدويّة:** أحداثٌ تُدمج حتى ترقيمٍ أو **فجوةٍ ≥1200ms** أو 25 كلمة · […] و♪ تُحذف ·
 //    **النافذةُ = بدءُ التالية − بدؤها** (الأخيرة: نهايتُها − بدؤها + 0.5 ث) · **≤40 جملةً منتظمةً بترتيب الجمل لا بالزمن.**
+//  · ⭐ 📐 **والشكلُ الثالث (2026-10-31، أوّلُ فيديو للمالك):** `kind=asr` بلا `tOffsetMs` ومرقّمٌ داخل أحداثه (151 حدثاً لـ2064 كلمة ·
+//    `exp=xpo,xwmhp,xpe` = ذراعُ تجربةٍ ليوتيوب منذ يونيو 2026 تدمج الكلمات 📄) — ⛔ ~~الحدثُ وحدةٌ لا تُشقّ~~ فخرجت 67 من 74 «جملة»
+//    قطعاً من 25–31 كلمة تنتهي وسط الكلام ⇒ **الحدثُ بلا `tOffsetMs` يُشقّ عند . ? ! … داخله، وزمنُ كلّ قطعةٍ بنسبة حروفها من مدّته**
+//    (🎯 تقريبٌ: لا توقيتَ كلماتٍ يُقاس به) ثمّ قواعدُ اليدويّة نفسُها · **وتسميةُ السطر بالشكل لا بالنوع** («بلا توقيت كلمات»).
 //  · **النطقُ مرّةً بسرعة 1 وحجم 0.15** (خافتٌ لا مكتوم: المكتومُ يُنهي بلا `start`) بصوتٍ واحد — المحسّنُ إن وُجد ·
 //    **المدّةُ مدّةُ المحرّك لا الصوتِ المسموع** (حافّتا الصمت منها) · والترجمةُ مترجمُ كروم على الجهاز وحدَه.
 //  · **listen(): جملٌ مختلفة، لكلّ سرعةٍ جملة** (الجملةُ المعادةُ تُفهم بالذاكرة لا بالسمع · ويبقى أنّ كلّاً منها نُطق خافتاً مرّةً
@@ -114,14 +119,22 @@
     if (qp("tlang")) return stop("__vz168cap." + cuK + " فيه tlang=" + qp("tlang") + " — نصٌّ ترجمه يوتيوب لا كلامُ الفيديو" + need7);
     if (lang.toLowerCase().split(/[-_]/)[0] !== "en") return stop("لغةُ المسار الملتقَط = «" + lang + "» — النطاقُ الإنجليزيّةُ وحدَها (خ12)، بالوسم الأوّل تماماً (درس #161)");
 
-    // ── (أ) المُقسِّم — دالّةٌ خالصة، ⛔ ولا يُقسَّم بها نصٌّ حقيقيّ قبل أن تُصيب حالين معلومَين (قرار 150) ──
+    // ── (أ) المُقسِّم — دالّةٌ خالصة، ⛔ ولا يُقسَّم بها نصٌّ حقيقيّ قبل أن تُصيب حالاتٍ معلومة (قرار 150) ──
     const clean = (s) => String(s || "").replace(/\[[^\]]*\]|♪+/g, " ").replace(/\s+/g, " ").trim(), nW = (s) => (String(s).trim() ? String(s).trim().split(/\s+/).length : 0);
-    const PUNCT = /[.?!…]["'”’)]*$/, segment = (E) => {   // التلقائيّة: وحدتُها كلمة (فجوةُ بدءٍ إلى بدء) · اليدويّة: وحدتُها حدث (فجوةُ نهايةٍ إلى بدء)
+    const PUNCT = /[.?!…]["'”’)]*$/, SPLIT = /(?<=[.?!…]["'”’)]*)(?<!(?:^|\s)(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs)\.)\s+(?=["'“‘(]*[A-Z0-9])/;   // 🎯 لا قطعَ بعد لقب ولا قبل حرفٍ صغير
+    const cut3 = (e, eEnd, txt) => {   // ⭐ بلا tOffsetMs: قطعٌ عند ترقيمٍ داخل الحدث، وزمنُها بنسبة الحروف
+      const L = txt.length || 1, d = eEnd - e.tStartMs; let off = 0;
+      return txt.split(SPLIT).map((p) => { const i = txt.indexOf(p, off); off = i + p.length; return { utf8: p, t: e.tStartMs + Math.round(d * i / L), end: e.tStartMs + Math.round(d * off / L) }; });
+    }, segment = (E) => {   // التلقائيّة: وحدتُها كلمة (فجوةُ بدءٍ إلى بدء) · ⛔ ~~اليدويّة: وحدتُها حدث~~ بلا tOffsetMs: وحدتُها قطعةُ الحدث عند ترقيمه (فجوةُ نهايةٍ إلى بدء)
       const asr = E.some((e) => e && Array.isArray(e.segs) && e.segs.some((g) => g && g.tOffsetMs != null)), out = [], why = { gap: 0, punct: 0, cap: 0, end: 0 }, W = [];
       let drop = 0, cur = null;
-      E.filter((e) => e && Array.isArray(e.segs) && typeof e.tStartMs === "number" && !(asr && e.aAppend)).forEach((e) => { const eEnd = e.tStartMs + (e.dDurationMs || 0), sg = e.segs.filter(Boolean);   // الإلحاقُ يُترك
-        (asr ? sg : [{ utf8: sg.map((g) => g.utf8 || "").join("") }]).forEach((g) => { const w = clean(g.utf8);
-          if (w) W.push({ t: e.tStartMs + (g.tOffsetMs || 0), end: eEnd, w: w }); else if (String(g.utf8 || "").trim()) drop++; }); });
+      let F = E.filter((e) => e && Array.isArray(e.segs) && typeof e.tStartMs === "number" && !(asr && e.aAppend));   // الإلحاقُ يُترك
+      if (!asr) F = F.slice().sort((a, b) => a.tStartMs - b.tStartMs).reduce((o, e) => { const p = o[o.length - 1];   // ⭐ حدثان ببدءٍ واحد (نوافذُ متكلّمَين) يُدمجان قبل الشقّ
+        if (p && p.tStartMs === e.tStartMs) { p.segs = p.segs.concat([{ utf8: " " }], e.segs.filter(Boolean)); p.dDurationMs = Math.max(p.dDurationMs || 0, e.dDurationMs || 0); }
+        else o.push({ tStartMs: e.tStartMs, dDurationMs: e.dDurationMs, segs: e.segs.filter(Boolean) }); return o; }, []);
+      F.forEach((e, ix) => { const eEnd = e.tStartMs + (e.dDurationMs || 0), sg = e.segs.filter(Boolean), nxS = F[ix + 1] ? Math.max(e.tStartMs, F[ix + 1].tStartMs) : eEnd;
+        (asr ? sg : cut3(e, e.dDurationMs > 0 ? Math.min(eEnd, nxS) : nxS, sg.map((g) => g.utf8 || "").join(""))).forEach((g) => { const w = clean(g.utf8);   // ⭐ لا تتجاوز قطعةٌ بدءَ الحدث التالي
+          if (w) W.push({ t: asr ? e.tStartMs + (g.tOffsetMs || 0) : g.t, end: asr ? eEnd : g.end, w: w }); else if (String(g.utf8 || "").trim()) drop++; }); });
       W.sort((a, b) => a.t - b.t).forEach((w, i) => { const nx = W[i + 1]; if (!cur) cur = { start: w.t, end: w.end, ws: [] };
         cur.ws.push(w.w); cur.end = asr ? (nx ? Math.min(nx.t, w.end) : w.end) : Math.max(cur.end, w.end);
         const gap = nx ? nx.t - (asr ? w.t : w.end) : 0, k = !nx ? "end" : PUNCT.test(w.w) ? "punct" : gap >= (asr ? GAP_A : GAP_M) ? "gap" : nW(cur.ws.join(" ")) >= (asr ? CAP_A : CAP_M) ? "cap" : "";
@@ -133,8 +146,13 @@
     const ev = (t, d, a, app) => ({ tStartMs: t, dDurationMs: d, aAppend: app, segs: a.map((x) => (Array.isArray(x) ? { utf8: x[0], tOffsetMs: x[1] } : { utf8: x })) });
     const tA = sig(segment([{ tStartMs: 0, dDurationMs: 9000, id: 1, wpWinPosId: 1 }, ev(1000, 3000, ["hello", [" world", 300], [" again", 600]]), ev(2500, 100, ["\n"], 1), ev(3000, 2000, ["next", [" one.", 200], [" [Music]", 400], [" last", 500]])]));
     const tM = sig(segment([{ tStartMs: 0, dDurationMs: 6000, id: 1 }, ev(0, 1000, ["Hello there,"]), ev(1100, 900, ["my friend."]), ev(2100, 800, ["[Music]"]), ev(5000, 1000, ["Next\none"])]));
-    const okA = "asr:2000|hello world again/500|next one./2000|last:1", okM = "manual:5000|Hello there, my friend./1500|Next one:1";
-    if (tA !== okA || tM !== okM) return stop("المُقسِّم معطوب على json3 اصطناعيّ: «" + tA + "» · «" + tM + "» والمتوقَّع «" + okA + "» · «" + okM + "» ⇒ لا يُقسَّم نصٌّ حقيقيّ بمقسِّمٍ لم يُثبت أنه يصيب");
+    const W24 = "six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty a b c d e f g h i";   // 24 كلمةً بالضبط
+    const rP = segment([ev(0, 2000, ["One two. Three four five?"]), ev(2100, 1000, [W24]), ev(3150, 200, ["word"]), ev(3400, 500, ["Last one."])]), tP = sig(rP) + ":" + JSON.stringify(rP.why);
+    const tO = sig(segment([ev(0, 6000, ["We went to the store. Then we bought"]), ev(3000, 6000, ["some apples and pears."]), ev(6000, 6000, ["It was late."])]));
+    const okA = "asr:2000|hello world again/500|next one./2000|last:1", okM = "manual:5000|Hello there, my friend./1500|Next one:1",
+      okP = "manual:720|One two./1380|Three four five?/1300|" + W24 + " word/1000|Last one.:0:" + JSON.stringify({ gap: 0, punct: 2, cap: 1, end: 1 }),   // ⭐ الترقيمُ داخل الحدث + السقفُ عند 25 بالضبط
+      okO = "manual:1833|We went to the store./4167|Then we bought some apples and pears./6500|It was late.:0";   // ⭐ أحداثٌ متداخلة (roll-up): لا تسبق قطعةٌ ما قبلها
+    if (tA !== okA || tM !== okM || tP !== okP || tO !== okO) return stop("المُقسِّم معطوب على json3 اصطناعيّ: «" + tA + "» · «" + tM + "» · «" + tP + "» · «" + tO + "» والمتوقَّع «" + okA + "» · «" + okM + "» · «" + okP + "» · «" + okO + "» ⇒ لا يُقسَّم نصٌّ حقيقيّ بمقسِّمٍ لم يُثبت أنه يصيب");
     const seg = segment(evs), N = seg.sents.length, why = seg.why, M = Math.min(MAX_N, N), sample = [];
     if (N < 2) return stop("الجملُ المُقسَّمة = " + N + " من " + evs.length + " حدثاً — أقلُّ من جملتين");
     for (let k = 0; k < M; k++) sample.push(seg.sents[Math.floor((k + 0.5) * N / M)]);   // ⭐ منتظمةٌ بترتيب الجمل لا بالزمن: الحصّةُ حصّةُ جمل
@@ -145,7 +163,7 @@
     if (typeof (T && T.availability) !== "function") return stop("typeof Translator = " + typeof T + " في عالم الصفحة — المطلوب Translator.availability: " + m1 + "على هذا الجهاز");
     const av = await within(() => T.availability(PAIR), 15000); if (!av.ok || av.v !== "available") return stop("en→ar = " + show(av) + " — المطلوب available: " + m1 + "في صفحة إعدادات الإضافة أوّلاً لينزّل النموذج");
     const cr = await within(() => T.create(PAIR), 60000), lat = []; if (!cr.ok) return stop("Translator.create() = " + show(cr) + " والحالُ available — أعد مِجَسّ 1");
-    tr = cr.v; console.log("🟢 " + TAG + ": " + N + " جملةً (" + seg.kind + ") من " + evs.length + " حدثاً — أترجم عيّنةً من " + M + " واحدةً واحدة…");
+    tr = cr.v; console.log("🟢 " + TAG + ": " + N + " جملةً (" + (seg.kind === "asr" ? "كلماتٌ بتوقيتها" : "بلا توقيت كلمات — قُسمت عند الترقيم داخل الأحداث") + ") من " + evs.length + " حدثاً — أترجم عيّنةً من " + M + " واحدةً واحدة…");
     for (const x of sample) { const t0 = now(), r = await within(() => tr.translate(x.text), 30000);
       if (r.ok && typeof r.v === "string") { lat.push(now() - t0); x.ar = r.v.trim(); } else { x.ar = ""; x.err = r.timeout ? "ترجمة:مهلة" : "ترجمة:" + errName(r.e); } }
     const arN = sample.filter((x) => AR.test(x.ar)).length, trE = (sample.find((x) => x.err) || {}).err || "";
@@ -172,7 +190,7 @@
     const KEEP = [], say = (text, rate, vol, lim) => new Promise((res) => {   // ⚠️ KEEP يُمسك كلَّ نطقٍ حتى ينتهي — وإلا قد يجمعه كروم فيضيع end
       const u = new SpeechSynthesisUtterance(text), r = { dur: null, err: "" };
       let ts = 0, over = false, timer = 0;
-      const fin = (err) => { if (over) return; over = true; clearTimeout(timer); r.err = err; if (!err) r.dur = (now() - ts) / 1000; const i = KEEP.indexOf(u); if (i >= 0) KEEP.splice(i, 1); res(r); };
+      const fin = (err) => { if (over) return; over = true; clearTimeout(timer); r.err = err; r.started = ts > 0; if (!err) r.dur = (now() - ts) / 1000; const i = KEEP.indexOf(u); if (i >= 0) KEEP.splice(i, 1); res(r); };
       u.voice = VO; u.lang = VO.lang; u.rate = rate; u.volume = vol;
       u.onstart = () => { ts = now(); };                     // ⛔ المعالجاتُ قبل speak(): not-allowed يقع متزامناً داخلها
       u.onend = () => fin(ts ? "" : "end-بلا-start");        // ⭐ هكذا يُنهي كروم الجملةَ في تبويبٍ مكتوم
@@ -209,6 +227,10 @@
     if (rows.length < 10) return stop("نُطقت " + rows.length + " من " + M + " (أخطاء " + errs + (firstErr ? " أوّلُها " + firstErr : "") + " · بلا ترجمةٍ عربيّة " + notAr + ") — أقلُّ من 10 جمل ⇒ لا حكم");
 
     // ── (هـ · و) الحساب والحكم ────────────────────────────────────────────────────────────────
+    const re7 = (() => { const R = Array.isArray(cap.restored) ? cap.restored : []; if (!R.length) return "";   // ⭐ ما أعاده مِجَسّ 7 يُقرأ ثانيةً هنا بعد دقائق بلا شبكة — أثبت أم زال؟
+      const dOf = (x) => { try { const o = JSON.parse(x); return o && typeof o === "object" && "data" in o ? JSON.stringify(o.data) : x; } catch (e) { return x; } };   // ⭐ البياناتُ لا الطابع
+      const bad = R.filter((r) => { try { const c = (r.f === "ss" ? sessionStorage : localStorage).getItem(r.k); return r.v == null ? c != null : c == null || dOf(c) !== dOf(r.v); } catch (e) { return true; } });
+      return " · الإعادةُ بعد " + (cap.at7 ? Math.round((Date.now() - cap.at7) / 60000) : "؟") + " د: " + (bad.length ? "⚠️ زالت في " + bad.map((r) => r.k).join(",") : "ثابتة (" + R.length + " مفتاحاً)"); })();
     const S = rows.map((x) => x.sp).sort((p, r) => p - r), q = (p) => qt(S, p), at = (t) => S.filter((v) => v <= t).length, sum = (f) => rows.reduce((p, x) => p + f(x), 0);
     const arSec = sum((x) => x.dur), enW = sum((x) => x.words), arCh = sum((x) => x.ar.replace(/\s+/g, "").length), winSec = sum((x) => x.win) / 1000, fits1 = at(1) >= 0.8 * S.length;
     globalThis.__vz168fit = { videoId: vid, kind: seg.kind, kindUrl: kindU, lang: lang, segmented: N, sampled: M, spoken: rows.length, errs: errs, notArabic: notAr,
@@ -218,12 +240,14 @@
     // ⛔ الرمزُ وp80 مؤشّرُ هذا الفيديو لا حكمُ K3: K3 لكلّ نظامٍ على حصّة جمل العشرة مجتمعةً بـR_max الفعليّة (§٦ صفّ 5) ⇐ s مرتّبةً في السطر لذلك
     emit(TAG + (fits1 ? " ✅ **يتّسع بسرعته الطبيعيّة**: ≥80٪ من الجمل s ≤ 1 ⇒ مؤشّرُ الملاءمة قائمٌ بأيّ R_max ≥ 1 لهذا الفيديو — وK3 على العشرة مجتمعةً"
       : " ⚪ **قِيس بشواهده والحكمُ ينتظر R_max (👁)**: مؤشّرُ الملاءمة p80 = " + f2(q(0.8)) + " ≤ R_max الفعليّة ⇐ vz168fit.listen() لهذا الفيديو — وK3 على العشرة مجتمعةً") +
-      " (لكلّ نظامٍ بحصّة جملها بـR_max الفعليّة) · فيديو=" + vid + " · حكمُ مِجَسّ 7=" + (cap.verdict || "؟") +
-      " · المسار=" + (seg.kind === "asr" ? "تلقائيّ (tOffsetMs)" : "يدويّ") + " kind=" + (kindU || "—") + " lang=" + lang + ((kindU === "asr") !== (seg.kind === "asr") && kindU ? " ⚠️ kind في الرابط يخالف البيانات" : "") +
+      " (لكلّ نظامٍ بحصّة جملها بـR_max الفعليّة) · فيديو=" + vid + " · حكمُ مِجَسّ 7=" + (cap.verdict || "؟") + (cap.trace ? " (أثر: " + cap.trace + ")" : "") + re7 +
+      " · الشكل=" + (seg.kind === "asr" ? "كلماتٌ بتوقيتها (tOffsetMs)" : "بلا توقيت كلمات (قطعٌ عند الترقيم داخل الأحداث بزمنٍ نسبيّ)") + " kind=" + (kindU || "—") + " lang=" + lang +
+      ((kindU === "asr") !== (seg.kind === "asr") && kindU ? " ⚠️ kind في الرابط يخالف الشكل" + (/xwmhp/.test(cu ? cu.searchParams.getAll("exp").join(",") : "") ? " (exp=" + cu.searchParams.getAll("exp").join(",") + ": ذراعُ تجربةٍ تدمج الكلمات 📄)" : "") : "") +
       " · جمل: عيّنة " + M + " من " + N + " (قسمة: فجوة " + why.gap + " · ترقيم " + why.punct + " · سقف " + why.cap + " · غيرُ كلام " + seg.drop + ") · نُطقت " + rows.length +
       " · أخطاء " + errs + (firstErr ? " (" + firstErr + ")" : "") + " · بلا ترجمةٍ عربيّة " + notAr + " · ترجمة: عربيّ " + arN + "/" + M + " · p50 " + Math.round(qt(lat, 0.5)) + "ms" +
       " · **s الفعليّة = مدّةُ العربيّ ÷ (النافذة + 0.5ث): p50 " + f2(q(0.5)) + " · p75 " + f2(q(0.75)) + " · p80 " + f2(q(0.8)) + " · p90 " + f2(q(0.9)) + " · أقصى " + f2(S[S.length - 1]) +
-      "** · حصّةُ الجمل " + TH.map((t) => "≤" + t + "⇐" + pc(at(t), S.length)).join(" ") + " · s مرتّبة=" + S.map(f2).join(",") + " · العربيّ " + f2(arSec / enW) + "ث لكلّ كلمةٍ إنجليزيّة · " + f2(arCh / arSec) +
+      "** · حصّةُ الجمل " + TH.map((t) => "≤" + t + "⇐" + pc(at(t), S.length) + "(" + at(t) + "/" + S.length + ")").join(" ") + " · s مرتّبة=" + S.map(f2).join(",") +
+      " · صفوف(نافذة/عربيّ ث بترتيب العيّنة)=" + rows.map((x) => f2(x.win / 1000) + "/" + f2(x.dur)).join(",") + " · العربيّ " + f2(arSec / enW) + "ث لكلّ كلمةٍ إنجليزيّة · " + f2(arCh / arSec) +
       " حرفاً/ث (بلا مسافات) · الإنجليزيّة " + Math.round(enW / winSec * 60) + " كلمة/دقيقة على نوافذها · شاهد−: " + wNeg + " ≤5٪ ✅ · شاهدا المسار: " + wPath + " ✅ · المُقسِّم ✅" +
       " · ⚠️ s سرعةٌ فعليّة لا سرعةُ كروم: ما يُنتجها يختلف بالنظام (مِجَسّ 4 يقيس المنحنى، وlisten() هنا)" + (playing ? " · ⚠️ الفيديو عمل أثناء " + playing + " جملة" : "") +
       (hidden ? " · ⚠️ خُفي التبويبُ أثناء القياس" : "") + " · 🎯 فجوة " + GAP_A + "ms/" + CAP_A + " كلمة (تلقائيّ) · " + GAP_M + "ms/" + CAP_M + " (يدويّ) · حجم " + VOL +
@@ -239,14 +263,17 @@
     const busy = (name) => (globalThis.__vz168a5 === true ? "__vz168a5 = true (تشغيلةٌ جارية) — انتظر سطرَها" : ss.speaking || ss.pending ? "طابورُ الصفحة غيرُ فارغ (speaking=" + ss.speaking + ")"
       : vNow() !== vid ? "تنقّلتَ: v = «" + vNow() + "» لا «" + vid + "»" : name === "listen" && !V.paused ? "الفيديو يعمل (video.paused = false) — أوقفه" : "");
     const wrap = (name, fn) => (arg) => Promise.resolve().then(() => fn(arg)).catch((e) => console.log(TAG + "/" + name + " ⛔ · المِجَسُّ نفسُه رمى: " + ((e && e.stack) || e) + " — عطبُ أداةٍ لا جواب، أبلِغ بهذا السطر"));
+    // ⛔ listen() مرّةً للصفحة ولهذا الفيديو (لا للّصقة): اختيارُه حتميّ، فالثانيةُ الجملُ نفسُها بالترتيب نفسِه تُفهم بالذاكرة — ولا تُستهلك إلا بجملةٍ نُطقت فعلاً
+    const heardAt = () => { const h = globalThis.__vz168heard; return h && h.vid === vid ? h.at : ""; };
     const listen = async () => {   // ⭐ لكلّ سرعةٍ جملةٌ مختلفة: الجملةُ المعادةُ بتصاعدٍ تُفهم بالذاكرة لا بالسمع، فيعلو R_max زوراً
+      if (heardAt()) return emit(TAG + "/listen ⛔ · جرى في هذه الصفحة عند " + heardAt() + " — الجملُ نفسُها بالترتيب نفسِه تُفهم بالذاكرة لا بالسمع ⇒ R_max يُقرأ من سطره الأوّل" + tail);
       const g = busy("listen"), byWin = rows.slice().sort((p, r) => p.win - r.win), lg = byWin.filter((x) => x.dur >= L_MIN), pool = lg.length >= RATES.length ? lg : byWin;
       const mid = pool.length >> 1, xs = pool.slice(Math.max(0, mid - 4)).slice(0, RATES.length), got = [];   // حول النافذة الوسيطة — والجملُ ≥10 مضمونةٌ والويندوزُ يحتاج 9
       if (g) return emit(TAG + "/listen ⛔ " + g + tail); globalThis.__vz168a5 = true;
       console.log("🟢 " + TAG + "/listen: " + xs.length + " جملٍ مختلفة، لكلّ سرعةٍ جملةٌ تُسمع مرّةً وأسرعُ من سابقتها — **بعد كلّ جملةٍ دوّن «فهمتُ» أو «لم أفهم» قبل التالية** (" + L_GAP / 1000 + " ث بينهما)");
       try { for (let i = 0; i < xs.length; i++) {   // 🎯 الحجمُ 0.8: مسموعٌ للحكم
         console.log("🟢 " + TAG + "/listen: **الجملة " + (i + 1) + "/" + xs.length + " — سرعةُ كروم " + RATES[i] + "** — أصغِ…");
-        const z = await say(xs[i].ar, RATES[i], L_VOL, 30000); got.push(z); if (z.err === "مهلة-بلا-start") break;
+        const z = await say(xs[i].ar, RATES[i], L_VOL, 30000); got.push(z); if (z.started && !heardAt()) globalThis.__vz168heard = { vid: vid, at: clock() }; if (z.err === "مهلة-بلا-start") break;
         console.log("   ⇐ دوّن للجملة " + (i + 1) + ": «فهمتُ» أو «لم أفهم»"); if (i < xs.length - 1) await sleep(L_GAP); } } finally { delete globalThis.__vz168a5; }
       // ⭐ الفعليّةُ = مدّةُ الجملة بسرعة 1 (من العيّنة) ÷ مدّتها هنا — وأولاها بسرعة 1 فحصٌ يجب أن يقارب 1.00
       const re = got.map((z, i) => (z.err || !(z.dur > 0) ? null : xs[i].dur / z.dur)), c1 = re[0], c1ok = c1 != null && Math.abs(c1 - 1) <= 0.05;
@@ -254,7 +281,7 @@
       emit(TAG + "/listen " + (hung ? "⛔ " + STUCK + " (عند الجملة " + got.length + "/" + xs.length + ") · وما قِيس قبلها "
         : "⚪ 👁 **اذكر لكلّ جملةٍ «فهمتُ / لم أفهم»، وأعلى سرعةٍ فهمتَها (R_max): " + RATES.join(" · ") + "** — إن فهمتَ أعلاها فـR_max ≥ ذلك (مقصوصٌ بالسقف المعروض) · والمقيسُ هنا ") +
         "[الجملة: سرعةُ كروم ⇐ الفعليّة (مدّتُها بسرعة 1 ÷ مدّتُها هنا) ⇒ حصّةُ جمل الفيديو التي تتّسع بها · نافذتُها]: " +
-        got.map((z, i) => "ج" + (i + 1) + ": " + RATES[i] + (z.err ? " ⇐ خطأ " + z.err : re[i] != null ? " ⇐ " + f2(re[i]) + " ⇒ " + pc(at(re[i]), S.length) : " ⇐ ؟") + " · نافذة " + f2(xs[i].win / 1000) + "ث").join(" · ") +
+        got.map((z, i) => "ج" + (i + 1) + ": " + RATES[i] + (z.err ? " ⇐ خطأ " + z.err : re[i] != null ? " ⇐ " + f2(re[i]) + " ⇒ " + pc(at(re[i]), S.length) + "(" + at(re[i]) + "/" + S.length + ")" : " ⇐ ؟") + " · نافذة " + f2(xs[i].win / 1000) + "ث").join(" · ") +
         " · فحصُ سرعة 1 (ج1 ⇐ " + f2(c1) + "): " + (c1ok ? "✅ ≈1.00" : "⚠️ والمتوقَّع ≈1.00 (±5٪) ⇒ الفعليّاتُ هنا تُقرأ بحذر") +
         " · الجمل: " + (pool === lg ? xs.length + " من " + lg.length + " جملةً ≥" + L_MIN + "ث بسرعة 1" : "من الجمل كلِّها (≥" + L_MIN + "ث بسرعة 1 = " + lg.length + " < " + RATES.length + ")") +
         " حول النافذة الوسيطة · منصّة=" + (WIN ? "الويندوز ⇒ درجاتُ SAPI 0 و3–10 (📖 §٩)" : "غيرُ الويندوز") + " · 🎯 حجم " + L_VOL + " · مهلة " + L_GAP / 1000 + "ث بين الجمل · " +
@@ -265,6 +292,8 @@
       if (go !== true) return console.log("🟡 " + TAG + "/compare: ⚠️ **يُرسل طلباً واحداً إلى /api/timedtext بـtlang=ar** — قد يُردّ بـ429، وبلاغٌ واحد (2026-10-22) رأى بعده " +
         "حظراً لكلّ الترجمات النصّية عن عنوانه ساعات. **وهو الطلبُ الثاني منّا لهذا الفيديو (§٣: واحد) — و429 عليه يُعدّ K4 بنصّه، ويُنهي طلباتِ اليوم على " +
         "الاتصال كلِّه؛ فشغّله آخرَ خطوةٍ تطلب الشبكة في اليوم.** للمتابعة: vz168fit.compare(true)");
+      if (seg.kind !== "asr") return emit(TAG + "/compare ⛔ · مؤجَّلٌ بلا طلب: الجملُ هنا قطعٌ داخل أحداث الترجمة، وترجمةُ يوتيوب بالحدث كلِّه ⇒ الزوجُ يكشف نفسَه بطوله فلا يكون أعمى" +
+        " (📐 مراجعة 2026-11-01) — يُعاد بناؤه بالحدث قبل س26 · طلباتُنا=0" + tail);
       const src = String(cap.capturedUrl || ""), qi = src.indexOf("?"); let u = null; try { u = new URL(src); } catch (e) { u = null; }
       const g = busy("compare") || (brk() ? brk() + " — لا طلبَ بعده في هذه الصفحة" : NET.n >= NET.max ? "سقفُ طلباتنا " + NET.max + " استُنفد في هذه الصفحة"
         : !u || qi < 0 || u.origin !== location.origin || u.pathname !== "/api/timedtext" ? "__vz168cap.capturedUrl = «" + red(src).slice(0, 80) + "» — المطلوب رابطُ /api/timedtext على " + location.origin : "");

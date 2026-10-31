@@ -25,7 +25,8 @@
 //  · **والزوجُ بالعين (👁) شاهدُ قارئ الصوت:** فيديو تُظهر قائمتُه العربيّةَ ⇐ «عربيٌّ في الصوت=نعم» · فيديو بمسار
 //    صوتٍ واحد ⇐ 0 أو 1. **سطرٌ واحدٌ لا يُثبت أن القارئ يرى؛ الزوجُ يُثبته.**
 //  · ✅ قياسٌ صالحٌ بشاهدَيه **أيّاً كان القرار** · ⛔ رفضٌ (والإعلانُ منه، كمِجَسَّي 7 و5) أو قياسٌ باطل — **ولا ❌: السؤالُ وصفٌ لا نعم/لا.**
-//    **و«لغةٌ معروفة» = وسمٌ أوّلُ من حرفين أو ثلاثة** — قيمةٌ من شكلٍ غيرِ متوقَّع («[object…» · «4») لا تُثبت البصر.
+//    **و«لغةٌ معروفة» = وسمٌ أوّلُ من حرفين أو ثلاثة** ⛔ **ما عدا «und»** (2026-11-01: `س17` عدّه لغة — فقد يرفض الشاهدُ الآن صفحةً لا يرى فيها إلا «und»)
+//    **ولكلّ مسارٍ مرّة** (الجاري لا يُعدّ ثانيةً) — قيمةٌ من شكلٍ غيرِ متوقَّع («[object…» · «4») لا تُثبت البصر.
 //
 // ── ⚠️ حدودٌ مُعلَنة ──────────────────────────────────────────────────────────────────────────
 //  · **شكلُ مسار الصوت غيرُ موثّق** ⇒ كلُّ خاصّيّةٍ تُقرأ حقلاً أو دالّةً (id · id() · getId())، **ويُطبع شكلُه**
@@ -33,6 +34,12 @@
 //  · **«افتراضيّ» كما يَسِمه يوتيوب** (audioIsDefault · isDefault)، وقد يتبع «لغاتِك المفضّلة» لا الأصل (📄 §٩) ⇒ **لغةُ
 //    الكلام من التلقائيّة ثمّ الافتراضيّ** (نصُّ الخطة)، **ويُطبع مصدرُها، والأصليُّ (acont) إن خالفها.**
 //  · **«مقفل» = exp=xpe أو xpv في baseUrl لا غير** (📄)، وما عداهما من exp يُعدّ ولا يُحكم · **ولا يُطبع رابط.**
+//  · ⭐ 📐 **xtags مرمَّزةٌ في معرّف المسار لا نصّاً (2026-10-31، أوّلُ أسطر المالك):** «251;Cg8KBWFjb250…» = itag؛ ثمّ base64 لـprotobuf
+//    أزواجِه {1:{1:مفتاح,2:قيمة}} ⇐ «acont=dubbed:lang=ar» · «acont=original:drc=1:lang=de-DE» — ⛔ ~~acont يُقرأ نصّاً من xtags~~ فصمت
+//    «والأصليُّ» حيث كان يجب أن يتكلّم ⇒ **يُفكّ هنا ويُختبر قبل الحقيقيّ بمعرّفٍ معلوم الجواب**، و«دبلجةٌ آليّة» من isAutoDubbed()
+//    أيضاً · **و«الجاري» يُطبع بلغته وacont لا بمعرّفه** · ⛔ ~~**و«مرئيّ» بالشفافية والإخفاء**~~ — سُحب 2026-11-01 (قرار 21): شريطُنا «القريب» يُخفي
+//    بالشفافية فصار «مرئيّ=false» عند المالك في كلّ لصقة وسقط شاهدُ «صفرٌ والزرُّ مرئيّ» ⇒ **«مرئيّ» = مُصيَّرٌ (checkVisibility())، والشفافيةُ حقلٌ
+//    ثانٍ «·مُعتَم»** · **ومعرّفٌ فيه «;» لا يُفكّ يُطبع خامّاً بحروفه** (لا يُخفض ولا يُسقط) و«·xtags؟».
 //  · **البثّ = isLive وحدَه** (المنتهي isLiveContent يُطبع) · **وخ12 لم يُقرَّر ⇒ لغةُ الكلام تُطبع ولا تُحكم.**
 //  · **ردُّ المشغّل كما يحمله الآن لا جلبٌ جديد** · صفرُ شبكةٍ ونقرةٍ وsetOption وتخزين · لا مستمعَ ولا مراقب، ومؤقّتٌ
 //    واحد (مهلةُ البيئة) يُزال · **و3 ث و40 حرفاً و12 مساراً و8 أصواتٍ اختياراتٌ لا قياس (قرار 96).**
@@ -184,7 +191,8 @@
   const capsTxt = caps.length ? list(caps, capLab, 12) : ren ? "قائمةٌ فارغة" : "captions غائبٌ من الردّ";
   const expOther = caps.filter(function (c) { return c.expOther; }).length;
   const cc = p.querySelector(".ytp-subtitles-button");
-  const ccTxt = cc ? "مرئيّ=" + (typeof cc.checkVisibility === "function" ? cc.checkVisibility() : "؟") +
+  const cvOk = cc && typeof cc.checkVisibility === "function", cvR = cvOk ? cc.checkVisibility() : null, cvE = cvOk ? cc.checkVisibility({ opacityProperty: true, visibilityProperty: true }) : null;
+  const ccTxt = cc ? "مرئيّ=" + (cvOk ? cvR + (cvR && !cvE ? "·مُعتَم" : "") : "؟") +
     "·aria-pressed=" + cc.getAttribute("aria-pressed") : "لا زرّ";
 
   // ── (ج) الصوت: واجهةُ المشغّل (حقلاً أو دالّةً) ثمّ صيغُ streamingData بلا تكرار ──────────────────
@@ -196,11 +204,28 @@
     } catch (e) { return undefined; }
   };
   const acontOf = function (s) { const m = /(?:^|[:&,])acont=([^:&,]+)/.exec(String(s || "")); return m ? m[1] : ""; };
+  const xtDecode = function (x) {   // ⭐ 📐 «itag;base64(protobuf)» ⇐ «k=v:k=v» — والنصُّ الصريحُ يمرّ كما هو، والمعطوبُ ⇐ ""
+    const s = typeof x === "string" ? x : ""; if (!s || /(?:^|[:&,])(acont|lang)=/.test(s)) return s;
+    const b = (s.indexOf(";") >= 0 ? s.slice(s.indexOf(";") + 1) : s).replace(/-/g, "+").replace(/_/g, "/"); let bin = "", i = 0; const out = [];
+    try { bin = atob(b + "===".slice(0, (4 - b.length % 4) % 4)); } catch (e) { return ""; }
+    const vi = function () { let r = 0, sh = 0, c = 0; do { c = bin.charCodeAt(i++); r += (c & 127) * Math.pow(2, sh); sh += 7; } while (c & 128 && i < bin.length); return r; };
+    while (i < bin.length) { if (vi() !== 10) return ""; const n = vi(), end = i + n; let k = "", val = "";
+      if (!(n > 0) || !Number.isFinite(end) || end > bin.length) return "";
+      while (i < end) { const tg = vi(), m = vi(); if (!Number.isFinite(m) || i + m > end) return ""; if (tg === 10) k = bin.slice(i, i + m); else if (tg === 18) val = bin.slice(i, i + m); i += m; }
+      if (!/^[\x20-\x7e]+$/.test(k + val)) return ""; out.push(k + "=" + val); }
+    return out.join(":");
+  };
+  const XTW = [["251;Cg8KBWFjb250EgZkdWJiZWQKCgoEbGFuZxICYXI", "acont=dubbed:lang=ar"], ["251;ChEKBWFjb250EghvcmlnaW5hbAoICgNkcmMSATEKDQoEbGFuZxIFZGUtREU",
+    "acont=original:drc=1:lang=de-DE"], ["acont=original:lang=en", "acont=original:lang=en"], ["251;!!xx", ""], ["und", ""]];   // ⭐ المعرّفان من أسطر المالك 2026-10-31 — ⛔ بعد تعريف المفكّك لا قبله (📐 الرِكاز: رمى TDZ)
+  const xtBad = XTW.filter(function (w) { return xtDecode(w[0]) !== w[1]; }).map(function (w) { return "«" + w[0].slice(0, 24) + "» ⇐ «" + xtDecode(w[0]) + "» (المطلوب «" + w[1] + "»)"; });
+  if (xtBad.length) { emit(TAG + " ⛔ · مفكّكُ xtags لا يُعطي المعلوم: " + xtBad.join(" · ") + " ⇒ **عطبٌ في المِجَسّ، ولا يُطبع قرار** (قرار 26) · " + env); return; }
   const normA = function (t, cur) {
     const info = rd(t, "languageInfo") || null, id = str(rd(t, "id")), ac = rd(t, "acont");
-    const xt = [rd(t, "xtags"), ac ? "acont=" + ac : ""].filter(function (s) { return typeof s === "string" && s; }).join(":");
-    return { id: id, lang: prim(str(rd(info, "id")) || str(rd(info, "languageCode")) || id), name: str(rd(info, "name")),
-      def: rd(info, "isDefault") === true, auto: /dubbed-auto/.test(xt), acont: acontOf(xt), cur: !!cur };
+    const xt = [xtDecode(rd(t, "xtags")), xtDecode(id), typeof ac === "string" && ac ? "acont=" + ac : ""].filter(Boolean).join(":"), xl = /(?:^|[:&,])lang=([^:&,]+)/.exec(xt);
+    const semi = /;/.test(id), raw = semi && !xt ? id : "";   // ⛔ «;» بلا فكٍّ ⇒ يُطبع خامّاً، ولا يُخفض ليصير «لغة»
+    return { id: id, raw: raw, lang: prim(str(rd(info, "id")) || str(rd(info, "languageCode")) || (xl ? xl[1] : "") || (semi ? "" : id)), name: str(rd(info, "name")),
+      def: rd(info, "isDefault") === true, auto: rd(t, "isAutoDubbed") === true || rd(info, "isAutoDubbed") === true || /dubbed-auto/.test(xt),
+      acont: acontOf(xt), drc: /(?:^|[:&,])drc=1(?:$|[:&,])/.test(xt), cur: !!cur };
   };
   const call = function (n) {
     if (typeof p[n] !== "function") return { no: "typeof " + n + "=" + typeof p[n] };
@@ -238,7 +263,8 @@
   });
 
   // ── ⛔ الشاهدُ الموجب للصوت: «مسارٌ واحد» و«لا أرى» صفرٌ واحد (قرار 150) — واللغةُ «معروفةٌ» بشكلها لا بأنها غيرُ فارغة ──
-  const isLang = function (s) { return /^[a-z]{2,3}$/.test(String(s || "")); }, langN = apiT.concat(curN ? [curN] : []).filter(function (t) { return isLang(t.lang); }).length;
+  const isLang = function (s) { return /^[a-z]{2,3}$/.test(String(s || "")) && s !== "und"; }, langN = new Set(apiT.concat(curN ? [curN] : [])
+    .filter(function (t) { return isLang(t.lang); }).map(function (t) { return t.id || t.lang; })).size;   // ⛔ «und» ليس لغة · والجاري لا يُعدّ مرّتين
   if (!(audF.length || langN)) {
     emit(TAG + " ⛔ · لا أرى الصوت — صيغُ الصوت في streamingData=" + audF.length + (sd ? "" : " (streamingData غائب)") +
       " · getAvailableAudioTracks=" + (ga.no || arr.length + " بلا لغةٍ معروفة") + " · getAudioTrack=" + (gc.no || (gc.v && typeof gc.v === "object" ? str(gc.v) : String(gc.v))) +
@@ -253,8 +279,8 @@
   const d = decide({ live: vd.isLive === true, def: defT ? defT.lang : "", audio: audioDec, caps: caps });
   const arAudio = audioDec.some(function (a) { return prim(a.lang) === "ar"; });
   const audLab = function (t) {
-    return (t.id || t.lang || "؟") + (t.name ? "«" + cut(t.name, 22) + "»" : "") + (t.def ? "·افتراضيّ" : "") +
-      (t.auto ? "·دبلجة-آليّة" : "") + (t.acont ? "·" + t.acont : "") + (t.cur ? "◀جارٍ" : "");
+    return (/;/.test(t.id) || !t.id ? t.lang || "؟" : t.id) + (t.raw ? "·xtags؟=" + t.raw.slice(0, 64) : "") + (t.name ? "«" + cut(t.name, 22) + "»" : "") + (t.def ? "·افتراضيّ" : "") +
+      (t.auto ? "·دبلجة-آليّة" : "") + (t.acont ? "·" + t.acont : "") + (t.drc ? "·drc" : "") + (t.cur ? "◀جارٍ" : "");
   };
   if (caps.length) console.table(caps.map(function (c) { return { "اللغة": c.code, "النوع": c.asr ? "asr" : c.kind || "يدويّ",
     vssId: c.vss, "الاسم": cut(c.name, 40), "يُترجَم": c.tr, "مقفل": c.gated, "مُتخطّى": c.skip || "—" }; }));
@@ -275,9 +301,9 @@
     " · مُتخطّى(tlang/variant)=" + caps.filter(function (c) { return c.skip; }).length + (expOther ? " · exp بقيمةٍ غير xpe/xpv=" + expOther : "") +
     " · ar في لغات الترجمة=" + (tlAr ? "نعم" : "لا") + " (من " + tl.length + ")" +
     " · الصوت(API " + (ga.no || arr.length) + ")=" + (apiT.length ? list(apiT, audLab, 8) : "—") +
-    " · الجاري=" + (gc.no || (curN ? curN.id || curN.lang || "؟" : String(gc.v))) +
+    " · الجاري=" + (gc.no || (curN ? (curN.lang || "؟") + (curN.acont ? "·" + curN.acont : "") + (curN.auto ? "·دبلجة-آليّة" : "") + (curN.drc ? "·drc" : "") + (curN.raw ? "·xtags؟=" + curN.raw.slice(0, 64) : "") : String(gc.v))) +
     " · الصوت(الصيغ: " + fmtT.length + " مساراً من " + audF.length + " صيغة)=" + (fmtT.length ? list(fmtT, audLab, 8) : "—") +
     " · عربيٌّ في الصوت=" + (arAudio ? "نعم" : "لا") + " · شكلُ المسار=" + shape + " · زرّ CC: " + ccTxt +
-    " · شاهد−=✅ " + SYN.length + "/" + SYN.length + " · شاهد+=✅ getPlayerResponse·videoId=v·playability=OK·صيغُ صوت " + audF.length + "·مساراتٌ بلغةٍ معروفة " + langN +
+    " · شاهد−=✅ " + SYN.length + "/" + SYN.length + "·مفكّكُ xtags ✅ " + XTW.length + "/" + XTW.length + " · شاهد+=✅ getPlayerResponse·videoId=v·playability=OK·صيغُ صوت " + audF.length + "·مساراتٌ بلغةٍ معروفة " + langN +
     " · شبكة=0 من ميزانيةِ 0 · ytcfg=" + typeof globalThis.ytcfg + " · " + env);
 })().catch((e) => console.log("VZ-168أ-8 ⛔ · المِجَسُّ نفسُه رمى: " + ((e && e.stack) || e) + " — عطبُ أداةٍ لا جواب، أبلِغ بهذا السطر"));
