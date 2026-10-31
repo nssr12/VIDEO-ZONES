@@ -35,7 +35,7 @@ There is no test suite. Verify UI changes manually in the browser.
 | `content.js` | Single content script injected at `document_start` in all frames. Contains: zone detection, action runner, overlay, subtitle styling, YouTube caption automation, site-profile resolver |
 | `popup.html` / `popup.js` | Toolbar popup: master switch, global enable, per-site rules, blocked-site toggle, page status, manual injection, overlay duration slider, Sound Booster slider, subtitles toggle. ⛔ ~~**YouTube control-bar mode (#107 — the ONLY place it lives; no mirror on the options page)**~~ — **moved to the options page's YouTube section 2026-08-06 (owner decision, reversing his #107 call); struck, not deleted (decision 21). It was MOVED, not copied — the "a mirror drifts" reason still holds, only which side is the mirror changed. A move of place, not a data migration: `overlay.progressBarMode` is untouched.** |
 | `options.html` / `options.js` / `options.css` | Full settings page: zone editor, grid appearance, volume indicator, overlay timing, subtitles, blocked sites, backup/restore, settings guide |
-| `settings-ui.js` | **#77 · #79 · #113** — سجلّات صفحة الإعدادات ومُولِّدها: المجموعات الخمس · 38 وسم Clean Player · 8 ضوابط توقيت · **6 ضوابط يوتيوب (`VZ_UI_HOSTS`) · 7 ضوابط ترجمة (`VZ_UI_SUBS`)**. ⭐ **وقسمُ المضيف مدخلٌ في `VZ_UI_HOSTS`، فإضافةُ تيك توك غداً مدخلٌ واحد** لا قسمٌ في `options.html` وزرٌّ في التنقّل ومُلءٌ في `options.js`. ⚠️ **وكلُّ شرحٍ خلف `!` ولا سطرَ سائبٌ تحت ضابط** (#79). ⚠️ **ولكلّ ضابطٍ مدىً مُعلَنٌ بنيويّاً** (`data-vz-scope`): 🌐 عامّ · 🎯 خاصٌّ بمضيف · 🔀 **عامٌّ يختلف سلوكُه** — **والثالثُ هو ما يُفسد أيَّ تقسيمٍ ثنائيّ**؛ وما لم يُقس يحمل `لم_يُقس` فيقول «مكتوبٌ ولم يُقس» **لا «يعمل»** (درس #68). **يُشحن**، و`options.html` تستهلكه و`tools/preview-77.html` غلافٌ فوقه. لا يلمس `chrome.*` ولا التخزين |
+| `settings-ui.js` | **#77 · #79 · #113** — سجلّات صفحة الإعدادات ومُولِّدها: المجموعات الخمس · 38 وسم Clean Player · ⛔ ~~8~~ ضوابط توقيت · **⛔ ~~6~~ ضوابط يوتيوب (`VZ_UI_HOSTS`) · 7 ضوابط ترجمة (`VZ_UI_SUBS`)** — ⛔ **العددان المشطوبان سُحبا 2026-10-31 (قرار 21 · 34): المقيسُ من `require("./settings-ui.js")` توقيتٌ 6 ويوتيوب 7؛ ولا يُكتب بدلَهما رقمٌ بيد — أطوالُ السجلّات تُقرأ منها**. ⭐ **وقسمُ المضيف مدخلٌ في `VZ_UI_HOSTS`، فإضافةُ تيك توك غداً مدخلٌ واحد** لا قسمٌ في `options.html` وزرٌّ في التنقّل ومُلءٌ في `options.js`. ⚠️ **وكلُّ شرحٍ خلف `!` ولا سطرَ سائبٌ تحت ضابط** (#79). ⚠️ **ولكلّ ضابطٍ مدىً مُعلَنٌ بنيويّاً** (`data-vz-scope`): 🌐 عامّ · 🎯 خاصٌّ بمضيف · 🔀 **عامٌّ يختلف سلوكُه** — **والثالثُ هو ما يُفسد أيَّ تقسيمٍ ثنائيّ**؛ وما لم يُقس يحمل `لم_يُقس` فيقول «مكتوبٌ ولم يُقس» **لا «يعمل»** (درس #68). **يُشحن**، و`options.html` تستهلكه و`tools/preview-77.html` غلافٌ فوقه. لا يلمس `chrome.*` ولا التخزين |
 | `storage.js` | Shared by popup/options/background: sync quota guards (`safeSyncSet`), schema migration (`migrateAll`), and the verbatim-paired blocks with `content.js`. Classic script, **not** an ES module |
 | `background.js` | Service worker. **Migration only** — one `chrome.runtime.onInstalled` listener, nothing else (owner decision) |
 | `yt_quality_main.js` | Runs in the page MAIN world to drive the YouTube player quality API, which the isolated world cannot reach |
@@ -47,7 +47,7 @@ There is no test suite. Verify UI changes manually in the browser.
 | `docs/PLATFORMS.md` | The ten manual regression platforms (was §8–§16) |
 | `docs/HISTORY.md` | Waves, closed items and their commits — **not** where you look to know where you stand |
 | `docs/REFERENCE.md` | Architecture invariants, structure/tests, measured numbers, git config |
-| `tools/icons.js` | **Icon registry — the one place.** Owner-designed SVGs (19), uniform style (24-box, stroke currentColor, weight 1.7). `tools/preview-icons.html` is generated from it; `tools/icons.html` is the owner original, kept as the source of record. **Only `VZ_ICONS_SHIPPED` reaches `content.js`** — shipped weight with no user is dead code, and `tools/test-icons.js` reddens on it |
+| `tools/icons.js` | **Icon registry — the one place.** Owner-designed SVGs (⛔ ~~19~~ — struck 2026-10-31, decisions 21 · 34: `VZ_ICONS` measured 26 keys; the count is read from the registry, never hand-written), uniform style (24-box, stroke currentColor, weight 1.7). `tools/preview-icons.html` is generated from it; `tools/icons.html` is the owner original, kept as the source of record. **Only `VZ_ICONS_SHIPPED` reaches `content.js`** — shipped weight with no user is dead code, and `tools/test-icons.js` reddens on it |
 | `tools/CHECKLIST.md` | The **current field-verification session's steps**, walkable — setup + numbered anchors, nothing else. Steps live here and nowhere else; `docs/HISTORY.md` (§17 سابقاً) keeps only the reasoning and open questions, and `tools/test-checklist-place.js` reddens if a numbered step reappears there (decision 41) |
 | `AUDIT.md` | Audit report — every numbered item and its status |
 
@@ -250,7 +250,7 @@ Runtime action strings, all consumed by `runAction()` in `content.js`:
 - `ACTION:SPEED:<±delta>` (clamped 0.25–4)
 - `ACTION:SPEED:SET:<n>` (absolute playback rate)
 
-**Editor `type` ↔ runtime mapping** (in `options.js` `actionToRuntime` / `parseRuntimeAction`):
+**Editor `type` ↔ runtime mapping** (`actionToRuntime` in `options.js` / `parseRuntimeAction` in ⛔ ~~`options.js`~~ **`storage.js`** — struck 2026-10-31, decision 21: measured at `storage.js:472`; `options.js:64` says it comes from there):
 - `toggle_play/fullscreen/mute/pip` → `ACTION:TOGGLE_*`
 - `seek` (with unit=second/frame) → `ACTION:SEEK:<n>` (frame divided by 30)
 - `volume` → `ACTION:VOLUME:<n>`
@@ -259,7 +259,7 @@ Runtime action strings, all consumed by `runAction()` in `content.js`:
 
 When adding a new action you MUST touch:
 1. `runAction()` in `content.js`
-2. `actionToRuntime` + `parseRuntimeAction` + `actionSummary` in `options.js`
+2. `actionToRuntime` + `actionSummary` in `options.js`, and `parseRuntimeAction` in `storage.js` (⛔ ~~all three in `options.js`~~ — struck 2026-10-31, decision 21: the parser moved to `storage.js:472`; a new action either teaches it the new type or states why the legacy-migration parser never meets it)
 3. `ACTION_CHOICES` in `options.js` (so it appears in the zone editor dropdown)
 4. `ACTIONS` in `popup.js` (so it appears in the popup preset list)
 5. The Settings Guide section in `options.html`
