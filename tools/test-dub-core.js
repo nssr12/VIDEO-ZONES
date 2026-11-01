@@ -345,6 +345,51 @@ vm.runInContext(CONSTS.map((n) => `var ${n} = ${constOf(n)};`).join("\n") + "\n"
       MAIN.indexOf(G) > 0 && MAIN.indexOf(G) < MAIN.indexOf("fetch("));
     check("[٨] ⛔ والقاطعُ يُفحص قبل الإجبار", MAIN.indexOf("if (MEM.stop) return") > 0 && MAIN.indexOf("if (MEM.stop) return") < MAIN.indexOf("p.loadModule(\"captions\")"));
     check("[٨] M2+R لا يكتب إلا مفاتيحَ المُعيِّن ومفتاحَ التشغيل", /if \(!SETTER\[f\]\.test\(k\) && !ONOFF\.test\(k\)\) return;/.test(MAIN));
+    const fnPop = (name) => { const i = POPUP.indexOf(`function ${name}(`); let d = 0;
+      for (let j = POPUP.indexOf("{", i); j < POPUP.length; j++) { if (POPUP[j] === "{") d++; else if (POPUP[j] === "}") { d--; if (!d) return POPUP.slice(i, j + 1); } } return ""; };
+    check("[٨] الحظرُ يُقرأ في كلّ سؤال — زرُّ 🚫 في البوب-أب نفسِه تتبعه البطاقة (مراجعة 2 #5 · #9 · #14)", /readHostGates\(dubHost\)/.test(fnPop("refreshDub")));
+    check("[٨] وحفظٌ فشل يُعيد ضوابطَ الدبلجة من التخزين (#69 · مراجعة 2 #15)", /fillDubPrefsUI\(\)/.test(fnPop("renderPopupFromStorage")));
+    check("[٨] وعالمُ الصفحة يُعيد المفاتيحَ إن أُغلق التبويبُ والعرضُ قائم (مراجعة 2 #1)", /addEventListener\("pagehide"/.test(MAIN));
+  }
+
+  // ---------------------------------------------------------------- [٩] ما يقوله البوب-أب
+  console.log("\n[٩] سطرُ البوب-أب لكلّ حال — بالسلوك (رُسم سلسلةُ شروطه مرّةً مكسورةً فقال «⛔» عن دبلجةٍ تعمل)");
+  {
+    const SRCP = POPUP;
+    const grab = (name) => { const i = SRCP.indexOf(`const ${name} = {`); if (i < 0) throw new Error("لا " + name); let d = 0;
+      for (let j = SRCP.indexOf("{", i); j < SRCP.length; j++) { if (SRCP[j] === "{") d++; else if (SRCP[j] === "}") { d--; if (!d) return SRCP.slice(i, j + 1) + ";"; } } };
+    const fnP = (name) => { const i = SRCP.indexOf(`function ${name}(`); let d = 0;
+      for (let j = SRCP.indexOf("{", i); j < SRCP.length; j++) { if (SRCP[j] === "{") d++; else if (SRCP[j] === "}") { d--; if (!d) return SRCP.slice(i, j + 1); } } };
+    const els = {};
+    const el = (id) => (els[id] = els[id] || { id, textContent: "", value: "", disabled: false, classList: { _s: new Set(), add(c) { this._s.add(c); }, remove(...c) { c.forEach((x) => this._s.delete(x)); }, has(c) { return this._s.has(c); } } });
+    const pctx = { $: el, dubPin: null };
+    vm.createContext(pctx);
+    vm.runInContext(["DUB_REASON_TEXT", "DUB_STEP_TEXT", "DUB_HOLD_TEXT", "DUB_STOP_TEXT", "DUB_KIND_TEXT"].map(grab).join("\n").replace(/^const /gm, "var ") + "\n" + fnP("renderDub"), pctx);
+    const R = (st, source) => { el("dubSource").value = source || "yt"; pctx.renderDub(st); return { note: el("dubNote").textContent, bad: el("dubNote").classList.has("bad"), btn: el("dubBtn").textContent, off: el("dubBtn").disabled }; };
+    const run = (x) => Object.assign({ ok: true, state: "running", hold: "", kind: "display", idx: 3, total: 0, spoken: 2, skipped: 1, lost: 0, warm: true, source: "yt" }, x || {});
+    let r = R(run());
+    check("[٩] يعمل بوضع العرض ⇐ «يُدبلج» والزرُّ «أوقف» — لا «⛔»", /^يُدبلج/.test(r.note) && !r.bad && r.btn === "أوقف الدبلجة" && !/⛔/.test(r.note), r);
+    check("[٩] ووضعُ العرض بلا «الجملة X من Y»", !/الجملة/.test(r.note), r.note);
+    r = R(run({ kind: "asr", total: 40 }), "device");
+    check("[٩] ووضعُ الجمل بها", /الجملة 3 من 40/.test(r.note), r.note);
+    r = R(run(), "device");
+    check("[٩] مصدرٌ تغيّر والدبلجةُ تعمل ⇐ يُقال في كلّ رسم (مراجعة 2 #12)", /المصدرُ الجديد من الضغطة التالية/.test(r.note) && !r.bad, r.note);
+    r = R(run({ hold: "cc-lang" }));
+    check("[٩] مسارٌ غيرُ عربيّ معروض ⇐ يُقال بسببه", /ليست عربية/.test(r.note), r.note);
+    r = R({ ok: true, state: "preparing", step: "show", source: "yt" });
+    check("[٩] يجهّز ⇐ خطوتُه بنصّها", /يشغّل ترجمة يوتيوب العربية/.test(r.note) && r.btn === "أوقف الدبلجة", r);
+    r = R({ ok: true, state: "stopped", reason: "user" });
+    check("[٩] أوقفتَها ⇐ «دبلِج» من جديد", r.note === "أوقفتَها" && r.btn === "دبلِج هذا الفيديو" && !r.bad, r);
+    r = R({ ok: true, state: "refused", reason: "breaker" });
+    check("[٩] رفضٌ ⇐ «⛔» بسببه وبلون الخطأ", /^⛔ رفض يوتيوب/.test(r.note) && r.bad, r);
+    r = R({ ok: true, state: "master-off" });
+    check("[٩] المفتاحُ مطفأ ⇐ الزرُّ معطَّلٌ بسببه", /مطفأة من المفتاح الرئيسي/.test(r.note) && r.off, r);
+    r = R({ ok: true, state: "blocked" });
+    check("[٩] محظور ⇐ الزرُّ معطَّلٌ بسببه", /محظورة/.test(r.note) && r.off, r);
+    r = R(null);
+    check("[٩] لا سكربتَ في الصفحة ⇐ «أعد تحميلها»", /غير محقونة/.test(r.note), r);
+    r = R({ ok: true, state: "idle" });
+    check("[٩] لا شيءَ يجري ⇐ الدعوة", /اختر مصدرها/.test(r.note) && !r.bad, r);
   }
 
   console.log(`\n${fail ? "❌" : "✅"} نجح ${pass} / فشل ${fail}\n`);

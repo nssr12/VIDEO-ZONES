@@ -325,6 +325,8 @@
       var arT = Array.isArray(tls) ? first(tls, function (x) { return x && String(x.languageCode || "").split("-")[0] === "ar"; }) : null;
       if (String(a.code).split("-")[0] !== "ar") target.translationLanguage = arT ? { languageCode: arT.languageCode, languageName: arT.languageName } : { languageCode: "ar", languageName: "العربية" };
       p.setOption("captions", "track", target);
+      // ⭐ ما كتبه المشغّلُ بإجبارنا (📖 يكتب المفاتيحَ في النداء نفسِه) — فالإيقافُ يُعيد ما بقي على كتابتنا وحدَه (مراجعة 2 #2)
+      MEM.show.A = state(p); MEM.show.ar = !!target.translationLanguage || String(a.code).split("-")[0] === "ar";
       // ⛔ ورفضُ طلب المشغّل نفسِه يرفع القاطع: الاتصالُ مرفوضٌ فلا نُجبر بعده (§٣)
       for (i = 0; i < 40; i++) {
         await delay(100);
@@ -338,16 +340,40 @@
       return { ok: false, reason: "threw", err: String((e && e.message) || e).slice(0, 120) };
     } finally { if (po) { try { po.disconnect(); } catch (e) { /* مُنفصلٌ سلفاً */ } } }
   }
-  // يُعاد ما غيّره «العرض» وحدَه: CC إلى حاله بالواجهة لا بنقرة (#156)، ومفاتيحُ المُعيِّن إلى ما كانت حرفاً
+  // ⭐ يُعاد ما غيّره «العرض» **وما زال على حاله منذ غيّره** (مراجعة 2 #2): CC إلى حاله بالواجهة لا بنقرة (#156) إن كان
+  // المشغّلُ ما زال يعرض عربيّتنا — ومن اختار بيده لغةً أو أطفأ الترجمةَ أثناء الدبلجة لا يُطمس اختيارُه — والمفاتيحُ التي ما زالت
+  // بما كتبه الإجبارُ وحدَها تُعاد إلى ما كانت حرفاً؛ ما غيّره المستخدمُ بعدنا (في هذا التبويب أو غيره) يبقى
+  function stillOurs(p, s) {
+    var t = null;
+    try { t = p.getOption("captions", "track"); } catch (e) { t = null; }
+    var btn = p.querySelector(".ytp-subtitles-button");
+    var lang = t ? String((t.translationLanguage && t.translationLanguage.languageCode) || (s.ar && !t.translationLanguage ? t.languageCode : "") || "") : "";
+    return !!btn && btn.getAttribute("aria-pressed") === "true" && lang.split("-")[0] === "ar";
+  }
+  function fixOurs(s, p) {
+    if (!s.A) return fixAll(s.B1, state(p), s.ccOn);
+    var cur = state(p), keep = { ls: {}, ss: {} };
+    ["ls", "ss"].forEach(function (f) { changed(s.A[f] || {}, cur[f] || {}).forEach(function (k) { keep[f][k] = 1; }); });
+    // ما تغيّر عن لقطة ما بعد الإجبار (A) غيّره غيرُنا ⇒ يُستثنى: اللقطةُ «الحاليّة» نفسُها تُعطى له فلا يرى fixAll فرقاً
+    var B1 = { ls: Object.assign({}, s.B1.ls), ss: Object.assign({}, s.B1.ss) };
+    ["ls", "ss"].forEach(function (f) { Object.keys(keep[f]).forEach(function (k) { if ((cur[f] || {})[k] == null) delete B1[f][k]; else B1[f][k] = cur[f][k]; }); });
+    return fixAll(B1, cur, s.ccOn);
+  }
   function hide() {
     var s = MEM.show, p = player();
     MEM.show = null;
     if (!s || !s.set || !p) return { ok: true, how: "none" };
-    var act = restoreAct(p, s.B0, s.ccOn, s.prevTrack);
-    var fixed = fixAll(s.B1, state(p), s.ccOn);
-    setTimeout(function () { fixAll(s.B1, state(p), s.ccOn); }, 2000);
+    var act = stillOurs(p, s) ? restoreAct(p, s.B0, s.ccOn, s.prevTrack) : "user-took-over";
+    var fixed = fixOurs(s, p);
+    setTimeout(function () { fixOurs(s, p); }, 2000);
     return { ok: true, how: act, restored: fixed };
   }
+  // ⛔ تبويبٌ يُغلق أو يُعاد تحميلُه والدبلجةُ تعرض لا يترك «CC مضاء بالعربيّة» ثلاثين يوماً (مراجعة 2 #1): المفاتيحُ تُعاد
+  // متزامنةً (التخزينُ متزامن)، والمشغّلُ يذهب مع الصفحة — ولا يُفرَّغ MEM.show: صفحةٌ تعود من ذاكرة التنقّل تُعيد المشغّلَ عند الإيقاف
+  window.addEventListener("pagehide", function () {
+    var s = MEM.show, p = player();
+    if (s && s.set && p) { try { fixOurs(s, p); } catch (e) { /* الصفحةُ تُغادر */ } }
+  });
 
   // ⭐ ساعةُ المشغّل وساعةُ العنصر معاً، في مهمّةٍ واحدة — إعلانٌ مُدمَجٌ في الخادم يجعل زمنَ العنصر يسبق
   // زمنَ المحتوى بطوله، فالفرقُ يُطرح (مراجعة #6). **متزامنٌ عمداً:** يُجاب قبل أن تعود dispatchEvent.
@@ -356,7 +382,10 @@
     if (!p || !vv || typeof p.getCurrentTime !== "function") return { ok: false, reason: "no-player" };
     var pt = NaN;
     try { pt = Number(p.getCurrentTime()); } catch (e) { pt = NaN; }
-    return { ok: Number.isFinite(pt), pt: pt, vt: vv.currentTime, ad: isAd(p) };
+    var t = null;
+    try { t = p.getOption("captions", "track"); } catch (e) { t = null; }
+    var tr = t ? String((t.translationLanguage && t.translationLanguage.languageCode) || t.languageCode || "") : "";
+    return { ok: Number.isFinite(pt), pt: pt, vt: vv.currentTime, ad: isAd(p), tr: tr };
   }
 
   window.addEventListener("__vz_dub_req__", function (e) {

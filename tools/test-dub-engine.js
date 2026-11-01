@@ -69,7 +69,12 @@ function makeEnv(opts) {
     const t = video.currentTime, k = cues.findIndex((c) => t >= c.t && t < c.t + c.d);
     if (k < 0) return [];
     let cur = cues[k].line;
-    if (o.grow) { const w = cur.split(" "), n = Math.min(w.length, 1 + Math.floor((t - cues[k].t) / (o.growS || 0.3))); cur = w.slice(0, n).join(" "); }
+    if (o.grow) {
+      const w = cur.split(" "), dt = t - cues[k].t, g = o.growS || 0.3, P = o.growPause;   // P = { after, extra }: سكتةٌ بعد كلماتٍ
+      let n = 1 + Math.floor(dt / g);
+      if (P && n > P.after) n = Math.max(P.after, 1 + Math.floor((dt - P.extra) / g));
+      cur = w.slice(0, Math.min(w.length, n)).join(" ");
+    }
     return o.rollup && k > 0 ? [cues[k - 1].line, cur] : [cur];
   };
   const mkLines = (arr) => arr.map((x) => ({ textContent: x }));
@@ -98,7 +103,9 @@ function makeEnv(opts) {
       track = v || {};
       labelUntil = now() + 2000;
       if (!track.languageCode) return;
-      local.setItem(STICKY, JSON.stringify({ data: track.languageCode, expiration: 9, creation: Date.now() }));
+      // 📖 كما يكتب يوتيوب: اللاصقةُ لغةُ الترجمة إن كانت، و«CC مضاء» ثلاثين يوماً
+      local.setItem(STICKY, JSON.stringify({ data: (track.translationLanguage && track.translationLanguage.languageCode) || track.languageCode, expiration: 9, creation: Date.now() }));
+      local.setItem("yt-player-sticky-caption", JSON.stringify({ data: true, expiration: 9, creation: Date.now() }));
       session.setItem(PREFS, JSON.stringify({ data: JSON.stringify([track.languageCode]), creation: 1 }));
       if (o.setThrows) throw new Error("player threw");
       const rq = o.playerReq ? o.playerReq(track) : { url: BASE + "&lang=en&kind=asr" + (track.variant ? "&variant=" + track.variant : "") +
@@ -176,7 +183,7 @@ function makeEnv(opts) {
     win.addEventListener("__vz_dub_res__", on);
     win.dispatchEvent(new FakeCustomEvent("__vz_dub_req__", { detail: JSON.stringify({ id, op, args }) }));
   });
-  return { api: contentCtx.__api, ask, fetched, calls, playerReqs, local, session, STICKY, PREFS, stickyBefore, spoken, engine, video, location,
+  return { api: contentCtx.__api, ask, fetched, calls, playerReqs, local, session, STICKY, PREFS, stickyBefore, spoken, engine, video, location, win, p,
     document, gate, opts: o, maxOurs: () => maxOurs, release: () => { engine.hold = false; pump(); } };
 }
 
@@ -185,6 +192,13 @@ const startRun = async (e, o) => { e.api.dubStart(o || DEV); await until(() => [
 const heard = (e) => e.spoken.filter((x) => x.ev === "start" && /^ترجمة/.test(x.text));
 const heard2 = (e) => e.spoken.filter((x) => x.ev === "start" && /رقم/.test(x.text));
 const num = (t) => Number(String(t).replace(/[^0-9]/g, ""));
+const dataOf = (x) => { try { return JSON.stringify(JSON.parse(x).data); } catch (e) { return null; } };
+// ما نُطق موصولاً كلمةً كلمةً بادئةٌ من سطور الإشارات بترتيبها (من السطر الأوّل الذي بدأ منه)
+const isPrefixOf = (said, cues) => {
+  const w = said.join(" ").split(/\s+/).filter(Boolean), all = cues.map((c) => c.line).join(" ").split(/\s+/).filter(Boolean);
+  for (let s0 = 0; s0 < all.length; s0++) { if (w.every((x, i) => all[s0 + i] === x)) return true; }
+  return false;
+};
 
 (async () => {
   console.log("\n=== #168 — محرّكُ الدبلجة على مشغّلٍ مزيّف ===");
@@ -357,7 +371,8 @@ const num = (t) => Number(String(t).replace(/[^0-9]/g, ""));
     e.api.dubStop("user");
     await sleep(600);
     check("⭐ وعند الإيقاف: الترجمةُ تُطفأ كما كانت والوحدةُ تُفرغ", e.calls[e.calls.length - 1] === "unload:captions", e.calls);
-    check("⭐ واللاصقةُ بحروفها", e.local.getItem(e.STICKY) === e.stickyBefore, e.local.getItem(e.STICKY));
+    check("⭐ واللاصقةُ ببياناتها (وإعادةُ كتابتها بالبيانات نفسِها ليست أثراً — M2+R)", dataOf(e.local.getItem(e.STICKY)) === dataOf(e.stickyBefore), e.local.getItem(e.STICKY));
+    check("و«CC مضاء» الذي كتبه الإجبارُ زال", e.local.getItem("yt-player-sticky-caption") === null, e.local.getItem("yt-player-sticky-caption"));
   }
   {
     const cues = [];
@@ -393,10 +408,9 @@ const num = (t) => Number(String(t).replace(/[^0-9]/g, ""));
     await until(() => heard2(e).length >= 3, 30000);
     // كلُّ ما نُطق بعد جملة الإحماء — لا ما فيه «رقم» وحدَه: النصفُ المقطوع لا رقمَ فيه
     const got = e.spoken.filter((x) => x.ev === "start" && !/بدأتِ/.test(x.text)).map((x) => x.text);
-    // ⭐ الأولى قد تُنطق قبل أن يُرى النموّ؛ وبعدها يُنطق السطرُ مكتملاً، مرّةً واحدة
-    const later = got.slice(1);
-    check("⭐ سطرٌ يكبر (roll-up) يُنطق مكتملاً بعد أن يُرى نموُّه", later.length >= 2 && later.every((t) => /^أ ب ت ث ج رقم \d+$/.test(t)), got);
-    check("ولا يُكرَّر سطرٌ مكتمل", new Set(later).size === later.length, later);
+    // ⭐ الخاصّيّةُ لا الشكل: ما نُطق كلُّه موصولاً **بادئةٌ من السطور بترتيبها** — لا كلمةَ تُعاد ولا تُترك (والأولى قد تحمل
+    // صدرَ التالي إن ظهرا معاً، فيُنطق باقيه وحدَه)
+    check("⭐ سطرٌ يكبر (roll-up): لا كلمةَ تُعاد ولا تُترك", got.length >= 3 && isPrefixOf(got, cues), got);
     e.api.dubStop("user");
   }
   {
@@ -410,6 +424,61 @@ const num = (t) => Number(String(t).replace(/[^0-9]/g, ""));
     e.api.dubStop("user");
     await sleep(300);
     check("ولا يُطفئ ما لم يُشغّله", !e.calls.some((x) => x.startsWith("unload")), e.calls);
+  }
+
+  console.log("\n[١٣] مراجعة 2 — العرض: الإغلاقُ يُعيد المفاتيح · ما اختاره المستخدم يبقى · سكتةٌ في سطرٍ يكبر · إيقافٌ وبدءٌ أثناء العرض · صوتٌ أثناء التجهيز");
+  const CUES = (n, f) => { const c = []; for (let k = 0; k < n; k++) c.push({ t: 2 + k * 3, d: 2.8, line: f(k + 1) }); return c; };
+  {
+    const e = makeEnv({ cues: CUES(20, (k) => "سطرٌ عربيٌّ رقم " + k) });
+    await startRun(e, { source: "yt" });
+    check("الإجبارُ كتب «CC مضاء» واللاصقة", e.local.getItem("yt-player-sticky-caption") !== null && /"ar"/.test(e.local.getItem(e.STICKY)));
+    e.win.dispatchEvent(new FakeCustomEvent("pagehide"));
+    check("⭐ تبويبٌ يُغلق والدبلجةُ تعرض ⇐ المفاتيحُ تعود (#1)", e.local.getItem("yt-player-sticky-caption") === null && dataOf(e.local.getItem(e.STICKY)) === dataOf(e.stickyBefore) && e.session.getItem(e.PREFS) === null,
+      { on: e.local.getItem("yt-player-sticky-caption"), st: e.local.getItem(e.STICKY), pr: e.session.getItem(e.PREFS) });
+    e.api.dubStop("user");
+  }
+  {
+    const e = makeEnv({ cues: CUES(20, (k) => "سطرٌ عربيٌّ رقم " + k) });
+    await startRun(e, { source: "yt" });
+    e.p.setOption("captions", "track", { languageCode: "en", kind: "asr" });     // المستخدمُ يختار الإنجليزيّة بيده
+    await until(() => e.api.dubStatus().hold === "cc-lang", 12000);
+    check("مسارٌ غيرُ عربيّ اختاره المستخدم ⇐ يُقال «ليست عربية» (#2)", e.api.dubStatus().hold === "cc-lang", e.api.dubStatus());
+    e.api.dubStop("user");
+    await sleep(600);
+    check("⭐ وعند الإيقاف لا يُطمس اختيارُه: الإنجليزيّةُ باقيةٌ ولاصقتُه «en»", !e.calls.slice(-2).some((x) => x === "unload:captions") && /"en"/.test(e.local.getItem(e.STICKY)),
+      { calls: e.calls.slice(-3), st: e.local.getItem(e.STICKY) });
+  }
+  {
+    const e = makeEnv({ cues: CUES(20, (k) => "أ ب ت ث ج ح رقم " + k), grow: true, growS: 0.3, growPause: { after: 3, extra: 0.9 }, rollup: true });
+    await startRun(e, { source: "yt" });
+    e.video.currentTime = 4.95;
+    await until(() => heard2(e).length >= 3, 30000);
+    const got = e.spoken.filter((x) => x.ev === "start" && !/بدأتِ/.test(x.text)).map((x) => x.text);
+    check("⭐ سطرٌ يكبر وفيه سكتة ⇐ لا يُعاد صدرُه — ولا كلمةَ تُترك (#3)", got.length >= 3 && isPrefixOf(got, CUES(20, (k) => "أ ب ت ث ج ح رقم " + k)), got);
+    e.api.dubStop("user");
+  }
+  {
+    const e = makeEnv({ cues: CUES(20, (k) => "سطرٌ عربيٌّ رقم " + k) });
+    e.api.dubStart({ source: "yt" });
+    await until(() => e.api.dubStatus().step === "show", 8000);
+    e.api.dubStop("user");
+    e.api.dubStart({ source: "yt" });
+    await until(() => e.api.dubStatus().state === "running", 20000);
+    e.api.dubStop("user");
+    await sleep(800);
+    check("⭐ إيقافٌ وبدءٌ أثناء العرض ثمّ إيقاف ⇐ CC يعود مطفأً واللاصقةُ بحروفها (#4 · #7 · #13)",
+      e.calls[e.calls.length - 1] === "unload:captions" && dataOf(e.local.getItem(e.STICKY)) === dataOf(e.stickyBefore) && e.local.getItem("yt-player-sticky-caption") === null,
+      { calls: e.calls.slice(-3), st: e.local.getItem(e.STICKY) });
+  }
+  {
+    const voices = [{ lang: "ar-001", name: "Majed", localService: true, voiceURI: "Majed" }, { lang: "ar-001", name: "Laila (Enhanced)", localService: true, voiceURI: "Laila" }];
+    const e = makeEnv({ voices, cues: CUES(20, (k) => "سطرٌ عربيٌّ رقم " + k) });
+    e.api.dubStart({ source: "yt", voice: "" });
+    e.api.dubSetOptions({ voice: "Majed" });                                      // والدبلجةُ ما زالت تتجهّز
+    await until(() => e.spoken.some((x) => x.ev === "start"), 15000);
+    const first = e.spoken.find((x) => x.ev === "start");
+    check("⭐ صوتٌ اختير أثناء التجهيز يُؤخذ (#8 · #11)", first && first.voice === "Majed", first);
+    e.api.dubStop("user");
   }
 
   console.log(`\n${fail ? "❌" : "✅"} نجح ${pass} / فشل ${fail}\n`);

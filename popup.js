@@ -325,7 +325,7 @@ async function getMasterEnabled() {
 async function renderPopupFromStorage() {
   await Promise.allSettled([
     loadGlobalData(), loadSiteProfile(), loadBlockedSiteUI(),
-    loadSubtitlesToggle(), loadFullscreenOnlyToggle(), loadOverlayUI(),
+    loadSubtitlesToggle(), loadFullscreenOnlyToggle(), loadOverlayUI(), fillDubPrefsUI(),
     (async () => { syncMasterUi(await getMasterEnabled()); })()
   ]);
 }
@@ -728,6 +728,7 @@ const DUB_HOLD_TEXT = {
   speed: "سرعة الفيديو أعلى مما يلحقه الصوت (حتى 1.91×) — صامتة", "no-video": "لا أجد الفيديو",
   queue: "صوتٌ آخر في المتصفّح يسبقنا — أنتظره", done: "انتهت جمل الفيديو",
   hidden: "التبويب مخفيّ — ترجمة يوتيوب لا تتحدّث فيه؛ أعده ظاهراً",
+  "cc-lang": "الترجمة المعروضة ليست عربية — اخترتَ لغةً أخرى؟ أعد العربية أو اضغط «أوقف» ثمّ «دبلِج»",
   "cc-off": "الترجمة على الفيديو مطفأة — شغّلها (CC) لأقرأها"
 };
 const DUB_STOP_TEXT = {
@@ -740,7 +741,7 @@ const DUB_KIND_TEXT = {
   asr: "تترجم الترجمة التلقائيّة", display: "تقرأ ترجمة يوتيوب العربية المعروضة على الفيديو"
 };
 const DUB_PREF_DEFAULT = { source: "yt", volume: 100, rate: "auto", voice: {} };
-let dubTabId = null, dubPoll = 0, dubLast = null, dubPin = null, dubBlocked = false;
+let dubTabId = null, dubHost = "", dubPoll = 0, dubLast = null, dubPin = null, dubBlocked = false;
 
 function isYouTubeWatchUrl(url) {
   if (!isYouTubeUrl(url)) return false;
@@ -798,12 +799,18 @@ function renderDub(st) {
       (st.reason === "lang" && st.detail ? ` (${st.detail})` : "");
     note.classList.add("bad");
   }
+  // مصدرٌ اختير والدبلجةُ تعمل يُقال في كلّ رسم — لا مرّةً يمحوها السؤالُ التالي (مراجعة 2 #12)
+  if ((s === "running" || s === "preparing") && st.source && $("dubSource") && $("dubSource").value !== st.source) {
+    text += " · المصدرُ الجديد من الضغطة التالية على «دبلِج»";
+  }
   note.textContent = text;
 }
 
 // المفتاحُ الرئيسيّ والحظرُ يُقرآن في كلّ سؤال — مفتاحٌ قُلب في البوب-أب نفسِه يظهر أثرُه فوراً (مراجعة #13)
 async function refreshDub() {
   if (!(await getMasterEnabled())) { dubLast = { ok: true, state: "master-off" }; renderDub(dubLast); return; }
+  // والحظرُ كذلك — زرُّ 🚫 في البوب-أب نفسِه يرفعه، والبطاقةُ تتبعه (مراجعة 2 #5 · #9 · #14)
+  dubBlocked = !!(await readHostGates(dubHost)).blocked;
   if (dubBlocked) { dubLast = { ok: true, state: "blocked" }; renderDub(dubLast); return; }
   dubLast = await dubSend({ type: "GVZ_DUB_STATUS" });
   renderDub(dubLast);
@@ -827,14 +834,20 @@ function fillDubVoices(selected) {
   sel.value = voices.some((v) => v.voiceURI === selected) ? selected : "";
 }
 
-async function loadDubPrefsUI() {
+// الضوابطُ من التخزين — وتُعاد منه بعد حفظٍ فشل (#69): الضابطُ لا يقول قيمةً لم تُحفظ (مراجعة 2 #15)
+async function fillDubPrefsUI() {
+  if (!$("dubCard")) return;
   const pr = await dubPrefs();
   if ($("dubSource")) $("dubSource").value = pr.source;
   if ($("dubRate")) $("dubRate").value = String(pr.rate);
   if ($("dubVolume")) $("dubVolume").value = String(pr.volume);
   if ($("dubVolumeValue")) $("dubVolumeValue").textContent = `${pr.volume}%`;
-  const mine = pr.voice[dubPlatform()] || "";
-  fillDubVoices(mine);
+  fillDubVoices(pr.voice[dubPlatform()] || "");
+}
+
+async function loadDubPrefsUI() {
+  await fillDubPrefsUI();
+  const mine = $("dubVoice")?.value || "";
   globalThis.speechSynthesis?.addEventListener("voiceschanged", () => fillDubVoices($("dubVoice")?.value || mine));
 }
 
@@ -858,10 +871,6 @@ async function onDubPrefChange() {
   if (dubLast && (dubLast.state === "preparing" || dubLast.state === "running")) {
     const st = await dubSend({ type: "GVZ_DUB_SET", opts: dubOptsFrom(saved) });
     if (st) { dubLast = st; renderDub(st); }
-    if (st && st.source && st.source !== saved.source) {
-      const note = $("dubNote");
-      if (note) note.textContent += " · المصدرُ الجديد من الضغطة التالية على «دبلِج»";
-    }
   }
 }
 
@@ -871,7 +880,7 @@ async function loadDubUI() {
   if (!card || !tab || !isYouTubeWatchUrl(tab.url)) { if (card) card.hidden = true; return; }
   card.hidden = false;
   dubTabId = tab.id;
-  dubBlocked = !!(await readHostGates(hostFromUrl(tab.url))).blocked;
+  dubHost = hostFromUrl(tab.url);
   await loadDubPrefsUI();
   await refreshDub();
   clearInterval(dubPoll);

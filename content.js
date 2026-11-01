@@ -4947,6 +4947,9 @@ let dubToken = 0;
 let dubTr = null;                   // مترجمُ كروم، يُنشأ مرّةً في الصفحة
 const dubTranscripts = new Map();   // "videoId|المصدر" ⇒ { sents, kind } — طولَ عمر الصفحة: لا يُرمى نصٌّ دُفع ثمنُه (مراجعة #15)
 const dubCapP = new Map();          // المفتاحُ نفسُه ⇒ وعدُ التقاطٍ جارٍ: ضغطةٌ ثانية تنتظره ولا تطلب (مراجعة #10)
+// ⭐ إجبارُ المشغّل (العرضُ أو الالتقاط) واحدٌ في الصفحة أبداً: تشغيلةٌ تبدأ تنتظر ما تركته التي أوقفتها، فإرجاعُ تلك
+// (متزامنٌ عبر الجسر) يقع قبل لقطة هذه — وإلا عرضان متداخلان يتركان CC عربيّاً بلا إرجاع (مراجعة 2 #4 · #7 · #13)
+let dubBridge = Promise.resolve();
 
 // البوّابةُ الواحدة أوّلاً (#64)، ثمّ النطاق: صفحةُ المشاهدة في الإطار الأعلى (§٢)
 function dubActive() {
@@ -5334,7 +5337,9 @@ function dubClock(run) {
   run.clockBusy = true;
   return dubMainCall("time", null, 400).then((t) => {
     run.clockBusy = false; run.offAt = performance.now();
-    if (!t || !t.ok || t.ad) return;
+    if (!t || !t.ok) return;
+    run.trackLang = typeof t.tr === "string" ? t.tr : "";
+    if (t.ad) return;
     const off = t.vt - t.pt;
     run.off = Math.abs(off) > 0.5 ? off : 0;
   });
@@ -5354,53 +5359,60 @@ async function dubPrepare(run) {
   let tx = yt ? null : dubTranscripts.get(key);
   if (!tx && !yt && dubCapP.has(key)) { tx = await dubCapP.get(key); if (!live()) return; }
   if (!tx) {
-    const ping = await dubMainCall("ping", null, 1500);
-    if (!live()) return;
-    if (!ping.ok) return dubRefuse(run, "main-missing");
-    const f = await dubMainCall("facts", null, 6000);
-    if (!live()) return;
-    if (!f.ok) return dubRefuse(run, f.reason || "facts", f.status);
-    if (f.v !== run.vid) return dubRefuse(run, "nav");
-    const caps = (f.caps || []).map(dubCapNorm);
-    const d = dubDecide({ live: f.live, audio: (f.audio || []).map(dubAudioNorm), caps });
-    run.kind = d.k; run.spokenLang = d.spoken || "";
-    if (yt) {
-      // ⭐ «ترجمة يوتيوب كما تظهر»: المشغّلُ يعرض العربيّة ويطلبها بنفسه — **صفرُ طلبٍ منّا**، فلا نصَّ يُلتقط
-      const src = dubYtSource(d, caps);
-      if (!src) return dubRefuse(run, d.k, d.spoken || "");
-      if (f.stop) return dubRefuse(run, "breaker", f.stop);
-      run.step = "show";
-      const sh = await dubMainCall("show", { v: run.vid, code: src.code, asr: src.asr }, 10000);
-      if (sh.ok && sh.how !== "already") run.shown = true;      // قبل live(): إيقافٌ أثناء الانتظار يُعيدها
-      if (!live()) { dubUnshow(run); return; }
-      if (!sh.ok) return dubRefuse(run, sh.reason || "show", sh.why || "");
-      tx = { kind: "display", sents: null };
-    } else {
-      if (!d.src) return dubRefuse(run, d.k, d.spoken || "");
-      if (f.stop && f.asked !== "cached") return dubRefuse(run, "breaker", f.stop);
-      if (f.asked === "spent") return dubRefuse(run, "already");
-      run.step = "capture";
-      // ⭐ يُخزَّن النصُّ حين يصل أيّاً كانت حالُ التشغيلة — إيقافٌ أثناء الالتقاط لا يرمي ما دُفع ثمنُه (مراجعة #1 · #10)
-      const capP = dubMainCall("capture", { v: run.vid, code: d.src.code, asr: d.src.asr, ql: d.src.ql, qk: d.src.qk, qv: d.src.variant }, 40000)
-        .then((c) => {
-          let t2 = null;
-          if (c.ok) {
-            const seg = dubSegment(c.events);
-            if (seg.sents.length) {
-              t2 = { kind: d.k, sents: seg.sents.map((x) => ({ start: x.start, win: x.win, text: x.text, ar: d.k === "speak" ? x.text : null })) };
-              dubTranscripts.set(key, t2);
-            }
-          }
-          return { c, t2 };
-        });
-      dubCapP.set(key, capP.then((x) => x.t2, () => null));
-      let got;
-      try { got = await capP; } finally { dubCapP.delete(key); }
+    const prevB = dubBridge;
+    let rel = null;
+    dubBridge = new Promise((r) => { rel = r; });
+    try {
+      await prevB;
       if (!live()) return;
-      if (!got.c.ok) return dubRefuse(run, got.c.reason || "capture", got.c.why || (got.c.cc ? "cc" : ""));
-      if (!got.t2) return dubRefuse(run, "empty");
-      tx = got.t2;
-    }
+      const ping = await dubMainCall("ping", null, 1500);
+      if (!live()) return;
+      if (!ping.ok) return dubRefuse(run, "main-missing");
+      const f = await dubMainCall("facts", null, 6000);
+      if (!live()) return;
+      if (!f.ok) return dubRefuse(run, f.reason || "facts", f.status);
+      if (f.v !== run.vid) return dubRefuse(run, "nav");
+      const caps = (f.caps || []).map(dubCapNorm);
+      const d = dubDecide({ live: f.live, audio: (f.audio || []).map(dubAudioNorm), caps });
+      run.kind = d.k; run.spokenLang = d.spoken || "";
+      if (yt) {
+        // ⭐ «ترجمة يوتيوب كما تظهر»: المشغّلُ يعرض العربيّة ويطلبها بنفسه — **صفرُ طلبٍ منّا**، فلا نصَّ يُلتقط
+        const src = dubYtSource(d, caps);
+        if (!src) return dubRefuse(run, d.k, d.spoken || "");
+        if (f.stop) return dubRefuse(run, "breaker", f.stop);
+        run.step = "show";
+        const sh = await dubMainCall("show", { v: run.vid, code: src.code, asr: src.asr }, 10000);
+        if (sh.ok && sh.how !== "already") run.shown = true;      // قبل live(): إيقافٌ أثناء الانتظار يُعيدها
+        if (!live()) { dubUnshow(run); return; }
+        if (!sh.ok) return dubRefuse(run, sh.reason || "show", sh.why || "");
+        tx = { kind: "display", sents: null };
+      } else {
+        if (!d.src) return dubRefuse(run, d.k, d.spoken || "");
+        if (f.stop && f.asked !== "cached") return dubRefuse(run, "breaker", f.stop);
+        if (f.asked === "spent") return dubRefuse(run, "already");
+        run.step = "capture";
+        // ⭐ يُخزَّن النصُّ حين يصل أيّاً كانت حالُ التشغيلة — إيقافٌ أثناء الالتقاط لا يرمي ما دُفع ثمنُه (مراجعة #1 · #10)
+        const capP = dubMainCall("capture", { v: run.vid, code: d.src.code, asr: d.src.asr, ql: d.src.ql, qk: d.src.qk, qv: d.src.variant }, 40000)
+          .then((c) => {
+            let t2 = null;
+            if (c.ok) {
+              const seg = dubSegment(c.events);
+              if (seg.sents.length) {
+                t2 = { kind: d.k, sents: seg.sents.map((x) => ({ start: x.start, win: x.win, text: x.text, ar: d.k === "speak" ? x.text : null })) };
+                dubTranscripts.set(key, t2);
+              }
+            }
+            return { c, t2 };
+          });
+        dubCapP.set(key, capP.then((x) => x.t2, () => null));
+        let got;
+        try { got = await capP; } finally { dubCapP.delete(key); }
+        if (!live()) return;
+        if (!got.c.ok) return dubRefuse(run, got.c.reason || "capture", got.c.why || (got.c.cc ? "cc" : ""));
+        if (!got.t2) return dubRefuse(run, "empty");
+        tx = got.t2;
+      }
+    } finally { rel(); }
   }
   run.kind = tx.kind; run.sents = tx.sents; run.mode = tx.kind === "display" ? "display" : "sents";
   if (trP && tx.kind !== "speak") {
@@ -5411,8 +5423,10 @@ async function dubPrepare(run) {
     run.tr = t.tr;
   }
   run.step = "voice";
-  const voice = await voiceP;
+  const v0 = await voiceP;
   if (!live()) return;
+  // صوتٌ اختير في البوب-أب أثناء التجهيز يُؤخذ هنا — الوعدُ بُدئ بخيار الضغطة (مراجعة 2 #8 · #11)
+  const voice = v0 ? (dubPickVoice(speechSynthesis.getVoices() || [], run.opts.voice) || v0) : null;
   if (!voice) return dubRefuse(run, "no-voice");
   run.voice = voice;
   run.step = "warmup";
@@ -5489,14 +5503,24 @@ function dubUtter(run, unit, rate) {
 }
 
 // سطرٌ نهائيٌّ لم يُنطق يصير «المنتظر» — والأحدثُ يغلب ما لم يأتِ دوره (يُعدّ متخطّى). ونافذةُ السرعة من إيقاع السطور نفسِها
-function dubOffer(run, lines, now) {
+// ⭐ وسطرٌ نُطق صدرُه عند سكتةٍ ثمّ كبر: **الباقي وحدَه جديد** — وإن لم يُنطق صدرُه بعد فالسطرُ الكاملُ يحلّ محلّه (مراجعة 2 #3)
+function dubOffer(run, lines, now, fromLast) {
   const fresh = lines.filter((l) => l && !run.recent.includes(l));
   if (!fresh.length) return;
+  const line = fresh[fresh.length - 1];
+  // صدرُ السطر: ما نُطق عند سكتة (`base`) — أو آخرُ سطرٍ عُرض لنا (`said`) إن ظهر بعدُ أطولَ ممّا رأيناه (فاتتنا كلمتُه الأخيرة)
+  const b = [run.base, run.said].find((x) => x && fresh.length === 1 && line.startsWith(x + " ")) || "";
+  let text = fresh.join(" ");
+  const remember = () => { for (const l of fresh) { run.recent.push(l); if (run.recent.length > 12) run.recent.shift(); } if (fromLast) run.base = line; run.said = line; };
+  if (b) {
+    if (run.pending && run.pending.line === b) { run.pending = { text: line, line, at: run.pending.at }; remember(); return; }
+    text = line.slice(b.length).trim();
+  }
   if (run.pending) run.skipped++;
-  run.pending = { text: fresh.join(" "), line: fresh[fresh.length - 1], at: now };
+  run.pending = { text, line, at: now };
   if (run.offerAt) { const d = now - run.offerAt; if (d > 500 && d < 15000) run.capWin = 0.7 * run.capWin + 0.3 * d; }
   run.offerAt = now; run.seen++;
-  for (const l of fresh) { run.recent.push(l); if (run.recent.length > 12) run.recent.shift(); }
+  remember();
 }
 
 // وضعُ العرض: يُقرأ ما على الشاشة في كلّ نبضة. ⭐ **وسطرٌ يكبر لا يُنطق حتى يكتمل** — 📖 في وضع «التمرير» (roll-up)
@@ -5507,16 +5531,22 @@ function dubTickDisplay(run, p, v, now) {
   if (btn && btn.getAttribute("aria-pressed") === "false") { run.hold = "cc-off"; return; }
   // 📖 يوتيوب يرسم الترجمةَ بـrequestAnimationFrame — وكرومُ يوقفه في التبويب المخفيّ ⇒ لا جديدَ يُقرأ: يُقال ولا يُسكت عنه
   if (document.hidden) { run.hold = "hidden"; return; }
+  // ومسارٌ معروضٌ بغير العربيّة (اختار المستخدمُ لغةً أخرى بيده): يُقال لا يُسكت عنه بـ«يُدبلج» (مراجعة 2 #2)
+  if (run.trackLang && dubPrim(run.trackLang) !== "ar") { run.hold = "cc-lang"; return; }
   const lines = dubCaptionLines(p);
   const last = lines.length ? lines[lines.length - 1] : "";
-  if (last !== run.lastLine) {
-    const prev = run.lastLine;
-    if (prev && last.length > prev.length && last.startsWith(prev)) run.grow = true;
-    else if (prev && run.grow && !lines.includes(prev)) dubOffer(run, [prev], now);   // غاب وهو يكبر: نهائيٌّ كما رُئي آخرَ مرّة
+  const prev = run.lastLine, moved = last !== prev;
+  if (moved && prev && last.length > prev.length && last.startsWith(prev)) run.grow = true;
+  if (!run.grow) dubOffer(run, lines, now, false);
+  else {
+    if (moved && prev && !lines.includes(prev) && !last.startsWith(prev)) dubOffer(run, [prev], now, false);   // غاب وهو يكبر: نهائيٌّ كما رُئي آخرَ مرّة
+    dubOffer(run, lines.slice(0, -1), now, false);                                                            // ما فوق الأخير نهائيّ
+  }
+  if (moved) {
+    if (run.base && !(last === run.base || last.startsWith(run.base + " "))) run.base = "";
     run.lastLine = last; run.lineAt = now;
   }
-  const ready = !run.grow ? lines : lines.slice(0, -1).concat(last && now - run.lineAt >= DUB_STABLE_MS ? [last] : []);
-  dubOffer(run, ready, now);
+  if (run.grow && last && now - run.lineAt >= DUB_STABLE_MS) dubOffer(run, [last], now, true);
   if (run.cur || v.seeking) return;
   const plan = dubDisplayNext(run.pending, lines, now, run.capWin, run.cps, DUB_AUTO_MAX, DUB_CURVE_MAC, run.opts.rate);
   if (plan.skip) { run.skipped++; run.pending = null; return; }
@@ -5598,7 +5628,7 @@ function dubStart(o) {
     kind: "", spokenLang: "", sents: null, idx: 0, spoken: 0, skipped: 0, lost: 0, bgSkipped: 0, drops: 0, inflight: 0,
     cur: null, timer: 0, cps: DUB_CPS, lastCt: -1, lastAt: 0, movedAt: performance.now(), sync: true, lags: [], dl: null,
     warm: true, off: 0, offAt: 0, clockBusy: false, wasAd: false, mode: "", shown: false,
-    lastLine: "", lineAt: 0, grow: false, offerAt: 0, capWin: 3000, recent: [], pending: null, seen: 0 };
+    lastLine: "", lineAt: 0, grow: false, base: "", said: "", offerAt: 0, capWin: 3000, recent: [], pending: null, seen: 0, trackLang: "" };
   dubPrepare(run).catch((e) => dubRefuse(run, "threw", e?.message || e));
   return dubStatus();
 }
