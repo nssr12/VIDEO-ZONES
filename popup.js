@@ -683,6 +683,10 @@ async function sendBoost(pct, isFinal = false) {
 // ── #168 — الدبلجة العربية (تجريبيّة · فرع 168-dub-mac) ─────────────────────────
 // **المحرّكُ في الصفحة لا هنا**: إغلاقُ البوب-أب لا يوقفه، والبوب-أب يقول ما يجري أو لماذا لا (168ب).
 // كلُّ رسالةٍ إلى الإطار الأعلى وحدَه (`frameId: 0`) — لا إرسالَ بلا إطار (#24).
+// ⭐ **وخياراتُ المالك الأربع (2026-11-01: «حجم صوت الترجمه · اختيار سرعه الترجمه او تركه تلقائي ·
+// تغيير المترجم او صوت المترجم» ومصدرُ النصّ العربيّ)** تُحفظ في `settings.dub` بـ`safeSyncSet` (قرار 1:
+// `sync` وحدَه)، **والصوتُ لكلّ نظامٍ وحدَه** (§٣: أصواتُ الماك غيرُ أصوات الويندوز) — وتصل المحرّكَ مع
+// «دبلِج» ومع كلّ تغيير (`GVZ_DUB_SET`)، فلا يقرأ المحرّكُ التخزينَ ولا يُنسى منها شيء.
 const DUB_REASON_TEXT = {
   gate: "الإضافة مطفأة أو هذا الموقع محظور",
   "no-video": "لا فيديو في هذه الصفحة",
@@ -700,7 +704,7 @@ const DUB_REASON_TEXT = {
   other: "لا ترجمةَ تلقائيّة تكشف لغةَ الكلام، فلا أعرف من أيّ لغةٍ أدبلج",
   lang: "لغةُ الكلام ليست الإنجليزية — الدبلجة من الإنجليزية وحدها الآن",
   breaker: "رفض يوتيوب طلبَ الترجمة النصّيّة — توقّفتُ ولن أطلب ثانيةً في هذه الصفحة. لا تُعِد المحاولة اليوم من هذا الاتصال",
-  already: "طُلبت ترجمةُ هذا الفيديو في هذه الصفحة من قبل — أعد تحميل الصفحة",
+  already: "طلبتُ نصَّ هذا الفيديو في هذه الصفحة ولم يصل — لن أطلبه ثانيةً هنا",
   "no-capture": "لم يطلب المشغّل الترجمة — أطفئ الترجمة (CC) وأعد تحميل الصفحة ثمّ اضغط «دبلِج»",
   "no-observer": "المتصفّح لا يتيح مراقبة الطلبات هنا",
   busy: "التقاطٌ آخر يجري — انتظر ثمّ جرّب",
@@ -716,13 +720,15 @@ const DUB_REASON_TEXT = {
   threw: "عطبٌ داخليّ في الدبلجة"
 };
 const DUB_STEP_TEXT = {
-  facts: "يقرأ مسارات الفيديو…", capture: "يلتقط نصّ الفيديو من المشغّل…",
+  facts: "يقرأ مسارات الفيديو…", capture: "يلتقط نصّ الفيديو من المشغّل…", show: "يشغّل ترجمة يوتيوب العربية على الفيديو…",
   translator: "يجهّز مترجم كروم…", voice: "يجهّز الصوت العربي…", warmup: "يوقظ محرّك النطق…"
 };
 const DUB_HOLD_TEXT = {
   paused: "الفيديو متوقّف — تستأنف حين تشغّله", frozen: "الفيديو يتحمّل…", ad: "إعلان — تستأنف بعده",
   speed: "سرعة الفيديو أعلى مما يلحقه الصوت (حتى 1.91×) — صامتة", "no-video": "لا أجد الفيديو",
-  done: "انتهت جمل الفيديو"
+  queue: "صوتٌ آخر في المتصفّح يسبقنا — أنتظره", done: "انتهت جمل الفيديو",
+  hidden: "التبويب مخفيّ — ترجمة يوتيوب لا تتحدّث فيه؛ أعده ظاهراً",
+  "cc-off": "الترجمة على الفيديو مطفأة — شغّلها (CC) لأقرأها"
 };
 const DUB_STOP_TEXT = {
   user: "أوقفتَها", nav: "انتقلتَ إلى فيديو آخر — توقّفت", mini: "المشغّل المصغّر — توقّفت",
@@ -731,13 +737,33 @@ const DUB_STOP_TEXT = {
 };
 const DUB_KIND_TEXT = {
   speak: "تنطق الترجمة العربية اليدويّة كما هي", manual: "تترجم الترجمة الإنجليزية اليدويّة",
-  asr: "تترجم الترجمة التلقائيّة"
+  asr: "تترجم الترجمة التلقائيّة", display: "تقرأ ترجمة يوتيوب العربية المعروضة على الفيديو"
 };
-let dubTabId = null, dubPoll = 0, dubLast = null;
+const DUB_PREF_DEFAULT = { source: "yt", volume: 100, rate: "auto", voice: {} };
+let dubTabId = null, dubPoll = 0, dubLast = null, dubPin = null, dubBlocked = false;
 
 function isYouTubeWatchUrl(url) {
   if (!isYouTubeUrl(url)) return false;
   try { const u = new URL(url); return u.pathname === "/watch" && !!u.searchParams.get("v"); } catch { return false; }
+}
+
+// الصوتُ يُحفظ لكلّ نظام: «ليلى» على الماك ليست على الويندوز
+function dubPlatform() {
+  const p = navigator.userAgentData?.platform || "";
+  if (p) return p;
+  return /Windows/.test(navigator.userAgent) ? "Windows" : /Mac/.test(navigator.userAgent) ? "macOS" : "other";
+}
+
+async function dubPrefs() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const d = (data.settings || {}).dub || {};
+  return { ...DUB_PREF_DEFAULT, ...d, voice: { ...(d.voice || {}) } };
+}
+
+// ما يصل المحرّك: الحجمُ 0..1 · السرعةُ «auto» أو رقم · الصوتُ لهذا النظام
+function dubOptsFrom(pr) {
+  return { source: pr.source, volume: (Number(pr.volume) || 0) / 100, rate: pr.rate,
+    voice: pr.voice[dubPlatform()] || "" };
 }
 
 function dubSend(message) {
@@ -747,20 +773,24 @@ function dubSend(message) {
 function renderDub(st) {
   const btn = $("dubBtn"), note = $("dubNote");
   if (!btn || !note) return;
+  // رفضُ الضغطة الأخيرة يبقى حتى الضغطة التالية — لا يمحوه سؤالُ الحال وقد قيل «لا شيء يجري» (مراجعة #14)
+  if (dubPin && (!st || st.state === "idle")) st = dubPin;
   const s = st && st.ok !== false ? st.state : "refused";
   btn.textContent = s === "preparing" || s === "running" ? "أوقف الدبلجة" : "دبلِج هذا الفيديو";
-  btn.disabled = s === "master-off";
+  btn.disabled = s === "master-off" || s === "blocked";
   note.classList.remove("bad");
   let text;
   if (!st) text = "الإضافة غير محقونة في هذه الصفحة — أعد تحميلها ثمّ جرّب";
   else if (s === "master-off") text = "الإضافة مطفأة من المفتاح الرئيسي";
+  else if (s === "blocked") text = "الإضافة محظورة على هذا الموقع — أزل الحظر من زرّ 🚫 أعلاه";
   else if (st.ok === false && st.reason === "not-started") text = "الإضافة لم تبدأ في هذه الصفحة — أعد تحميلها";
-  else if (s === "idle") text = "تقرأ ترجمةَ الكلام بصوتٍ عربيّ متزامن مع الفيديو. الكلام الإنجليزيّ وحده الآن.";
+  else if (s === "idle") text = "تقرأ الترجمة العربية بصوتٍ متزامن مع الفيديو — اختر مصدرها وصوتها وسرعتها أدناه.";
   else if (s === "preparing") text = (DUB_STEP_TEXT[st.step] || "يجهّز…") + (st.step === "translator" && st.dl != null ? ` (تنزيل ${st.dl}٪)` : "");
   else if (s === "running") {
-    text = (st.hold ? DUB_HOLD_TEXT[st.hold] || st.hold : "يُدبلج") + ` · الجملة ${Math.min(st.idx, st.total)} من ${st.total}` +
+    text = (st.hold ? DUB_HOLD_TEXT[st.hold] || st.hold : "يُدبلج") + (st.kind === "display" ? "" : ` · الجملة ${Math.min(st.idx, st.total)} من ${st.total}`) +
       ` · نُطقت ${st.spoken} · تُخطّيت ${st.skipped}` + (st.lost ? ` · ضاعت ${st.lost}` : "") +
       (DUB_KIND_TEXT[st.kind] ? ` · ${DUB_KIND_TEXT[st.kind]}` : "") +
+      (st.bgSkipped ? ` · ⚠️ تُخطّيت ${st.bgSkipped} والتبويبُ مخفيّ — أبقِه ظاهراً أو صوتَ يوتيوب مسموعاً` : "") +
       (st.warm ? "" : " · ⚠️ لم أسمع جملةَ البدء — أهو تبويبٌ مكتوم؟");
   } else if (s === "stopped") text = DUB_STOP_TEXT[st.reason] || "توقّفت الدبلجة";
   else {
@@ -771,9 +801,68 @@ function renderDub(st) {
   note.textContent = text;
 }
 
+// المفتاحُ الرئيسيّ والحظرُ يُقرآن في كلّ سؤال — مفتاحٌ قُلب في البوب-أب نفسِه يظهر أثرُه فوراً (مراجعة #13)
 async function refreshDub() {
+  if (!(await getMasterEnabled())) { dubLast = { ok: true, state: "master-off" }; renderDub(dubLast); return; }
+  if (dubBlocked) { dubLast = { ok: true, state: "blocked" }; renderDub(dubLast); return; }
   dubLast = await dubSend({ type: "GVZ_DUB_STATUS" });
   renderDub(dubLast);
+}
+
+// الأصواتُ العربيّة بوسم اللغة، كما يراها المحرّك — والأوّلُ «تلقائيّ» (يختار «ليلى (محسّن)» إن وُجدت)
+function fillDubVoices(selected) {
+  const sel = $("dubVoice");
+  if (!sel) return;
+  const voices = (globalThis.speechSynthesis?.getVoices() || [])
+    .filter((v) => String(v.lang || "").toLowerCase().split(/[-_]/)[0] === "ar");
+  sel.textContent = "";
+  const auto = document.createElement("option");
+  auto.value = ""; auto.textContent = "تلقائي";
+  sel.appendChild(auto);
+  for (const v of voices) {
+    const o = document.createElement("option");
+    o.value = v.voiceURI; o.textContent = v.name + (v.localService ? "" : " (عبر الشبكة)");
+    sel.appendChild(o);
+  }
+  sel.value = voices.some((v) => v.voiceURI === selected) ? selected : "";
+}
+
+async function loadDubPrefsUI() {
+  const pr = await dubPrefs();
+  if ($("dubSource")) $("dubSource").value = pr.source;
+  if ($("dubRate")) $("dubRate").value = String(pr.rate);
+  if ($("dubVolume")) $("dubVolume").value = String(pr.volume);
+  if ($("dubVolumeValue")) $("dubVolumeValue").textContent = `${pr.volume}%`;
+  const mine = pr.voice[dubPlatform()] || "";
+  fillDubVoices(mine);
+  globalThis.speechSynthesis?.addEventListener("voiceschanged", () => fillDubVoices($("dubVoice")?.value || mine));
+}
+
+async function saveDubPrefs() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const settings = data.settings || {};
+  const pr = { ...DUB_PREF_DEFAULT, ...(settings.dub || {}) };
+  const voice = { ...(pr.voice || {}), [dubPlatform()]: $("dubVoice")?.value || "" };
+  const rate = $("dubRate")?.value || "auto";
+  settings.dub = { source: $("dubSource")?.value === "device" ? "device" : "yt",
+    volume: Math.max(0, Math.min(100, Number($("dubVolume")?.value) || 0)), rate, voice };
+  const res = await safeSyncSet({ settings });
+  if (!res.ok) { setStatus("bad", `تعذّر الحفظ: ${res.message}`); return null; }
+  return settings.dub;
+}
+
+// تغييرٌ والدبلجةُ تعمل يصلها من الجملة التالية؛ **والمصدرُ من الضغطة التالية** (نصٌّ آخر)
+async function onDubPrefChange() {
+  const saved = await saveDubPrefs();
+  if (!saved || dubTabId == null) return;
+  if (dubLast && (dubLast.state === "preparing" || dubLast.state === "running")) {
+    const st = await dubSend({ type: "GVZ_DUB_SET", opts: dubOptsFrom(saved) });
+    if (st) { dubLast = st; renderDub(st); }
+    if (st && st.source && st.source !== saved.source) {
+      const note = $("dubNote");
+      if (note) note.textContent += " · المصدرُ الجديد من الضغطة التالية على «دبلِج»";
+    }
+  }
 }
 
 async function loadDubUI() {
@@ -782,7 +871,8 @@ async function loadDubUI() {
   if (!card || !tab || !isYouTubeWatchUrl(tab.url)) { if (card) card.hidden = true; return; }
   card.hidden = false;
   dubTabId = tab.id;
-  if (!(await getMasterEnabled())) { renderDub({ ok: true, state: "master-off" }); return; }
+  dubBlocked = !!(await readHostGates(hostFromUrl(tab.url))).blocked;
+  await loadDubPrefsUI();
   await refreshDub();
   clearInterval(dubPoll);
   dubPoll = setInterval(refreshDub, 700);
@@ -790,18 +880,21 @@ async function loadDubUI() {
 
 async function toggleDub() {
   if (dubTabId == null) return;
+  dubPin = null;
   if (dubLast && (dubLast.state === "preparing" || dubLast.state === "running")) {
     dubLast = await dubSend({ type: "GVZ_DUB_STOP" });
     renderDub(dubLast);
     return;
   }
   if (!(await getMasterEnabled())) { renderDub({ ok: true, state: "master-off" }); return; }
+  if (dubBlocked) { renderDub({ ok: true, state: "blocked" }); return; }
   $("dubBtn").disabled = true;
   try {
     // عالمُ الصفحة يُحقن الآن وحدَه — لا شيءَ منه في صفحةٍ لم يُضغط فيها «دبلِج»
     await chrome.scripting.executeScript({ target: { tabId: dubTabId, frameIds: [0] }, files: ["yt_dub_main.js"], world: "MAIN" });
   } catch {
-    renderDub({ ok: false, state: "refused", reason: "inject" });
+    dubPin = { ok: false, state: "refused", reason: "inject" };
+    renderDub(dubPin);
     return;
   }
   // خ14: آخرُ ما ضُغط يفوز — قناةٌ **تُوقف ولا تُشغّل**: طابورُ النطق واحدٌ للمتصفّح كلِّه
@@ -809,7 +902,8 @@ async function toggleDub() {
   for (const t of others) {
     if (t.id !== dubTabId) chrome.tabs.sendMessage(t.id, { type: "GVZ_DUB_STOP", why: "other-tab" }, { frameId: 0 }).catch(() => {});
   }
-  dubLast = await dubSend({ type: "GVZ_DUB_START" });
+  dubLast = await dubSend({ type: "GVZ_DUB_START", opts: dubOptsFrom(await dubPrefs()) });
+  if (dubLast && dubLast.ok === false) dubPin = dubLast;
   renderDub(dubLast);
 }
 
@@ -1078,6 +1172,7 @@ document.addEventListener("mousedown", (e) => {
     const ok = await saveMasterEnabled(on);
     if (!ok) { e.target.checked = !on; syncMasterUi(!on); return; }
     await checkPageStatus();
+    if (dubTabId != null) await refreshDub();
   });
   $("subtitlesEnabled")?.addEventListener("change", saveSubtitlesToggle);
   $("fullscreenOnly")?.addEventListener("change", saveFullscreenOnlyToggle);
@@ -1114,6 +1209,8 @@ document.addEventListener("mousedown", (e) => {
   });
   $("checkStatus").addEventListener("click", checkPageStatus);
   $("dubBtn")?.addEventListener("click", toggleDub);
+  for (const id of ["dubSource", "dubVoice", "dubRate", "dubVolume"]) $(id)?.addEventListener("change", onDubPrefChange);
+  $("dubVolume")?.addEventListener("input", () => { if ($("dubVolumeValue")) $("dubVolumeValue").textContent = `${$("dubVolume").value}%`; });
 
   // ── #69: مسار فشل واحد للـ popup كذلك ────────────────────────────────────
   // كانت سبعةُ مواضع تُعلن الفشل و**واحدٌ يُرجِع الضابط** (المفتاح الرئيسي).

@@ -53,12 +53,35 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>fake watch
   p.getOption = (m, k) => (k === "tracklist" ? [{ languageCode: "en", kind: "asr" }] : track);
   p.setOption = (m, k, v) => {
     window.__calls.push("set:" + JSON.stringify(v)); track = v || {};
+    window.__labelAt = Date.now();
     btn.setAttribute("aria-pressed", track.languageCode ? "true" : "false");
     if (!track.languageCode) return;
     localStorage.setItem("yt-player-caption-sticky-language", JSON.stringify({ data: track.languageCode, expiration: Date.now() + 2592000000, creation: Date.now() }));
     sessionStorage.setItem("yt-player-caption-language-preferences", JSON.stringify({ data: JSON.stringify([track.languageCode]), creation: Date.now() }));
-    fetch(BASE + "&caps=asr&pot=POTTOKEN&potc=1&c=WEB&fmt=srv3&xorb=2").then((r) => r.text());
+    fetch(BASE + "&caps=asr" + (track.translationLanguage ? "&tlang=" + track.translationLanguage.languageCode : "") +
+      "&pot=POTTOKEN&potc=1&c=WEB&fmt=srv3&xorb=2").then((r) => r.text());
   };
+  // ⭐ الترجمةُ العربيّة المعروضة كما يرسمها يوتيوب: \`.caption-visual-line\` > \`.ytp-caption-segment\` — متى اختيرت
+  // ونافذةُ اسم المسار (lang="en") ثانيتين بعد كلّ اختيار — كما يبنيها يوتيوب — لا تُقرأ (📖 captions.js)
+  const win = document.createElement("div"); win.className = "caption-window"; win.setAttribute("lang", "ar"); p.appendChild(win);
+  const label = document.createElement("div"); label.className = "caption-window"; label.setAttribute("lang", "en"); p.appendChild(label);
+  window.__labelAt = -1;
+  setInterval(() => {
+    const lab = Date.now() - window.__labelAt < 2000 ? "English (auto-generated) >> Arabic Click ⚙ for settings" : "";
+    if (label.dataset.txt !== lab) {
+      label.dataset.txt = lab; label.textContent = "";
+      if (lab) { const l = document.createElement("span"); l.className = "caption-visual-line"; l.textContent = lab; label.appendChild(l); }
+    }
+    const on = !!(track.translationLanguage && track.translationLanguage.languageCode === "ar");
+    const t = document.querySelector("video").currentTime, k = Math.floor((t - 2) / 3);
+    const txt = on && t >= 2 && (t - 2) % 3 < 2.8 ? "سطرٌ عربيٌّ رقم " + (k + 1) : "";
+    if (win.dataset.txt === txt) return;
+    win.dataset.txt = txt; win.textContent = "";
+    if (!txt) return;
+    const line = document.createElement("span"); line.className = "caption-visual-line";
+    const seg = document.createElement("span"); seg.className = "ytp-caption-segment"; seg.textContent = txt;
+    line.appendChild(seg); win.appendChild(line);
+  }, 50);
   localStorage.setItem("yt-player-caption-sticky-language", JSON.stringify({ data: "ar", expiration: 1, creation: 1 }));
   window.__stickyBefore = localStorage.getItem("yt-player-caption-sticky-language");
 })();
@@ -129,8 +152,9 @@ try {
   const inSW = async (expr) => (await s.send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }))?.result?.result?.value;
   const TAB = `(await chrome.tabs.query({ url: "https://www.youtube.com/*" }))[0].id`;
   const status = () => inSW(`(async () => chrome.tabs.sendMessage(${TAB}, { type: "GVZ_DUB_STATUS" }, { frameId: 0 }))()`);
-  const start = () => inSW(`(async () => { const id = ${TAB}; await chrome.scripting.executeScript({ target: { tabId: id, frameIds: [0] }, files: ["yt_dub_main.js"], world: "MAIN" });
-    return chrome.tabs.sendMessage(id, { type: "GVZ_DUB_START" }, { frameId: 0 }); })()`);
+  // البوب-أب بالنداءين اللذين يناديهما — ومصدرُ النصّ صريحاً: «device» مترجمُ الجهاز · «yt» ترجمةُ يوتيوب المعروضة
+  const start = (source) => inSW(`(async () => { const id = ${TAB}; await chrome.scripting.executeScript({ target: { tabId: id, frameIds: [0] }, files: ["yt_dub_main.js"], world: "MAIN" });
+    return chrome.tabs.sendMessage(id, { type: "GVZ_DUB_START", opts: { source: ${JSON.stringify(source || "device")} } }, { frameId: 0 }); })()`);
   const stop = () => inSW(`(async () => chrome.tabs.sendMessage(${TAB}, { type: "GVZ_DUB_STOP" }, { frameId: 0 }))()`);
   const page = (e) => evalIn(c, e);
 
@@ -214,6 +238,24 @@ try {
   await sleep(500);
   st = await status();
   check("إلى الصفحة الرئيسية ⇐ nav", st.state === "stopped" && st.reason === "nav", st);
+  console.log("\n[ز] «ترجمة يوتيوب كما تظهر» — يُقرأ ما يُعرض، بصفر طلبٍ منّا، ويُعاد ما غيّرناه");
+  await page("history.pushState({}, '', '/watch?v=VID')");
+  const ours0 = ours, player0 = player;
+  await start("yt");
+  for (let i = 0; i < 40; i++) { await sleep(300); st = await status(); if (st && st.state !== "preparing") break; }
+  check("يعمل بوضع العرض", st && st.state === "running" && st.kind === "display", st);
+  check("⭐ صفرُ طلبٍ منّا — والمشغّلُ طلب العربيّةَ بنفسه", ours === ours0 && player === player0 + 1, { ours, player });
+  await sleep(7000);
+  log = await evalIn(c, "window.__vzSpeechLog", world.id);
+  const lines = log.filter((x) => x.ev === "start" && /^سطرٌ عربيٌّ رقم/.test(x.text)).map((x) => x.text);
+  check("⭐ نُطقت السطورُ المعروضة بنصّها وبترتيبها", lines.length >= 2 && lines.every((t, i) => i === 0 || Number(t.replace(/[^0-9]/g, "")) === Number(lines[i - 1].replace(/[^0-9]/g, "")) + 1), lines);
+  check("ولا سطرَ قيل مرّتين", new Set(lines).size === lines.length, lines);
+  check("⛔ ونافذةُ اسم المسار («… >> Arabic · ⚙») لم تُنطق", !log.some((x) => x.ev === "speak" && /English|Arabic|⚙/.test(x.text)));
+  st = await stop();
+  await sleep(800);
+  check("⭐ وعند الإيقاف: الترجمةُ تُطفأ كما كانت", (await page("document.querySelector('.ytp-subtitles-button').getAttribute('aria-pressed')")) === "false" &&
+    (await page("window.__calls[window.__calls.length - 1]")) === "unload", await page("window.__calls.slice(-3)"));
+  check("⭐ واللاصقةُ بحروفها", (await page("localStorage.getItem('yt-player-caption-sticky-language') === window.__stickyBefore")) === true);
   console.log("\nسجلّ النطق (آخر 12):", JSON.stringify(log.slice(-12)));
 } catch (e) {
   fail++; console.log("  ❌ الرِكازُ رمى: " + (e && e.stack || e));

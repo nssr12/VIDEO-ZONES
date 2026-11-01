@@ -19,7 +19,7 @@
   if (window.__vzDubMain) return;
 
   var TT = "/api/timedtext";
-  var MEM = { stop: null, req: {}, busy: false };   // ذاكرةُ الصفحة لا التخزين: إعادةُ التحميل تنساها
+  var MEM = { stop: null, req: {}, busy: false, show: null };   // ذاكرةُ الصفحة لا التخزين: إعادةُ التحميل تنساها
   var SETTER = { ls: /sticky-language/i, ss: /language-preferences/i };
   var ONOFF = /caption-persistence|sticky-caption/i;
 
@@ -82,7 +82,7 @@
         variant: q.get("variant") || "", tlang: q.get("tlang") || "" };
     });
     return { ok: true, v: v, live: vd.isLive === true, len: Number(vd.lengthSeconds) || 0, audio: audio, caps: caps,
-      stop: MEM.stop ? MEM.stop.why : "", asked: !!MEM.req[v] };
+      stop: MEM.stop ? MEM.stop.why : "", asked: MEM.req[v] ? (MEM.req[v].events ? "cached" : "spent") : "" };
   }
 
   // ── الحالُ الظاهرة وتخزينُ الترجمة — بالقيمة لا بالطول (مِجَسّ 7) ─────────────────
@@ -128,6 +128,18 @@
     });
     return done;
   }
+  // ⛔ 📖 كائنُ `getOption("captions","track")` لا يُعاد كما هو: اسمُه فيه « >> Arabic» والمطابقةُ بالاسم عند التعادل ⇒ يقع
+  // على أوّل مسارٍ بلغته. يُعاد كائنُ القائمة نفسُه بمعرّفه (`vss_id`) ومعه الترجمةُ التي كانت
+  function trackBack(p, prev) {
+    var tl = null;
+    try { tl = p.getOption("captions", "tracklist", { includeAsr: true }); } catch (e) { tl = null; }
+    var o = Array.isArray(tl) ? first(tl, function (x) { return x && prev.vss_id && x.vss_id === prev.vss_id; }) ||
+      first(tl, function (x) { return x && x.languageCode === prev.languageCode && (x.kind || "") === (prev.kind || ""); }) : null;
+    if (!o) return prev;
+    var back = Object.assign({}, o);
+    if (prev.translationLanguage) back.translationLanguage = prev.translationLanguage;
+    return back;
+  }
   // إلى الحال السابقة بالواجهة لا بنقرة (#156)
   function restoreAct(p, B0, ccOn, prevTrack) {
     var s = state(p);
@@ -138,7 +150,7 @@
       }
       if (ccOn) {
         if (!prevTrack || typeof prevTrack !== "object" || !Object.keys(prevTrack).length) return "bad-prev";
-        p.setOption("captions", "track", prevTrack); return "prev";
+        p.setOption("captions", "track", trackBack(p, prevTrack)); return "prev";
       }
       if (/"captions"/.test(B0.mods) || (B0.mods === "-" && B0.opt === "{}")) { p.setOption("captions", "track", {}); return "empty"; }
       p.unloadModule("captions"); return "unload";
@@ -146,7 +158,11 @@
   }
 
   // ── الالتقاط: المراقبُ أوّلاً ثمّ الإجبار، وطلبٌ واحدٌ منّا ──────────────────────────
+  // ⭐ **ونصُّ الفيديو يبقى في ذاكرة الصفحة بعد طلبه:** إيقافٌ أثناء الالتقاط أو ضغطةٌ ثانية أو فيديو
+  // عُدنا إليه يأخذه من هنا بلا شبكة — فلا يُقال «طُلب من قبل» عن نصٍّ دُفع ثمنُه (مراجعة 2026-11-01 #1 · #10 · #15).
   async function capture(a) {
+    var hit = a && a.v ? MEM.req[a.v] : null;
+    if (hit && hit.events) return { ok: true, v: a.v, events: hit.events, how: "cached", act: "none", restored: [] };
     if (MEM.busy) return { ok: false, reason: "busy" };
     MEM.busy = true;
     try { return await captureRun(a || {}); } finally { MEM.busy = false; }
@@ -168,17 +184,28 @@
       });
     });
     po.observe({ type: "resource" });                                 // ⛔ حيٌّ: بلا buffered عمداً
+    var forced = false, restored = false, keepPo = false, B0 = null, B1 = null, ccOn = false, prevTrack;
+    // ⛔ الرفضُ بشكله: ≥400، أو 200 برؤوسٍ بلا جسم — ولا status=0 (الإلغاءُ يُعطيه)
+    var refused = function (x) { return !x.ours && (x.status >= 400 || (x.status === 200 && x.size === 0 && x.xfer > 0)); };
+    // رفضٌ وصل بعد القرار (إرجاعُ المسار يطلب) يرفع القاطعَ لما بعده — ولا يُبطل نصّاً جُلب (مراجعة #2)
+    var lateCheck = function () {
+      if (MEM.stop) return;
+      var late = first(seen, refused);
+      if (late) MEM.stop = { at: Date.now(), why: (qs(late.name).get("lang") || "?") + " status=" + late.status + " late" };
+    };
     try {
+      // ⭐ يُقبل ما طلبه المشغّلُ فعلاً بلغة المصدر ونوعه، وvariant ما لم يكن نصَّ دبلجةٍ آليّة (الفجوة هـ):
+      // اختيارُ كائن tracklist لا يرى variant، فاشتراطُ تطابقه كان يرفض طلباً صحيحاً (مراجعة #3 · #16)
       var isSrc = function (x) {
         var q = qs(x.name);
-        return q.get("v") === v && (q.get("lang") || "") === a.ql && (q.get("kind") || "") === a.qk && (q.get("variant") || "") === a.qv;
+        return q.get("v") === v && (q.get("lang") || "") === a.ql && (q.get("kind") || "") === a.qk && (q.get("variant") || "") !== "timing-optimized";
       };
-      // ⛔ الرفضُ بشكله: ≥400، أو 200 برؤوسٍ بلا جسم — ولا status=0 (الإلغاءُ يُعطيه)
-      var refused = function (x) { return !x.ours && (x.status >= 400 || (x.status === 200 && x.size === 0 && x.xfer > 0)); };
       var answered = function (t) { return seen.some(function (x) { return !x.ours && x.st >= t - 1 && x.status > 0 && !refused(x); }); };
-      var B0 = state(p), ccOn = B0.aria === "true", prevTrack;
+      B0 = state(p); ccOn = B0.aria === "true";
       try { prevTrack = JSON.parse(B0.opt); } catch (e) { prevTrack = undefined; }
-      var B1 = { ls: B0.ls, ss: B0.ss }, how = "", t0 = performance.now(), f0 = null, i;
+      B1 = { ls: B0.ls, ss: B0.ss };
+      var how = "", t0 = performance.now(), f0 = null, i;
+      forced = true;                                                  // من هنا يُعاد ما غيّره الإجبار ولو رمى ما بعده (مراجعة #4)
       p.loadModule("captions");
       // ⛔ أوّلُ طلبٍ للوحدة يُنتظر قبل أيّ setOption: رفضُه يُرى قبل طلبٍ ثانٍ
       for (i = 0; i < 30 && !f0; i++) { await delay(100); f0 = first(seen, function (x) { return !x.ours && x.st >= t0 - 1; }); }
@@ -191,7 +218,7 @@
       else if (s0 && !answered(t0)) how = "module-unanswered";       // لا setOption: المهلةُ تحكم بالقاطع
       else {
         var tl = null;
-        for (i = 0; i < 15; i++) { try { tl = p.getOption("captions", "tracklist"); } catch (e) { tl = null; } if (Array.isArray(tl) && tl.length) break; await delay(100); }
+        for (i = 0; i < 15; i++) { try { tl = p.getOption("captions", "tracklist", { includeAsr: true }); } catch (e) { tl = null; } if (Array.isArray(tl) && tl.length) break; await delay(100); }
         var o = Array.isArray(tl) ? first(tl, function (x) { return x && x.languageCode === a.code && (x.kind === "asr") === !!a.asr; }) : null;
         how = o ? "set-tracklist" : "set-code";
         p.setOption("captions", "track", o || { languageCode: a.code });
@@ -207,6 +234,7 @@
       var ref = first(seen, refused) || (cap && !(cap.status > 0) ? cap : null);
       if (ref) MEM.stop = { at: Date.now(), why: (qs(ref.name).get("lang") || "?") + " status=" + ref.status };
       var act = restoreAct(p, B0, ccOn, prevTrack);                   // ⭐ فورَ الالتقاط: أقصرُ ظهورٍ مؤقّت
+      restored = true;
       var fixed = fixAll(B1, state(p), ccOn);
       if (ref) return { ok: false, reason: "breaker", why: MEM.stop.why, act: act };
       if (!cap) return { ok: false, reason: "no-capture", how: how, act: act, cc: ccOn };
@@ -216,20 +244,21 @@
       if (qi < 0) return { ok: false, reason: "bad-url" };
       var kv = cap.name.slice(qi + 1).split("&").filter(function (x) { return x && !/^(tlang|fmt)(=|$)/.test(x); });
       var url = cap.name.slice(0, qi) + "?" + kv.concat("fmt=json3").join("&");
-      MEM.req[v] = Date.now();
+      MEM.req[v] = { at: Date.now(), events: null };                  // ⛔ قبل الطلب: لا ثانٍ لهذا الفيديو في الصفحة
       var res = { status: 0, body: "" }, ac = new AbortController(), to = setTimeout(function () { ac.abort(); }, 15000);
       try { var r = await fetch(url, { credentials: "include", signal: ac.signal }); res = { status: r.status, body: await r.text() }; }
       catch (e) { res = { status: 0, body: "", err: String(e && e.name) }; }
       finally { clearTimeout(to); }
       var own2 = first(seen, function (x) { return x.name === url; }); if (own2) own2.ours = true;
+      // ⛔ رفضُنا أوّلاً: يرفع القاطعَ قبل أيّ إرجاعٍ ثانٍ قد يطلب (مراجعة #2)
+      var bad = !!res.err || res.status !== 200 || !res.body.trim();
+      if (bad) MEM.stop = { at: Date.now(), why: res.err ? "ours " + res.err : "ours status=" + res.status + (res.body.trim() ? "" : " empty") };
       var s2 = state(p);
       if (s2.aria !== B0.aria || s2.opt !== B0.opt) act += "+" + restoreAct(p, B0, ccOn, prevTrack);
       fixed = fixed.concat(fixAll(B1, state(p), ccOn));
-      setTimeout(function () { fixAll(B1, state(p), ccOn); }, 2000);   // ثالثةً: المشغّلُ قد يكتب متأخّراً
-      if (res.err || res.status !== 200 || !res.body.trim()) {
-        MEM.stop = { at: Date.now(), why: res.err ? "ours " + res.err : "ours status=" + res.status + (res.body.trim() ? "" : " empty") };
-        return { ok: false, reason: "breaker", why: MEM.stop.why, act: act };
-      }
+      keepPo = true;                                                   // المراقبُ يبقى ثانيتين: رفضٌ يكتمل بعد الردّ يُرى
+      setTimeout(function () { fixAll(B1, state(p), ccOn); lateCheck(); try { po.disconnect(); } catch (e) { /* مُنفصلٌ سلفاً */ } }, 2000);
+      if (bad) return { ok: false, reason: "breaker", why: MEM.stop.why, act: act };
       var j = null; try { j = JSON.parse(res.body); } catch (e) { j = null; }
       var evs = j && Array.isArray(j.events) ? j.events : null;
       if (!evs) return { ok: false, reason: "not-json3" };
@@ -241,17 +270,109 @@
         })]);
       });
       if (!out.length) return { ok: false, reason: "empty" };
+      lateCheck();
+      MEM.req[v].events = out;
       return { ok: true, v: v, events: out, how: how, act: act, restored: fixed };
-    } finally { try { po.disconnect(); } catch (e) { /* مُنفصلٌ سلفاً */ } }
+    } finally {
+      // ⛔ رميةٌ بعد الإجبار لا تترك لغةَ الترجمة مكتوبةً ولا الوحدةَ محمَّلة (مراجعة #4)
+      if (forced && !restored) {
+        restoreAct(p, B0, ccOn, prevTrack);
+        fixAll(B1, state(p), ccOn);
+        setTimeout(function () { fixAll(B1, state(p), ccOn); }, 2000);
+      }
+      if (!keepPo) { try { po.disconnect(); } catch (e) { /* مُنفصلٌ سلفاً */ } }
+    }
+  }
+
+  // ── «ترجمة يوتيوب كما تظهر» (طلبُ المالك 2026-11-01) — **صفرُ طلبٍ منّا:** المشغّلُ نفسُه يطلب الترجمةَ العربيّة
+  // التلقائيّة كما يطلبها حين يختارها المستخدم من ⚙، والمحرّكُ يقرأ ما يُعرض. ⛔ **ولا نجلب ملفَّ الترجمة بأنفسنا:**
+  // `tlang` يُرفض حين يطلبه غيرُ المشغّل (📄 yt-dlp #13831). **وما غيّرناه يُعاد عند الإيقاف** (CC والمفاتيحُ اللاصقة — خ20).
+  async function show(a) {
+    var p = player();
+    if (!p || typeof p.setOption !== "function" || typeof p.getOption !== "function" || typeof p.loadModule !== "function") return { ok: false, reason: "no-player" };
+    if (MEM.stop) return { ok: false, reason: "breaker", why: MEM.stop.why };
+    if (vNow() !== a.v) return { ok: false, reason: "nav" };
+    if (isAd(p)) return { ok: false, reason: "ad" };
+    var cur = null;
+    try { cur = p.getOption("captions", "track"); } catch (e) { cur = null; }
+    var tl0 = cur && cur.translationLanguage ? String(cur.translationLanguage.languageCode || "") : "";
+    var B0 = state(p);
+    // 📖 `tracklist` بلا `{includeAsr:true}` يعيد اليدويّةَ وحدَها، و`setOption(track)` يطابق `languageCode` ويُهمل `kind`
+    // (اليدويّةُ قبل التلقائيّة) ⇒ كائنُ القائمة نفسُه يُمرَّر ما وُجد، وإلا اللغةُ وحدَها
+    // العربيّةُ معروضةٌ سلفاً (اختارها المستخدم) ⇐ لا نلمس شيئاً، ولا شيءَ يُعاد
+    if (B0.aria === "true" && (tl0.split("-")[0] === "ar" || (!tl0 && String((cur && cur.languageCode) || "").split("-")[0] === "ar"))) {
+      MEM.show = { v: a.v, set: false }; return { ok: true, how: "already" };
+    }
+    var ccOn = B0.aria === "true", prevTrack;
+    try { prevTrack = JSON.parse(B0.opt); } catch (e) { prevTrack = undefined; }
+    var seen = [], po = null;
+    if (typeof PerformanceObserver === "function") {
+      po = new PerformanceObserver(function (l) {
+        l.getEntries().forEach(function (e) { var n = String(e.name); if (n.indexOf(TT) >= 0) seen.push({ name: n, status: e.responseStatus, size: e.encodedBodySize, xfer: e.transferSize }); });
+      });
+      try { po.observe({ type: "resource" }); } catch (e) { po = null; }
+    }
+    MEM.show = { v: a.v, set: true, B0: B0, B1: { ls: B0.ls, ss: B0.ss }, ccOn: ccOn, prevTrack: prevTrack };
+    try {
+      p.loadModule("captions");
+      var tl = null, i;
+      for (i = 0; i < 15; i++) { try { tl = p.getOption("captions", "tracklist", { includeAsr: true }); } catch (e) { tl = null; } if (Array.isArray(tl) && tl.length) break; await delay(100); }
+      var o = Array.isArray(tl) ? first(tl, function (x) { return x && x.languageCode === a.code && (x.kind === "asr") === !!a.asr; }) : null;
+      var target = Object.assign({}, o || { languageCode: a.code, kind: a.asr ? "asr" : "" });
+      // كائنُ العربيّة من قائمة لغات الترجمة نفسِها إن وُجد (📖 يُخزَّن كما مُرِّر ولا يُطابَق بها)
+      var tls = null;
+      try { tls = p.getOption("captions", "translationLanguages"); } catch (e) { tls = null; }
+      var arT = Array.isArray(tls) ? first(tls, function (x) { return x && String(x.languageCode || "").split("-")[0] === "ar"; }) : null;
+      if (String(a.code).split("-")[0] !== "ar") target.translationLanguage = arT ? { languageCode: arT.languageCode, languageName: arT.languageName } : { languageCode: "ar", languageName: "العربية" };
+      p.setOption("captions", "track", target);
+      // ⛔ ورفضُ طلب المشغّل نفسِه يرفع القاطع: الاتصالُ مرفوضٌ فلا نُجبر بعده (§٣)
+      for (i = 0; i < 40; i++) {
+        await delay(100);
+        var bad = first(seen, function (x) { return x.status >= 400 || (x.status === 200 && x.size === 0 && x.xfer > 0); });
+        if (bad) { MEM.stop = { at: Date.now(), why: "show status=" + bad.status }; hide(); return { ok: false, reason: "breaker", why: MEM.stop.why }; }
+        if (first(seen, function (x) { return x.status > 0 && /[?&]tlang=ar/.test(x.name); }) || !target.translationLanguage) break;
+      }
+      return { ok: true, how: o ? "set-tracklist" : "set-code" };
+    } catch (e) {
+      hide();
+      return { ok: false, reason: "threw", err: String((e && e.message) || e).slice(0, 120) };
+    } finally { if (po) { try { po.disconnect(); } catch (e) { /* مُنفصلٌ سلفاً */ } } }
+  }
+  // يُعاد ما غيّره «العرض» وحدَه: CC إلى حاله بالواجهة لا بنقرة (#156)، ومفاتيحُ المُعيِّن إلى ما كانت حرفاً
+  function hide() {
+    var s = MEM.show, p = player();
+    MEM.show = null;
+    if (!s || !s.set || !p) return { ok: true, how: "none" };
+    var act = restoreAct(p, s.B0, s.ccOn, s.prevTrack);
+    var fixed = fixAll(s.B1, state(p), s.ccOn);
+    setTimeout(function () { fixAll(s.B1, state(p), s.ccOn); }, 2000);
+    return { ok: true, how: act, restored: fixed };
+  }
+
+  // ⭐ ساعةُ المشغّل وساعةُ العنصر معاً، في مهمّةٍ واحدة — إعلانٌ مُدمَجٌ في الخادم يجعل زمنَ العنصر يسبق
+  // زمنَ المحتوى بطوله، فالفرقُ يُطرح (مراجعة #6). **متزامنٌ عمداً:** يُجاب قبل أن تعود dispatchEvent.
+  function clock() {
+    var p = player(), vv = p && p.querySelector("video");
+    if (!p || !vv || typeof p.getCurrentTime !== "function") return { ok: false, reason: "no-player" };
+    var pt = NaN;
+    try { pt = Number(p.getCurrentTime()); } catch (e) { pt = NaN; }
+    return { ok: Number.isFinite(pt), pt: pt, vt: vv.currentTime, ad: isAd(p) };
   }
 
   window.addEventListener("__vz_dub_req__", function (e) {
     var m = null;
     try { m = typeof e.detail === "string" ? JSON.parse(e.detail) : null; } catch (x) { m = null; }
     if (!m || typeof m.id !== "string") return;
+    if (m.op === "time") {
+      var t = clock(); t.id = m.id;
+      window.dispatchEvent(new CustomEvent("__vz_dub_res__", { detail: JSON.stringify(t) }));
+      return;
+    }
     var job = m.op === "ping" ? Promise.resolve({ ok: true })
       : m.op === "facts" ? facts()
       : m.op === "capture" ? capture(m.args)
+      : m.op === "show" ? show(m.args || {})
+      : m.op === "hide" ? Promise.resolve(hide())
       : Promise.resolve({ ok: false, reason: "bad-op" });
     job.then(null, function (err) { return { ok: false, reason: "threw", err: String((err && err.message) || err).slice(0, 120) }; })
       .then(function (r) {

@@ -39,7 +39,7 @@ There is no test suite. Verify UI changes manually in the browser.
 | `storage.js` | Shared by popup/options/background: sync quota guards (`safeSyncSet`), schema migration (`migrateAll`), and the verbatim-paired blocks with `content.js`. Classic script, **not** an ES module |
 | `background.js` | Service worker. **Migration only** — one `chrome.runtime.onInstalled` listener, nothing else (owner decision) |
 | `yt_quality_main.js` | Runs in the page MAIN world to drive the YouTube player quality API, which the isolated world cannot reach |
-| `yt_dub_main.js` | **#168 — prototype on branch `168-dub-mac`, not merged.** Page MAIN world, **injected on demand by the popup's «دبلِج» button — deliberately NOT in the manifest**, so no line of it runs on a page where nobody pressed it. Reads the video's audio/caption tracks and captures the transcript from the player's own signed request (**one request of ours per video, a circuit breaker on the first refusal, and M2+R: YouTube's sticky caption keys restored byte-for-byte**). Every decision lives in `content.js` (`dub*`), tested by `tools/test-dub-core.js` |
+| `yt_dub_main.js` | **#168 — prototype on branch `168-dub-mac`, not merged.** Page MAIN world, **injected on demand by the popup's «دبلِج» button — deliberately NOT in the manifest**, so no line of it runs on a page where nobody pressed it. Ops over a JSON CustomEvent bridge: `facts` (audio/caption tracks) · `capture` (the transcript from the player's own signed request — **one request of ours per video, kept in page memory so a repeat costs nothing, a circuit breaker on the first refusal, and M2+R: YouTube's sticky caption keys restored byte-for-byte**) · `show`/`hide` (make the player itself display its Arabic auto-translation — **zero requests of ours; `tlang` is refused when anyone but the player asks** — and restore CC and the sticky keys on stop) · `time` (player clock vs element clock, for server-stitched ads). Every decision lives in `content.js` (`dub*`), tested by `tools/test-dub-core.js` (pure) and `tools/test-dub-engine.js` (the real block and this file together on a fake player) |
 | `icons/` | Extension icons (16/32/48/128) referenced by `manifest.icons` + `action.default_icon` |
 | `tools/` | Dev-only scripts run with `node`, **never shipped** — see Packaging below |
 | `README.md` | User-facing Arabic readme |
@@ -229,6 +229,12 @@ settings = {
     hideOnPreviews                     // default true (#51): absence means HIDE, not show
   },
   ytAutoQuality: "" | "hd1080" | ...,   // YouTube default quality ("" = auto)
+  // #168 (prototype branch 168-dub-mac) — written by the popup only, sent to the engine in GVZ_DUB_START/SET
+  // (content.js never reads it). An addition, not a migration: absent ⇒ the defaults below.
+  dub: { source: "yt" | "device",       // default "yt": YouTube's Arabic captions as displayed
+         volume: 0..100,                // default 100
+         rate: "auto" | "1" | "1.25" | "1.5" | "1.75" | "2",
+         voice: { <platform>: voiceURI } }, // per OS — macOS voices are not Windows voices
   ytShortsRedirect: boolean,            // default true: rewrite /shorts/<id> → /watch?v=<id>
   cleanPlayer: {
     enabled: boolean,
@@ -284,7 +290,8 @@ When adding a new action you MUST touch:
 | `GVZ_ACTIVATED` | popup | Sent after manual activation. Re-runs `applyYtQualityStep()` — the *same* definition the startup step consumes. Needed because a page that already has `content.js` ignores re-injection (`__GVZ_CONTENT_LOADED__`), so nothing would re-trigger the quality request. **Not** a `RELOAD_*`: those go through `flushReload`, which returns early when the settings snapshot is unchanged — and in a wake nothing has changed by definition (audit #38ج) |
 | `SET_VOLUME_BOOST` | popup | Applies the Sound Booster gain (clamped 100–600) to every video in the frame and **answers with the result**, so the popup can explain a silent no-op instead of moving a slider that does nothing |
 | `GET_VOLUME_BOOST` | popup | Returns `{pct, reason}` — `reason: "silent"` outranks any earlier failure because it means audio is gone |
-| `GVZ_DUB_START` | popup | **#168 (prototype)** — top frame only (`frameId: 0`), after the popup injected `yt_dub_main.js`. Starts the lazy dub engine and answers its status at once; the work continues in the page, so closing the popup does not stop it. A frame that has not started answers `not-started` and does not wake (#13b) |
+| `GVZ_DUB_START` | popup | **#168 (prototype)** — top frame only (`frameId: 0`), after the popup injected `yt_dub_main.js`. Carries `opts` (`source` «yt» = read YouTube's own Arabic captions as displayed, zero requests of ours · «device» = capture the English text once and translate it on the device · `volume` 0–1 · `rate` «auto» or a Chrome rate ≤ 2 · `voice` voiceURI). Starts the lazy dub engine and answers its status at once; the work continues in the page, so closing the popup does not stop it. A frame that has not started answers `not-started` and does not wake (#13b) |
+| `GVZ_DUB_SET` | popup | Applies changed `opts` (volume · rate · voice) to the running dub from its next utterance; the source changes only on the next start |
 | `GVZ_DUB_STOP` | popup | Silences and stops. `why: "other-tab"` is sent to every other YouTube tab when one starts — the speech queue is one per browser, so the last press wins (خ14) |
 | `GVZ_DUB_STATUS` | popup | Returns the run's state, step, hold/refusal reason and counters — polled while the popup is open |
 

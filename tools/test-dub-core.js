@@ -42,9 +42,9 @@ function constOf(name) {
 }
 
 const CONSTS = ["DUB_LEAD_S", "DUB_LATE_MAX_S", "DUB_REMAIN_MIN", "DUB_SEG_GAP_A", "DUB_SEG_CAP_A", "DUB_SEG_GAP_M",
-  "DUB_SEG_CAP_M", "DUB_SEG_END_PAD", "DUB_CURVE_MAC", "DUB_R_MAX", "DUB_RATE_CAP", "DUB_CPS", "DUB_BRIDGE_MAX"];
+  "DUB_SEG_CAP_M", "DUB_SEG_END_PAD", "DUB_CURVE_MAC", "DUB_R_MAX", "DUB_RATE_CAP", "DUB_AUTO_MAX", "DUB_CPS", "DUB_BRIDGE_MAX"];
 const FNS = ["dubPrim", "dubXtDecode", "dubAudioNorm", "dubCapNorm", "dubDecide", "dubSegment", "dubRealSpeed",
-  "dubChromeRate", "dubFirstAt", "dubNext", "dubPickVoice", "dubMainCall"];
+  "dubChromeRate", "dubFirstAt", "dubNext", "dubPickVoice", "dubMainCall", "dubYtSource", "dubDisplayNext", "dubCaptionLines"];
 
 function makeWindow() {
   const L = {};
@@ -115,6 +115,18 @@ vm.runInContext(CONSTS.map((n) => `var ${n} = ${constOf(n)};`).join("\n") + "\n"
     check("[٢] (هـ) timing-optimized نصُّ دبلجةٍ آليّة ⇐ يُترك", D(false, [], [ASR("en", { variant: "timing-optimized" })]).k === "none");
     check("[٢] tlang يُترك: «ar» مترجَمةً ليست يدويّةً عربيّة", D(false, [], [ASR("en"), MAN("ar", { tlang: "ar" })]).k === "asr");
     check("[٢] فخّ «Bulgarian» (درس #161): bg ليست ar", D(false, [{ li: "bg", cur: true }], [MAN("bg"), ASR("en")]).k === "asr");
+    // مراجعة #17 — وسمُ «ar» على المسار الأصليّ تغلبه التلقائيّةُ الإنجليزيّة (الفجوة د)، والدبلجةُ عربيّةٌ أبداً
+    check("[٢] أصليٌّ موسومٌ «ar» وتلقائيّتُه إنجليزيّة ⇐ تُدبلج (مراجعة #17)", D(false, [{ acont: "original", li: "ar", cur: true }], [ASR("en")]).k === "asr");
+    check("[٢] أصليٌّ «ar» وتلقائيّتُه عربيّة ⇐ لا شيء", D(false, [{ acont: "original", li: "ar", cur: true }], [ASR("ar")]).k === "arNow");
+    check("[٢] أصليٌّ «ar» بلا تلقائيّة ⇐ لا شيء (لا دليلَ يخالفه)", D(false, [{ acont: "original", li: "ar", cur: true }], [MAN("en")]).k === "arNow");
+    check("[٢] ودبلجةٌ عربيّةٌ جارية ⇐ لا شيء ولو تلقائيّتُها إنجليزيّة", D(false, [{ id: XT_AR, cur: true }], [ASR("en")]).k === "arNow");
+    // «ترجمة يوتيوب»: ما يقرّره §٣ — إلا أنّ لغةَ كلامٍ غيرَ الإنجليزيّة تُترجَم بيوتيوب نفسِه
+    const Y = (audio, caps) => { const cn = caps.map(ctx.dubCapNorm); const d = ctx.dubDecide({ live: false, audio: audio.map(ctx.dubAudioNorm), caps: cn }); return ctx.dubYtSource(d, cn); };
+    check("[٢] يوتيوب: كلامٌ ألمانيّ ⇐ تلقائيّتُه الألمانيّة مترجمةً", (Y([], [ASR("de")]) || {}).code === "de");
+    check("[٢] يوتيوب: ويدويّةُ لغة الكلام قبل تلقائيّتها", (Y([], [ASR("de"), MAN("de")]) || {}).asr === false);
+    check("[٢] يوتيوب: يدويّةٌ عربيّة ⇐ تُعرض هي", (Y([], [MAN("ar"), ASR("en")]) || {}).code === "ar");
+    check("[٢] يوتيوب: وما يرفضه §٣ يُرفض (دبلجةٌ عربيّةٌ جارية · لا ترجمة · لا قاعدة)",
+      Y([{ id: XT_AR, cur: true }], [ASR("en")]) === null && Y([], []) === null && Y([], [MAN("en")]) === null);
   }
 
   // ---------------------------------------------------------------- [٣] المنحنى
@@ -129,24 +141,46 @@ vm.runInContext(CONSTS.map((n) => `var ${n} = ${constOf(n)};`).join("\n") + "\n"
   }
 
   // ---------------------------------------------------------------- [٤] المُجدوِل
-  console.log("\n[٤] قرارُ النبضة: الموعد · التخطّي (خ13) · الترجمةُ المنتظرة · السقف");
+  console.log("\n[٤] قرارُ النبضة: الموعد · التخطّي (خ13 بقيمتيه الجديدتين) · الترجمةُ المنتظرة · سقفُ التلقائيّة");
   {
     const S = (start, win, ar) => ({ start, win, ar });
-    const N = (sents, ct, rate) => ctx.dubNext(sents, 0, ct, rate || 1, ctx.DUB_CPS, ctx.DUB_R_MAX, ctx.DUB_CURVE_MAC);
+    const N = (sents, ct, rate) => ctx.dubNext(sents, 0, ct, rate || 1, ctx.DUB_CPS, ctx.DUB_AUTO_MAX, ctx.DUB_CURVE_MAC);
+    check("[٤] الثوابتُ كما سُحبت إليه: ثانيتان · 30٪ · سقفُ التلقائيّة 1.4 دون R_max", ctx.DUB_LATE_MAX_S === 2 && ctx.DUB_REMAIN_MIN === 0.3 && ctx.DUB_AUTO_MAX === 1.4 && ctx.DUB_AUTO_MAX < ctx.DUB_R_MAX);
     check("[٤] قبل الموعد ⇐ انتظار", N([S(10000, 3000, "مرحبا")], 9.5).wait === "early");
     const go = N([S(10000, 3000, "مرحبا")], 9.95);
     check("[٤] في الموعد (بسبقٍ 0.1 ث) ⇐ تُنطق بسرعة 1", go.speak && go.rate === 1, go);
-    check("[٤] بدءٌ متأخّرٌ أكثرَ من ثانية ⇐ تُتخطّى", N([S(10000, 5000, "مرحبا")], 11.2).skipped === 1);
-    check("[٤] بقي أقلُّ من 60٪ من نافذتها ⇐ تُتخطّى", N([S(10000, 1000, "مرحبا")], 10.5).skipped === 1);
+    check("[٤] بدءٌ متأخّرٌ أكثرَ من ثانيتين ⇐ تُتخطّى", N([S(10000, 5000, "مرحبا")], 12.2).skipped === 1);
+    check("[٤] ومتأخّرٌ ثانيةً ونصفاً ⇐ تُنطق (تأخّرٌ يتراكم ولا تُقطع الحكاية)", N([S(10000, 5000, "مرحبا")], 11.5).speak === true);
+    check("[٤] بقي أقلُّ من 30٪ من نافذتها ⇐ تُتخطّى", N([S(10000, 1000, "مرحبا")], 10.75).skipped === 1);
     const two = N([S(10000, 1000, "أ"), S(11000, 3000, "ب")], 10.85);   // الأولى بقي منها 15٪ · والثانية بعد 0.15 ث (السبقُ 0.1)
     check("[٤] وتُتخطّى إلى التي بعدها لا تُنسى", two.skipped === 1 && two.i === 1 && two.wait === "early", two);
     check("[٤] ترجمةٌ لم تصل ⇐ انتظار لا تخطٍّ", N([S(10000, 3000, null)], 10).wait === "translate");
     check("[٤] ترجمةٌ فشلت (فارغة) ⇐ تُتخطّى", N([S(10000, 3000, "")], 10).skipped === 1);
     const long = N([S(10000, 1000, "ب".repeat(60))], 10);
-    check("[٤] جملةٌ لا تتّسع ⇐ بالسقف: فعليّةٌ 1.91 وكروم 2 لا أكثر", long.real === ctx.DUB_R_MAX && long.rate === ctx.DUB_RATE_CAP, long);
+    check("[٤] جملةٌ لا تتّسع ⇐ بسقف التلقائيّة 1.4 لا بـR_max", long.real === ctx.DUB_AUTO_MAX && Math.abs(long.rate - ctx.dubChromeRate(1.4)) < 1e-9, long);
+    const capR = ctx.dubNext([S(10000, 1000, "ب".repeat(60))], 0, 10, 1, ctx.DUB_CPS, ctx.DUB_R_MAX, ctx.DUB_CURVE_MAC);
+    check("[٤] وبـR_max سقفاً ⇐ كروم 2 لا أكثر (السقفُ المطلق)", capR.real === ctx.DUB_R_MAX && capR.rate === ctx.DUB_RATE_CAP, capR);
     const slow = N([S(10000, 2000, "ب".repeat(16))], 10, 1), fast = N([S(10000, 2000, "ب".repeat(16))], 10, 1.5);
     check("[٤] سرعةُ الفيديو تقصّر النافذة ⇐ سرعةٌ أعلى", fast.need > slow.need * 1.49 && fast.need < slow.need * 1.51, [slow.need, fast.need]);
     check("[٤] انتهت الجمل ⇐ done", N([S(1000, 1000, "أ")], 30).done === true);
+    const fx = ctx.dubNext([S(10000, 1000, "ب".repeat(60))], 0, 10, 1, ctx.DUB_CPS, ctx.DUB_R_MAX, ctx.DUB_CURVE_MAC, 1.25);
+    check("[٤] سرعةٌ يختارها المستخدم ⇐ تُنطق بها، والتخطّي بقاعدتيه", fx.speak && fx.rate === 1.25, fx);
+    const DN = (pnd, shown, now, win, fixed) => ctx.dubDisplayNext(pnd, shown, now, win, ctx.DUB_CPS, ctx.DUB_AUTO_MAX, ctx.DUB_CURVE_MAC, fixed);
+    const P = { text: "سطرٌ عربيٌّ قصير", line: "سطرٌ عربيٌّ قصير", at: 1000 };
+    check("[٤] العرض: لا سطرَ ينتظر ⇐ انتظار", DN(null, [], 1000, 3000).wait === "none");
+    check("[٤] العرض: سطرٌ معروض ⇐ يُنطق ولو تأخّر", DN(P, [P.line], 1000 + 2500, 3000).speak === true);
+    check("[٤] العرض: سطرٌ غاب عن الشاشة بعد أكثرَ من ثانيتين ⇐ يُتخطّى", DN(P, [], 1000 + 2500, 3000).skip === true);
+    check("[٤] العرض: وغاب منذ أقلَّ من ثانيتين ⇐ يُنطق", DN(P, [], 1000 + 1500, 3000).speak === true);
+    const lg = DN(Object.assign({}, P, { text: "ب".repeat(80) }), [P.line], 1000, 3000);
+    check("[٤] العرض: سطرٌ طويلٌ في نافذةٍ قصيرة ⇐ بسقف التلقائيّة لا أكثر", Math.abs(lg.rate - ctx.dubChromeRate(1.4)) < 1e-9, lg);
+    check("[٤] العرض: وسرعةُ المستخدم تغلب", DN(P, [P.line], 1000, 3000, 1.5).rate === 1.5);
+    const fakeP = (lines) => ({ querySelectorAll: (q) => (q === ".caption-visual-line" ? lines.map((t) => ({ textContent: t })) : []) });
+    const W = (lang, lines) => ({ hasAttribute: (a) => a === "lang", getAttribute: () => lang,
+      querySelectorAll: (q) => (q === ".caption-visual-line" ? lines.map((t) => ({ textContent: t })) : []) });
+    const winP = { querySelectorAll: (q) => (q === ".caption-window" ? [W("en", ["English (auto-generated) >> Arabic Click ⚙ for settings"]), W("ar", ["مرحباً بكم"])] : []) };
+    check("[٤] ⛔ نافذةُ اسم المسار (lang=en) لا تُقرأ — نافذةُ العربيّة وحدَها", JSON.stringify(ctx.dubCaptionLines(winP)) === JSON.stringify(["مرحباً بكم"]), ctx.dubCaptionLines(winP));
+    check("[٤] السطورُ المعروضة تُقرأ بنصّها و[موسيقى] و♪ تُحذف", JSON.stringify(ctx.dubCaptionLines(fakeP(["  مرحباً  بكم ", "[موسيقى]", "♪♪ هنا"]))) === JSON.stringify(["مرحباً بكم", "هنا"]),
+      ctx.dubCaptionLines(fakeP(["  مرحباً  بكم ", "[موسيقى]", "♪♪ هنا"])));
     check("[٤] الاستئنافُ من أوّل جملةٍ تبدأ عند الموضع أو بعده (§٣)", ctx.dubFirstAt([S(1000), S(5000), S(9000)], 5) === 1 && ctx.dubFirstAt([S(1000)], 9) === 1);
   }
 
@@ -157,6 +191,9 @@ vm.runInContext(CONSTS.map((n) => `var ${n} = ${constOf(n)};`).join("\n") + "\n"
       { lang: "ar-001", name: "Laila (Enhanced)", localService: true }, { lang: "ar-SA", name: "Google العربية", localService: false }];
     check("[٥] العربيّ المحلّيّ المحسّن أوّلاً", ctx.dubPickVoice(vs).name === "Laila (Enhanced)", ctx.dubPickVoice(vs));
     check("[٥] بلا صوتٍ عربيّ ⇐ null (لا اسمٌ يُخمَّن)", ctx.dubPickVoice([vs[0]]) === null);
+    const vu = vs.map((v) => Object.assign({ voiceURI: v.name }, v));
+    check("[٥] ما اختاره المستخدمُ أوّلاً إن كان عربيّاً موجوداً", ctx.dubPickVoice(vu, "Majed").name === "Majed");
+    check("[٥] واختيارٌ غيرُ عربيّ أو غائبٌ ⇐ الافتراضيّ", ctx.dubPickVoice(vu, "Samantha").name === "Laila (Enhanced)" && ctx.dubPickVoice(vu, "nope").name === "Laila (Enhanced)");
     const w = ctx.window;
     w.addEventListener("__vz_dub_req__", (e) => {
       const m = JSON.parse(e.detail);
@@ -249,7 +286,7 @@ vm.runInContext(CONSTS.map((n) => `var ${n} = ${constOf(n)};`).join("\n") + "\n"
     check("[٦] ⭐ وقائمةُ الجلسة أُزيلت إذ لم تكن", e1.session.getItem(e1.PREFS) === null, e1.session.dump());
     check("[٦] وCC أُرجع بالواجهة لا بنقرة (unloadModule — كان مطفأً بلا وحدة)", e1.calls[e1.calls.length - 1] === "unload:captions", e1.calls);
     const c2 = await e1.ask("capture", SRC_EN);
-    check("[٦] ثانيةً للفيديو نفسِه ⇐ already، ولا طلب", c2.ok === false && c2.reason === "already" && e1.fetched.length === 1, c2);
+    check("[٦] ثانيةً للفيديو نفسِه ⇐ من ذاكرة الصفحة، **ولا طلب** (مراجعة #1 · #15)", c2.ok === true && c2.how === "cached" && c2.events.length === 2 && e1.fetched.length === 1, c2);
 
     const e2 = env({ refuse: true });
     const r1 = await e2.ask("capture", SRC_EN);
@@ -279,11 +316,14 @@ vm.runInContext(CONSTS.map((n) => `var ${n} = ${constOf(n)};`).join("\n") + "\n"
     const evs = Array.from(block.matchAll(/addEventListener\("([^"]+)"/g)).map((m) => m[1]);
     check("[٧] لا مستمعَ إلا للصوت والتنزيل والجسر — ولا حدثَ وسائط (خ16)",
       evs.length > 0 && evs.every((x) => ["voiceschanged", "downloadprogress", "__vz_dub_res__"].includes(x)), evs);
-    const tick = fn("dubTick");
-    const order = ["chrome.runtime?.id", "extensionActive()", "isInMiniPlayer(", "dubVideoId() !== run.vid", "ad-showing", "v.paused", "DUB_FREEZE_MS", "DUB_R_MAX", "DUB_SEEK_S", "dubNext("].map((s) => tick.indexOf(s));
-    check("[٧] ترتيبُ النبضة (§٣): يتيم · بوّابة · مصغّر · تنقّل · إعلان · توقّف · تجمّد · سرعة · قفزة · ثمّ الجملة",
-      order.every((x, i) => x > 0 && (i === 0 || x > order[i - 1])), order);
-    check("[٧] جملةٌ واحدةٌ منّا في الطابور", /if \(run\.cur\) return;/.test(tick));
+    const tick = fn("dubTick"), why = fn("dubWhy");
+    const o1 = ["chrome.runtime?.id", "extensionActive()", "isInMiniPlayer(", "dubVideoId() !== run.vid"].map((s) => why.indexOf(s));
+    const o2 = ["dubWhy(run)", "ad-showing", "v.paused", "DUB_FREEZE_MS", "DUB_R_MAX", "DUB_SEEK_S", "dubNext("].map((s) => tick.indexOf(s));
+    check("[٧] ترتيبُ النبضة (§٣): يتيم · بوّابة · مصغّر · تنقّل (`dubWhy`) ثمّ إعلان · توقّف · تجمّد · سرعة · قفزة · ثمّ الجملة",
+      [o1, o2].every((o) => o.every((x, i) => x > 0 && (i === 0 || x > o[i - 1]))), { o1, o2 });
+    check("[٧] وشروطُ الإيقاف نفسُها أثناء التجهيز (مراجعة #12)", /const why = dubWhy\(run\);/.test(fn("dubPrepare")));
+    check("[٧] جملةٌ واحدةٌ منّا في الطابور · ولا بدءَ والمشغّلُ يقفز (مراجعة #7)", /if \(run\.cur \|\| v\.seeking\) return;/.test(tick));
+    check("[٧] التاليةُ من حدث النطق لا من المؤقّت (مراجعة #9)", /if \(dub === run && run\.state === "running"\) dubTick\(run\);/.test(fn("dubUtter")));
   }
 
   // ---------------------------------------------------------------- [٨] الحقن والإرسال
@@ -300,8 +340,9 @@ vm.runInContext(CONSTS.map((n) => `var ${n} = ${constOf(n)};`).join("\n") + "\n"
     check("[٨] كلُّ إرسالٍ يحمل frameId: 0 (#24)", sends.length >= 2 && sends.every((s) => /\{ frameId: 0 \}/.test(s)), sends);
     const tail = MAIN.trim().split("\n").slice(-3).join("\n");
     check("[٨] العلمُ آخرُ سطرٍ في عالم الصفحة (#38ج)", /window\.__vzDubMain = true;\s*\n\}\)\(\);$/.test(tail), tail);
+    const G = "MEM.req[v] = { at: Date.now(), events: null }";
     check("[٨] ⛔ طلبٌ واحد: `fetch(` موضعٌ واحد، والحارسُ قبله", (MAIN.match(/\bfetch\(/g) || []).length === 1 &&
-      MAIN.indexOf("MEM.req[v] = Date.now()") > 0 && MAIN.indexOf("MEM.req[v] = Date.now()") < MAIN.indexOf("fetch("));
+      MAIN.indexOf(G) > 0 && MAIN.indexOf(G) < MAIN.indexOf("fetch("));
     check("[٨] ⛔ والقاطعُ يُفحص قبل الإجبار", MAIN.indexOf("if (MEM.stop) return") > 0 && MAIN.indexOf("if (MEM.stop) return") < MAIN.indexOf("p.loadModule(\"captions\")"));
     check("[٨] M2+R لا يكتب إلا مفاتيحَ المُعيِّن ومفتاحَ التشغيل", /if \(!SETTER\[f\]\.test\(k\) && !ONOFF\.test\(k\)\) return;/.test(MAIN));
   }
