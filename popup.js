@@ -680,6 +680,139 @@ async function sendBoost(pct, isFinal = false) {
   }
 }
 
+// ── #168 — الدبلجة العربية (تجريبيّة · فرع 168-dub-mac) ─────────────────────────
+// **المحرّكُ في الصفحة لا هنا**: إغلاقُ البوب-أب لا يوقفه، والبوب-أب يقول ما يجري أو لماذا لا (168ب).
+// كلُّ رسالةٍ إلى الإطار الأعلى وحدَه (`frameId: 0`) — لا إرسالَ بلا إطار (#24).
+const DUB_REASON_TEXT = {
+  gate: "الإضافة مطفأة أو هذا الموقع محظور",
+  "no-video": "لا فيديو في هذه الصفحة",
+  "main-missing": "تعذّر الوصول إلى مشغّل يوتيوب — أعد تحميل الصفحة ثمّ جرّب",
+  "no-player": "مشغّل يوتيوب لم يجهز بعد — انتظر بدء الفيديو ثمّ جرّب",
+  "stale-player": "المشغّل ما زال يحمل الفيديو السابق — انتظر بدء الفيديو أو أعد تحميل الصفحة",
+  unplayable: "يوتيوب لا يشغّل هذا الفيديو هنا",
+  ad: "إعلانٌ يُعرض — اضغط «دبلِج» بعد انتهائه",
+  nav: "تغيّر الفيديو أثناء التجهيز — اضغط «دبلِج» ثانيةً",
+  live: "بثٌّ مباشر — لا دبلجة للبثّ الآن",
+  arNow: "يوتيوب يُسمعك هذا الفيديو بالعربية سلفاً",
+  arOffer: "لهذا الفيديو صوتٌ عربيٌّ من يوتيوب: اختره من ⚙ في المشغّل ⇐ «المسار الصوتي»",
+  arVid: "الفيديو عربيّ الكلام أصلاً",
+  none: "لا ترجمةَ نصّيّة لهذا الفيديو — والدبلجة تقرأ منها",
+  other: "لا ترجمةَ تلقائيّة تكشف لغةَ الكلام، فلا أعرف من أيّ لغةٍ أدبلج",
+  lang: "لغةُ الكلام ليست الإنجليزية — الدبلجة من الإنجليزية وحدها الآن",
+  breaker: "رفض يوتيوب طلبَ الترجمة النصّيّة — توقّفتُ ولن أطلب ثانيةً في هذه الصفحة. لا تُعِد المحاولة اليوم من هذا الاتصال",
+  already: "طُلبت ترجمةُ هذا الفيديو في هذه الصفحة من قبل — أعد تحميل الصفحة",
+  "no-capture": "لم يطلب المشغّل الترجمة — أطفئ الترجمة (CC) وأعد تحميل الصفحة ثمّ اضغط «دبلِج»",
+  "no-observer": "المتصفّح لا يتيح مراقبة الطلبات هنا",
+  busy: "التقاطٌ آخر يجري — انتظر ثمّ جرّب",
+  "bad-url": "رابط الترجمة الملتقط غير مفهوم",
+  "not-json3": "ردّ الترجمة النصّيّة بشكلٍ غير متوقّع",
+  empty: "الترجمة النصّيّة فارغة",
+  facts: "تعذّرت قراءة مسارات الفيديو",
+  "no-translator": "مترجم كروم المدمج غير متاح في هذا المتصفّح",
+  "tr-unavailable": "مترجم كروم لا يدعم الإنجليزية ⇐ العربية على هذا الجهاز",
+  "tr-create": "تعذّر تجهيز مترجم كروم",
+  "no-voice": "لا صوتَ عربيّ في النظام — أضف صوتاً عربياً من إعدادات النظام ثمّ أعد تشغيل كروم",
+  inject: "تعذّر حقن جزء الدبلجة في الصفحة — أعد تحميلها",
+  threw: "عطبٌ داخليّ في الدبلجة"
+};
+const DUB_STEP_TEXT = {
+  facts: "يقرأ مسارات الفيديو…", capture: "يلتقط نصّ الفيديو من المشغّل…",
+  translator: "يجهّز مترجم كروم…", voice: "يجهّز الصوت العربي…", warmup: "يوقظ محرّك النطق…"
+};
+const DUB_HOLD_TEXT = {
+  paused: "الفيديو متوقّف — تستأنف حين تشغّله", frozen: "الفيديو يتحمّل…", ad: "إعلان — تستأنف بعده",
+  speed: "سرعة الفيديو أعلى مما يلحقه الصوت (حتى 1.91×) — صامتة", "no-video": "لا أجد الفيديو",
+  done: "انتهت جمل الفيديو"
+};
+const DUB_STOP_TEXT = {
+  user: "أوقفتَها", nav: "انتقلتَ إلى فيديو آخر — توقّفت", mini: "المشغّل المصغّر — توقّفت",
+  gate: "أُطفئت الإضافة أو حُظر الموقع — توقّفت", "other-tab": "بدأت الدبلجة في تبويبٍ آخر — توقّفت هنا",
+  restart: "أُعيد التشغيل", orphan: "أُعيد تحميل الإضافة — أعد تحميل الصفحة"
+};
+const DUB_KIND_TEXT = {
+  speak: "تنطق الترجمة العربية اليدويّة كما هي", manual: "تترجم الترجمة الإنجليزية اليدويّة",
+  asr: "تترجم الترجمة التلقائيّة"
+};
+let dubTabId = null, dubPoll = 0, dubLast = null;
+
+function isYouTubeWatchUrl(url) {
+  if (!isYouTubeUrl(url)) return false;
+  try { const u = new URL(url); return u.pathname === "/watch" && !!u.searchParams.get("v"); } catch { return false; }
+}
+
+function dubSend(message) {
+  return chrome.tabs.sendMessage(dubTabId, message, { frameId: 0 }).catch(() => null);
+}
+
+function renderDub(st) {
+  const btn = $("dubBtn"), note = $("dubNote");
+  if (!btn || !note) return;
+  const s = st && st.ok !== false ? st.state : "refused";
+  btn.textContent = s === "preparing" || s === "running" ? "أوقف الدبلجة" : "دبلِج هذا الفيديو";
+  btn.disabled = s === "master-off";
+  note.classList.remove("bad");
+  let text;
+  if (!st) text = "الإضافة غير محقونة في هذه الصفحة — أعد تحميلها ثمّ جرّب";
+  else if (s === "master-off") text = "الإضافة مطفأة من المفتاح الرئيسي";
+  else if (st.ok === false && st.reason === "not-started") text = "الإضافة لم تبدأ في هذه الصفحة — أعد تحميلها";
+  else if (s === "idle") text = "تقرأ ترجمةَ الكلام بصوتٍ عربيّ متزامن مع الفيديو. الكلام الإنجليزيّ وحده الآن.";
+  else if (s === "preparing") text = (DUB_STEP_TEXT[st.step] || "يجهّز…") + (st.step === "translator" && st.dl != null ? ` (تنزيل ${st.dl}٪)` : "");
+  else if (s === "running") {
+    text = (st.hold ? DUB_HOLD_TEXT[st.hold] || st.hold : "يُدبلج") + ` · الجملة ${Math.min(st.idx, st.total)} من ${st.total}` +
+      ` · نُطقت ${st.spoken} · تُخطّيت ${st.skipped}` + (st.lost ? ` · ضاعت ${st.lost}` : "") +
+      (DUB_KIND_TEXT[st.kind] ? ` · ${DUB_KIND_TEXT[st.kind]}` : "") +
+      (st.warm ? "" : " · ⚠️ لم أسمع جملةَ البدء — أهو تبويبٌ مكتوم؟");
+  } else if (s === "stopped") text = DUB_STOP_TEXT[st.reason] || "توقّفت الدبلجة";
+  else {
+    text = "⛔ " + (DUB_REASON_TEXT[st.reason] || `تعذّرت الدبلجة: ${st.reason}`) +
+      (st.reason === "lang" && st.detail ? ` (${st.detail})` : "");
+    note.classList.add("bad");
+  }
+  note.textContent = text;
+}
+
+async function refreshDub() {
+  dubLast = await dubSend({ type: "GVZ_DUB_STATUS" });
+  renderDub(dubLast);
+}
+
+async function loadDubUI() {
+  const card = $("dubCard");
+  const tab = await getActiveTab();
+  if (!card || !tab || !isYouTubeWatchUrl(tab.url)) { if (card) card.hidden = true; return; }
+  card.hidden = false;
+  dubTabId = tab.id;
+  if (!(await getMasterEnabled())) { renderDub({ ok: true, state: "master-off" }); return; }
+  await refreshDub();
+  clearInterval(dubPoll);
+  dubPoll = setInterval(refreshDub, 700);
+}
+
+async function toggleDub() {
+  if (dubTabId == null) return;
+  if (dubLast && (dubLast.state === "preparing" || dubLast.state === "running")) {
+    dubLast = await dubSend({ type: "GVZ_DUB_STOP" });
+    renderDub(dubLast);
+    return;
+  }
+  if (!(await getMasterEnabled())) { renderDub({ ok: true, state: "master-off" }); return; }
+  $("dubBtn").disabled = true;
+  try {
+    // عالمُ الصفحة يُحقن الآن وحدَه — لا شيءَ منه في صفحةٍ لم يُضغط فيها «دبلِج»
+    await chrome.scripting.executeScript({ target: { tabId: dubTabId, frameIds: [0] }, files: ["yt_dub_main.js"], world: "MAIN" });
+  } catch {
+    renderDub({ ok: false, state: "refused", reason: "inject" });
+    return;
+  }
+  // خ14: آخرُ ما ضُغط يفوز — قناةٌ **تُوقف ولا تُشغّل**: طابورُ النطق واحدٌ للمتصفّح كلِّه
+  const others = await chrome.tabs.query({ url: "*://*.youtube.com/*" }).catch(() => []);
+  for (const t of others) {
+    if (t.id !== dubTabId) chrome.tabs.sendMessage(t.id, { type: "GVZ_DUB_STOP", why: "other-tab" }, { frameId: 0 }).catch(() => {});
+  }
+  dubLast = await dubSend({ type: "GVZ_DUB_START" });
+  renderDub(dubLast);
+}
+
 async function loadBlockedSiteUI() {
   const data = await chrome.storage.sync.get({ settings: {} });
   const settings = data.settings || {};
@@ -926,6 +1059,7 @@ document.addEventListener("mousedown", (e) => {
   await loadFullscreenOnlyToggle();
   await checkPageStatus();
   await loadBoostUI();
+  await loadDubUI();
 
   const od = $("overlayDuration");
   const odValue = $("overlayDurationValue");
@@ -979,6 +1113,7 @@ document.addEventListener("mousedown", (e) => {
     }
   });
   $("checkStatus").addEventListener("click", checkPageStatus);
+  $("dubBtn")?.addEventListener("click", toggleDub);
 
   // ── #69: مسار فشل واحد للـ popup كذلك ────────────────────────────────────
   // كانت سبعةُ مواضع تُعلن الفشل و**واحدٌ يُرجِع الضابط** (المفتاح الرئيسي).

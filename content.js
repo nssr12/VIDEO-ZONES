@@ -4906,6 +4906,486 @@ async function loadRulesForThisHost(pre) {
 }
 
 
+// ── #168 — الدبلجة العربية لمقاطع يوتيوب (نسخةٌ تجريبيّة · فرع 168-dub-mac) ────────
+// **صوتٌ عربيّ يقرأ ترجمةَ كلام الفيديو متزامناً معه، على صفحة المشاهدة** (AUDIT §17).
+// ⭐ **كسولٌ بالبناء:** لا مؤقّتَ ولا مستمعَ ولا قراءةَ قبل أوّل «دبلِج» من البوب-أب — وما هنا
+// دوالُّ تُعرَّف ولا تُنادى. **والتقاطُ النصّ في عالم الصفحة** (`yt_dub_main.js`، يحقنه البوب-أب
+// عند الضغط وحدَه) **وكلُّ قرارٍ هنا** — فالدوالُّ الخالصة تُختبر في العقدة (`tools/test-dub-core.js`).
+// ⛔ **ما لا يُلمس (قرارات المالك في §4):** لا `video.volume` ولا `playbackRate` (خ5) · **لا مستمعَ
+// لأحداث الوسائط — مؤقّتٌ يقرأ الحال** (خ16) · **لا `pause()`/`resume()` للنطق أبداً** (📐 علّق
+// طابورَ المتصفّح كلَّه) · **و`cancel()` بين `start` و`end` لجملتنا وحدَها** (يوقف ما يُنطق في أيّ تبويب).
+// 🎯 **كلُّ رقمٍ هنا اختيارُ تصميمٍ يُثبَّت بعد 168أ إلا ما عليه 📐.**
+const DUB_TICK_MS = 100;            // 🎯 نبضةُ المُجدوِل
+const DUB_LEAD_S = 0.1;             // 🎯 نبدأ قبل موعد الجملة بقليل: كمونُ المحرّك
+const DUB_LATE_MAX_S = 1.0;         // 🎯 خ13: جملةٌ يتأخّر بدؤها أكثرَ من ثانية تُتخطّى
+const DUB_REMAIN_MIN = 0.6;         // 🎯 ولا تُنطق جملةٌ بقي من نافذتها أقلُّ من 60٪
+const DUB_FREEZE_MS = 400;          // 🎯 فيديو متجمّدٌ هذا القدرَ ⇐ صمت
+const DUB_SEEK_S = 1.0;             // 🎯 قفزةٌ أكبرُ من ثانية ⇐ صمتٌ ثمّ استئنافٌ من الموضع
+const DUB_AHEAD = 8;                // 🎯 جملٌ تُترجم أمام الموضع
+const DUB_TR_INFLIGHT = 3;          // 🎯 §٣: ثلاثُ ترجماتٍ على الأكثر قيد التنفيذ
+const DUB_CPS = 8.15;               // 📐 حروفٌ عربيّةٌ في الثانية بسرعة 1 («ليلى»، الماك: 8.0–8.3) — ثمّ يتعلّم
+const DUB_R_MAX = 1.91;             // 📐 أعلى سرعةٍ فعليّة فهمها المالك في الجملتين (س21 · س23) = كروم 2
+const DUB_RATE_CAP = 2;             // 📐 وسرعةُ كروم التي أعطتها — لا تُتجاوز ولو قال المنحنى 2.004
+// 📐 سرعةُ كروم ⇐ السرعةُ الفعليّة على الماك («ليلى (محسّن)»، س4 · س21 · س24): **منحنى يُقلب لا قسمة**
+const DUB_CURVE_MAC = [[1, 1], [1.5, 1.505], [2, 1.905], [2.5, 2.48], [3, 2.955], [4, 3.915]];
+const DUB_SEG_GAP_A = 600;          // 🎯 مِجَسّ 5: فجوةُ بدءٍ تقطع جملةَ التلقائيّة (ms)
+const DUB_SEG_CAP_A = 20;           // 🎯 وسقفُها بالكلمات
+const DUB_SEG_GAP_M = 1200;         // 🎯 فجوةُ نهايةٍ إلى بدء تقطع جملةَ اليدويّة (ms)
+const DUB_SEG_CAP_M = 25;           // 🎯 وسقفُها بالكلمات
+const DUB_SEG_END_PAD = 500;        // 🎯 نافذةُ الجملة الأخيرة: نهايتُها + نصف ثانية
+const DUB_BRIDGE_MAX = 20000000;    // 🎯 حدُّ طول الردّ من عالم الصفحة (حرفاً)
+const DUB_CACHE_MAX = 5;            // 🎯 نصوصُ آخر خمسة فيديوهات في الذاكرة: لا طلبَ ثانٍ لفيديوٍ دُبلج
+const DUB_HELLO = "بدأتِ الدبلجة";   // جملةُ الإحماء: 📐 المحرّكُ يُسقط أوّلَ نطقين بعد خمس دقائق صمت
+
+let dub = null;                     // ⭐ التشغيلةُ الجارية — null حتى أوّل «دبلِج»
+let dubToken = 0;
+let dubTr = null;                   // مترجمُ كروم، يُنشأ مرّةً في الصفحة
+const dubTranscripts = new Map();   // videoId ⇒ { sents, kind } — §٣: طلبٌ واحدٌ منّا لكلّ فيديو
+
+// البوّابةُ الواحدة أوّلاً (#64)، ثمّ النطاق: صفحةُ المشاهدة في الإطار الأعلى (§٢)
+function dubActive() {
+  return extensionActive() && isYouTubeHost() && window.top === window && location.pathname === "/watch";
+}
+
+function dubVideoId() {
+  return new URLSearchParams(location.search).get("v") || "";
+}
+
+// الوسمُ الأوّل تماماً (درس #161: «ar» يطابق «Bulgarian» بالاحتواء)
+function dubPrim(s) {
+  return String(s || "").split(".")[0].split(/[-_]/)[0].toLowerCase();
+}
+
+// 📐 معرّفُ مسار الصوت «itag;base64(protobuf)» ⇐ «k=v:k=v» (مِجَسّ 8) — والنصُّ الصريحُ يمرّ، والمعطوبُ ⇐ ""
+function dubXtDecode(x) {
+  const s = typeof x === "string" ? x : "";
+  if (!s || /(?:^|[:&,])(acont|lang)=/.test(s)) return s;
+  const b = (s.indexOf(";") >= 0 ? s.slice(s.indexOf(";") + 1) : s).replace(/-/g, "+").replace(/_/g, "/");
+  const out = [];
+  let bin = "", i = 0;
+  try { bin = atob(b + "===".slice(0, (4 - b.length % 4) % 4)); } catch { return ""; }
+  const vi = () => {
+    let r = 0, sh = 0, c = 0;
+    do { c = bin.charCodeAt(i++); r += (c & 127) * Math.pow(2, sh); sh += 7; } while (c & 128 && i < bin.length);
+    return r;
+  };
+  while (i < bin.length) {
+    if (vi() !== 10) return "";
+    const n = vi(), end = i + n;
+    let k = "", val = "";
+    if (!(n > 0) || !Number.isFinite(end) || end > bin.length) return "";
+    while (i < end) {
+      const tg = vi(), m = vi();
+      if (!Number.isFinite(m) || i + m > end) return "";
+      if (tg === 10) k = bin.slice(i, i + m); else if (tg === 18) val = bin.slice(i, i + m);
+      i += m;
+    }
+    if (!/^[\x20-\x7e]+$/.test(k + val)) return "";
+    out.push(k + "=" + val);
+  }
+  return out.join(":");
+}
+
+// مسارُ صوتٍ من عالم الصفحة ⇐ { lang, cur, def, auto, acont } — «;» بلا فكٍّ ليس لغة
+function dubAudioNorm(t) {
+  const o = t || {};
+  const xt = [dubXtDecode(o.xtags), dubXtDecode(o.id), o.acont ? "acont=" + o.acont : ""].filter(Boolean).join(":");
+  const xl = /(?:^|[:&,])lang=([^:&,]+)/.exec(xt), xa = /(?:^|[:&,])acont=([^:&,]+)/.exec(xt);
+  const id = String(o.id || ""), semi = id.indexOf(";") >= 0;
+  return { lang: dubPrim(o.li || (xl ? xl[1] : "") || (semi ? "" : id)), cur: !!o.cur, def: !!o.def,
+    auto: !!o.auto || /dubbed-auto/.test(xt), acont: xa ? xa[1] : "" };
+}
+
+function dubCapNorm(c) {
+  const o = c || {};
+  return { code: String(o.code || ""), lang: dubPrim(o.code), asr: o.kind === "asr", variant: String(o.variant || ""),
+    tlang: String(o.tlang || ""), ql: String(o.ql || ""), qk: String(o.qk || "") };
+}
+
+// ⭐ اختيارُ المسار — §٣ بترتيبه **وبقرارات المالك في فجواته (أ)–(هـ)** (اعتمدها كلَّها 2026-11-01):
+// (أ) البثُّ أوّلاً · (١) الصوتُ الجاري عربيّ ⇐ لا شيء، ومسارٌ عربيٌّ غيرُ مختار ⇐ يُقترح (خ10) ·
+// (ج) لغةُ الكلام عربيّة ⇐ لا شيء، **قبل** (٢) · (٢) يدويّةٌ عربيّة ⇐ تُنطق كما هي · (د) لغةُ الكلام
+// **من التلقائيّة وحدَها** — بلاها مجهولة ⇐ (ب) «لا قاعدة» · خ12 الإنجليزيّةُ وحدَها · (٤) يدويّةٌ بلغة
+// الكلام ⇐ تُترجَم · (٥) وإلا التلقائيّة · **(هـ) يُترك `tlang` و`variant=timing-optimized` وحدَهما**
+// (نصُّ دبلجةٍ آليّة)، و`gemini` تلقائيّةُ الأصل تُؤخذ — والعاديّةُ قبلها إن وُجدتا.
+function dubDecide(f) {
+  if (f.live) return { k: "live" };
+  const audio = f.audio || [];
+  if (audio.some((a) => a.cur && a.lang === "ar")) return { k: "arNow" };
+  if (audio.some((a) => a.lang === "ar")) return { k: "arOffer" };
+  const ok = (f.caps || []).filter((c) => !c.tlang && c.variant !== "timing-optimized");
+  const asr = ok.find((c) => c.asr && !c.variant) || ok.find((c) => c.asr) || null;
+  const spoken = asr ? asr.lang : "";
+  if (spoken === "ar") return { k: "arVid", spoken };
+  const man = ok.filter((c) => !c.asr);
+  const arM = man.find((c) => c.lang === "ar");
+  if (arM) return { k: "speak", src: arM, spoken };
+  if (!spoken) return { k: ok.length ? "other" : "none", spoken };
+  if (spoken !== "en") return { k: "lang", spoken };
+  const m = man.find((c) => c.lang === spoken);
+  if (m) return { k: "manual", src: m, spoken };
+  return { k: "asr", src: asr, spoken };
+}
+
+// ⭐ المُقسِّم — منقولٌ من مِجَسّ 5 بنصّه، وحالاتُه المعلومة نفسُها تُختبر هنا (`test-dub-core.js`).
+// **يُختار المسارُ بشكل البيانات لا بالنوع:** فيها `tOffsetMs` ⇐ كلماتٌ بزمنٍ مطلق تُقطع عند فجوةِ بدء
+// أو ترقيم أو سقف · وبلاها ⇐ **الحدثُ يُشقّ عند ترقيمه بزمنٍ نسبيّ لحروفه** ثمّ يُدمج حتى ترقيمٍ أو فجوة
+// أو سقف (📐 ذراعُ يوتيوب `xpo,xwmhp` يدمج الكلمات في أحداثٍ مرقّمة). **و«؟» علامةٌ عربيّة تُضاف** لليدويّة العربيّة.
+// المدخل: [tStartMs, dDurationMs, aAppend, [[utf8, tOffsetMs|null], …]] من عالم الصفحة، أو أحداثُ json3 نفسُها.
+function dubSegment(raw) {
+  const E = (raw || []).map((e) => (Array.isArray(e)
+    ? { tStartMs: e[0], dDurationMs: e[1], aAppend: e[2] ? 1 : 0,
+      segs: (Array.isArray(e[3]) ? e[3] : []).map((g) => ({ utf8: g[0], tOffsetMs: g[1] == null ? undefined : g[1] })) }
+    : e));
+  const clean = (s) => String(s || "").replace(/\[[^\]]*\]|♪+/g, " ").replace(/\s+/g, " ").trim();
+  const nW = (s) => (String(s).trim() ? String(s).trim().split(/\s+/).length : 0);
+  const PUNCT = /[.?!…؟]["'”’)]*$/;
+  const SPLIT = /(?<=[.?!…]["'”’)]*)(?<!(?:^|\s)(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs)\.)\s+(?=["'“‘(]*[A-Z0-9])/;
+  const cut3 = (e, eEnd, txt) => {
+    const L = txt.length || 1, d = eEnd - e.tStartMs;
+    let off = 0;
+    return txt.split(SPLIT).map((p) => {
+      const i = txt.indexOf(p, off);
+      off = i + p.length;
+      return { utf8: p, t: e.tStartMs + Math.round(d * i / L), end: e.tStartMs + Math.round(d * off / L) };
+    });
+  };
+  const asr = E.some((e) => e && Array.isArray(e.segs) && e.segs.some((g) => g && g.tOffsetMs != null));
+  const out = [], why = { gap: 0, punct: 0, cap: 0, end: 0 }, W = [];
+  let drop = 0, cur = null;
+  let F = E.filter((e) => e && Array.isArray(e.segs) && typeof e.tStartMs === "number" && !(asr && e.aAppend));
+  if (!asr) F = F.slice().sort((a, b) => a.tStartMs - b.tStartMs).reduce((o, e) => {
+    const p = o[o.length - 1];
+    if (p && p.tStartMs === e.tStartMs) {
+      p.segs = p.segs.concat([{ utf8: " " }], e.segs.filter(Boolean));
+      p.dDurationMs = Math.max(p.dDurationMs || 0, e.dDurationMs || 0);
+    } else o.push({ tStartMs: e.tStartMs, dDurationMs: e.dDurationMs, segs: e.segs.filter(Boolean) });
+    return o;
+  }, []);
+  F.forEach((e, ix) => {
+    const eEnd = e.tStartMs + (e.dDurationMs || 0), sg = e.segs.filter(Boolean);
+    const nxS = F[ix + 1] ? Math.max(e.tStartMs, F[ix + 1].tStartMs) : eEnd;
+    (asr ? sg : cut3(e, e.dDurationMs > 0 ? Math.min(eEnd, nxS) : nxS, sg.map((g) => g.utf8 || "").join(""))).forEach((g) => {
+      const w = clean(g.utf8);
+      if (w) W.push({ t: asr ? e.tStartMs + (g.tOffsetMs || 0) : g.t, end: asr ? eEnd : g.end, w });
+      else if (String(g.utf8 || "").trim()) drop++;
+    });
+  });
+  W.sort((a, b) => a.t - b.t).forEach((w, i) => {
+    const nx = W[i + 1];
+    if (!cur) cur = { start: w.t, end: w.end, ws: [] };
+    cur.ws.push(w.w);
+    cur.end = asr ? (nx ? Math.min(nx.t, w.end) : w.end) : Math.max(cur.end, w.end);
+    const gap = nx ? nx.t - (asr ? w.t : w.end) : 0;
+    const k = !nx ? "end" : PUNCT.test(w.w) ? "punct" : gap >= (asr ? DUB_SEG_GAP_A : DUB_SEG_GAP_M) ? "gap"
+      : nW(cur.ws.join(" ")) >= (asr ? DUB_SEG_CAP_A : DUB_SEG_CAP_M) ? "cap" : "";
+    if (k) { why[k]++; out.push({ start: cur.start, end: Math.max(cur.end, cur.start), text: cur.ws.join(" ") }); cur = null; }
+  });
+  out.forEach((s, i) => { s.win = out[i + 1] ? out[i + 1].start - s.start : s.end - s.start + DUB_SEG_END_PAD; s.words = nW(s.text); });
+  return { kind: asr ? "asr" : "manual", sents: out, why, drop };
+}
+
+// المنحنى المقيس: سرعةُ كروم ⇐ الفعليّة (للتعلّم من مدّة النطق)، ومقلوبُه: الفعليّةُ المطلوبة ⇐ سرعةُ كروم
+function dubRealSpeed(rate, curve) {
+  const c = curve || DUB_CURVE_MAC;
+  if (!(rate > c[0][0])) return c[0][1];
+  for (let i = 1; i < c.length; i++) {
+    if (rate <= c[i][0]) { const a = c[i - 1], b = c[i]; return a[1] + (rate - a[0]) * (b[1] - a[1]) / (b[0] - a[0]); }
+  }
+  return c[c.length - 1][1];
+}
+
+function dubChromeRate(real, curve) {
+  const c = curve || DUB_CURVE_MAC;
+  if (!(real > c[0][1])) return c[0][0];
+  for (let i = 1; i < c.length; i++) {
+    if (real <= c[i][1]) { const a = c[i - 1], b = c[i]; return a[0] + (real - a[1]) * (b[0] - a[0]) / (b[1] - a[1]); }
+  }
+  return c[c.length - 1][0];
+}
+
+// §٣ بعد إعلانٍ أو قفزةٍ أو توقّف: نستأنف من أوّل جملةٍ تبدأ عند الزمن الحاليّ أو بعده
+function dubFirstAt(sents, ct) {
+  for (let i = 0; i < sents.length; i++) if (sents[i].start / 1000 >= ct - 0.05) return i;
+  return sents.length;
+}
+
+// ⭐ قرارُ النبضة — خالص: أيّ جملةٍ تُنطق الآن وبأيّ سرعة، أم ننتظر، أم تُتخطّى.
+// **قاعدتا التخطّي (خ13):** بدءٌ متأخّرٌ أكثرَ من ثانية · أو بقي من نافذتها أقلُّ من 60٪ (لا ننتظر خلف أنفسنا).
+// **والسرعةُ:** مدّتُها المقدّرة بسرعة 1 ÷ ما بقي من نافذتها بزمن الساعة (سرعةُ الفيديو تقصّرها)،
+// بين 1 وR_max، ثمّ تُقلب على المنحنى المقيس — جملةٌ لا تتّسع حتى بالسقف تُنطق به وتتخطّى ما بعدها.
+function dubNext(sents, idx, ct, rate, cps, rMax, curve) {
+  let skipped = 0;
+  for (let i = idx; i < sents.length; i++) {
+    const s = sents[i], st = s.start / 1000, win = Math.max(0.2, s.win / 1000), end = st + win;
+    if (ct < st - DUB_LEAD_S) return { i, skipped, wait: "early" };
+    if (ct - st > DUB_LATE_MAX_S || (end - ct) / win < DUB_REMAIN_MIN) { skipped++; continue; }
+    if (s.ar == null) return { i, skipped, wait: "translate" };
+    if (!s.ar) { skipped++; continue; }
+    const wall = Math.max(0.2, (end - Math.max(ct, st)) / Math.max(0.25, rate));
+    const need = s.ar.length / cps / wall;
+    const real = Math.min(rMax, Math.max(1, need));
+    return { i, skipped, speak: true, real, need, rate: Math.min(DUB_RATE_CAP, dubChromeRate(real, curve)) };
+  }
+  return { i: sents.length, skipped, done: true };
+}
+
+// الصوتُ العربيّ **بوسم اللغة لا بالاسم**؛ والاسمُ يُرجّح الجودةَ وحدَها (📐 المنحنى قيس على «ليلى (محسّن)»)
+function dubPickVoice(list) {
+  const ar = (list || []).filter((v) => v && dubPrim(v.lang) === "ar");
+  const score = (v) => (v.localService ? 4 : 0) + (/(enhanced|premium|محسّن|محسن)/i.test(v.name || "") ? 2 : 0) +
+    (/(laila|ليلى)/i.test(v.name || "") ? 1 : 0);
+  return ar.length ? ar.slice().sort((a, b) => score(b) - score(a))[0] : null;
+}
+
+// ── الجسرُ إلى عالم الصفحة: نصٌّ JSON بحدٍّ، ويُقبل الردُّ بمعرّف طلبه وحدَه ──────────
+function dubMainCall(op, args, ms) {
+  return new Promise((resolve) => {
+    const id = "vzd" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    let timer = 0;
+    const onRes = (e) => {
+      let m = null;
+      try { m = typeof e.detail === "string" && e.detail.length <= DUB_BRIDGE_MAX ? JSON.parse(e.detail) : null; } catch { m = null; }
+      if (!m || typeof m !== "object" || m.id !== id) return;
+      clearTimeout(timer);
+      window.removeEventListener("__vz_dub_res__", onRes);
+      resolve(m);
+    };
+    window.addEventListener("__vz_dub_res__", onRes);
+    timer = setTimeout(() => { window.removeEventListener("__vz_dub_res__", onRes); resolve({ ok: false, reason: "main-missing" }); }, ms);
+    window.dispatchEvent(new CustomEvent("__vz_dub_req__", { detail: JSON.stringify({ id, op, args: args || null }) }));
+  });
+}
+
+function dubRefuse(run, reason, detail) {
+  if (dub !== run || run.state === "stopped") return;
+  run.state = "refused"; run.reason = reason; run.detail = String(detail || "").slice(0, 120); run.step = "";
+  clearInterval(run.timer);
+}
+
+// مترجمُ كروم — 📐 متاحٌ لسكربت الإضافة ويُنشأ بعد التنزيل بلا إيماءة؛ **وأوّلُ تنزيلٍ يحتاج نقرةً حديثة**
+// ⇒ يُطلب فورَ الضغط، قبل الالتقاط
+async function dubTranslatorGet(run) {
+  if (dubTr) return { ok: true, tr: dubTr };
+  const T = globalThis.Translator;
+  if (!T || typeof T.create !== "function") return { ok: false, reason: "no-translator" };
+  let a = "";
+  try { a = await T.availability({ sourceLanguage: "en", targetLanguage: "ar" }); } catch { a = ""; }
+  if (a === "unavailable") return { ok: false, reason: "tr-unavailable" };
+  try {
+    const tr = await T.create({ sourceLanguage: "en", targetLanguage: "ar", monitor(m) {
+      m.addEventListener("downloadprogress", (e) => { run.dl = Math.round(100 * (Number(e.loaded) || 0)); });
+    } });
+    dubTr = tr;
+    return { ok: true, tr };
+  } catch (e) { return { ok: false, reason: "tr-create", detail: String(e?.name || e) }; }
+}
+
+// ⛔ لا يُحكم بغياب الصوت العربيّ قبل `voiceschanged` (§٣)
+function dubVoiceGet() {
+  const ss = globalThis.speechSynthesis;
+  if (!ss || typeof SpeechSynthesisUtterance !== "function") return Promise.resolve(null);
+  const pick = () => dubPickVoice(ss.getVoices() || []);
+  if (pick()) return Promise.resolve(pick());
+  return new Promise((resolve) => {
+    let done = false;
+    const on = () => { if (pick()) fin(); };
+    const fin = () => { if (done) return; done = true; ss.removeEventListener("voiceschanged", on); resolve(pick()); };
+    ss.addEventListener("voiceschanged", on);
+    setTimeout(fin, 3000);
+  });
+}
+
+// جملةٌ تُنطق وننتظرها — تعود «بدأت؟»: 📐 `end` بلا `start` تبويبٌ مكتوم أو محرّكٌ نائم، لا نطق
+function dubSay(run, text) {
+  return new Promise((resolve) => {
+    let started = false, fin = false, t = 0;
+    const done = () => { if (fin) return; fin = true; clearTimeout(t); resolve(started); };
+    const u = new SpeechSynthesisUtterance(text);
+    u.voice = run.voice; u.lang = run.voice.lang; u.rate = 1; u.volume = 1;
+    u.onstart = () => { started = true; };
+    u.onend = done; u.onerror = done;
+    run.warmU = u;                                  // مرجعٌ يمنع جمعَه قبل `end`
+    t = setTimeout(done, 6000);
+    speechSynthesis.speak(u);
+  });
+}
+
+// ⛔ الموضعُ الوحيد لـ`cancel()`: يوقف ما يُنطق في أيّ تبويب ⇒ لا يُنادى إلا وجملتُنا بين `start` و`end`
+function dubCancelOurs() {
+  try { speechSynthesis.cancel(); } catch { /* لا نطقَ أصلاً */ }
+}
+
+// صمتٌ الآن: جملتُنا الجارية تُقطع؛ والتي لم تبدأ تبقى محجوزةً حتى تبدأ فتُقطع، أو تُسقطها المهلة
+function dubSilence(run) {
+  const c = run.cur;
+  if (!c) return;
+  c.stale = true;
+  if (c.started && !c.ended) dubCancelOurs();
+  run.cur = c.started ? null : c;
+}
+
+function dubHold(run, why) {
+  run.hold = why;
+  dubSilence(run);
+  run.sync = true;
+}
+
+function dubStop(why) {
+  const run = dub;
+  if (!run || run.state === "stopped" || run.state === "refused") return;
+  run.state = "stopped"; run.reason = why; run.hold = ""; run.step = "";
+  clearInterval(run.timer);
+  dubSilence(run);
+}
+
+async function dubPrepare(run) {
+  const live = () => dub === run && run.state === "preparing";
+  const trP = dubTranslatorGet(run), voiceP = dubVoiceGet();
+  let tx = dubTranscripts.get(run.vid);
+  if (!tx) {
+    const ping = await dubMainCall("ping", null, 1500);
+    if (!live()) return;
+    if (!ping.ok) return dubRefuse(run, "main-missing");
+    const f = await dubMainCall("facts", null, 6000);
+    if (!live()) return;
+    if (!f.ok) return dubRefuse(run, f.reason || "facts", f.status);
+    if (f.v !== run.vid) return dubRefuse(run, "nav");
+    const d = dubDecide({ live: f.live, audio: (f.audio || []).map(dubAudioNorm), caps: (f.caps || []).map(dubCapNorm) });
+    run.kind = d.k; run.spokenLang = d.spoken || "";
+    if (!d.src) return dubRefuse(run, d.k, d.spoken || "");
+    if (f.stop) return dubRefuse(run, "breaker", f.stop);
+    if (f.asked) return dubRefuse(run, "already");
+    run.step = "capture";
+    const c = await dubMainCall("capture", { v: run.vid, code: d.src.code, asr: d.src.asr, ql: d.src.ql, qk: d.src.qk, qv: d.src.variant }, 40000);
+    if (!live()) return;
+    if (!c.ok) return dubRefuse(run, c.reason || "capture", c.why || (c.cc ? "cc" : ""));
+    const seg = dubSegment(c.events);
+    if (!seg.sents.length) return dubRefuse(run, "empty");
+    tx = { kind: d.k, sents: seg.sents.map((s) => ({ start: s.start, win: s.win, text: s.text, ar: d.k === "speak" ? s.text : null })) };
+    dubTranscripts.set(run.vid, tx);
+    if (dubTranscripts.size > DUB_CACHE_MAX) dubTranscripts.delete(dubTranscripts.keys().next().value);
+  }
+  run.kind = tx.kind; run.sents = tx.sents;
+  if (tx.kind !== "speak") {
+    run.step = "translator";
+    const t = await trP;
+    if (!live()) return;
+    if (!t.ok) return dubRefuse(run, t.reason, t.detail);
+    run.tr = t.tr;
+  }
+  run.step = "voice";
+  const voice = await voiceP;
+  if (!live()) return;
+  if (!voice) return dubRefuse(run, "no-voice");
+  run.voice = voice;
+  run.step = "warmup";
+  let heard = false;
+  for (let k = 0; k < 3 && !heard && live(); k++) heard = await dubSay(run, DUB_HELLO);
+  if (!live()) return;
+  run.warm = heard;
+  run.state = "running"; run.step = "";
+  run.timer = setInterval(() => dubTick(run), DUB_TICK_MS);
+}
+
+function dubTranslateAhead(run) {
+  if (!run.tr) return;
+  const end = Math.min(run.sents.length, run.idx + DUB_AHEAD);
+  for (let i = run.idx; i < end && run.inflight < DUB_TR_INFLIGHT; i++) {
+    const s = run.sents[i];
+    if (s.ar != null || s.trq) continue;
+    s.trq = true; run.inflight++;
+    run.tr.translate(s.text).then((ar) => { s.ar = String(ar || "").trim(); }, () => { s.ar = ""; })
+      .finally(() => { s.trq = false; run.inflight--; });
+  }
+}
+
+// تعلّمُ سرعة المحرّك من مدّة ما نُطق فعلاً — جملٌ مقطوعة لا تُعلِّم
+function dubLearn(run, chars, sec, rate) {
+  if (!(sec > 0.6)) return;
+  const cps1 = chars / (sec * dubRealSpeed(rate, DUB_CURVE_MAC));
+  run.cps = Math.min(12, Math.max(5, 0.8 * run.cps + 0.2 * cps1));
+}
+
+function dubSpeak(run, plan) {
+  const s = run.sents[plan.i];
+  const u = new SpeechSynthesisUtterance(s.ar);
+  u.voice = run.voice; u.lang = run.voice.lang; u.rate = plan.rate; u.volume = 1;
+  const c = { u, i: plan.i, started: false, ended: false, stale: false, at: performance.now(), t0: 0 };
+  u.onstart = () => {
+    c.started = true; c.t0 = performance.now();
+    if (c.stale || dub !== run || run.state !== "running") { dubCancelOurs(); return; }
+    const v = document.querySelector("#movie_player video");
+    if (v) { run.lags.push(v.currentTime - s.start / 1000); if (run.lags.length > 60) run.lags.shift(); }
+  };
+  const fin = (ended) => {
+    if (c.ended) return;
+    c.ended = true;
+    if (run.cur === c) run.cur = null;
+    if (c.stale) return;
+    if (ended && c.started) { run.spoken++; dubLearn(run, s.ar.length, (performance.now() - c.t0) / 1000, plan.rate); }
+    else run.lost++;
+  };
+  u.onend = () => fin(true);
+  u.onerror = () => fin(false);
+  run.cur = c; run.idx = plan.i + 1;
+  speechSynthesis.speak(u);
+}
+
+// ⭐ النبضة — بالترتيب المُقرّ (§٣): يتيم؟ · البوّابة؟ · تنقّلٌ أو مصغّر؟ · إعلان؟ · متوقّفٌ أو متجمّد؟ ·
+// السرعةُ فوق R_max؟ · قفزة؟ ⇐ ثمّ الجملةُ المستحقّة. **تقرأ الحال ولا تستمع لأحداث الوسائط** (خ16).
+function dubTick(run) {
+  if (dub !== run || run.state !== "running") return;
+  if (!chrome.runtime?.id) return dubStop("orphan");          // خ7: سكربتٌ يتيم بعد إعادة تحميل الإضافة
+  if (!extensionActive()) return dubStop("gate");
+  const p = document.querySelector("#movie_player"), v = p && p.querySelector("video");
+  if (p && isInMiniPlayer(p)) return dubStop("mini");         // خ15: نتوقّف — قبل التنقّل: المصغّرُ تنقّلٌ إلى غير /watch
+  if (location.pathname !== "/watch" || dubVideoId() !== run.vid) return dubStop("nav");
+  if (!p || !v) return dubHold(run, "no-video");
+  const now = performance.now(), ct = v.currentTime, rate = v.playbackRate || 1;
+  if (run.cur && !run.cur.started && now - run.cur.at > 3000) { run.cur.stale = true; run.cur = null; run.lost++; }
+  const prevCt = run.lastCt, prevAt = run.lastAt;
+  if (ct !== prevCt) run.movedAt = now;
+  run.lastCt = ct; run.lastAt = now;
+  if (p.classList.contains("ad-showing") || p.classList.contains("ad-interrupting")) return dubHold(run, "ad");
+  if (v.paused) return dubHold(run, "paused");
+  if (now - run.movedAt >= DUB_FREEZE_MS) return dubHold(run, "frozen");
+  if (rate > DUB_R_MAX) return dubHold(run, "speed");
+  if (prevCt >= 0 && Math.abs(ct - (prevCt + (now - prevAt) / 1000 * rate)) > DUB_SEEK_S) { dubSilence(run); run.sync = true; }
+  if (run.sync) { run.idx = dubFirstAt(run.sents, ct); run.sync = false; }
+  run.hold = "";
+  dubTranslateAhead(run);
+  if (run.cur) return;                                         // جملةٌ واحدةٌ منّا في الطابور
+  const plan = dubNext(run.sents, run.idx, ct, rate, run.cps, DUB_R_MAX, DUB_CURVE_MAC);
+  run.skipped += plan.skipped; run.idx = plan.i;
+  if (plan.done) { run.hold = "done"; return; }
+  if (plan.speak) dubSpeak(run, plan);
+}
+
+function dubStart() {
+  if (!dubActive()) return { ok: false, state: "refused", reason: "gate" };
+  const vid = dubVideoId();
+  if (!vid) return { ok: false, state: "refused", reason: "no-video" };
+  if (dub && dub.vid === vid && (dub.state === "preparing" || dub.state === "running")) return dubStatus();
+  dubStop("restart");
+  const run = dub = { token: ++dubToken, vid, state: "preparing", step: "facts", reason: "", detail: "", hold: "",
+    kind: "", spokenLang: "", sents: null, idx: 0, spoken: 0, skipped: 0, lost: 0, inflight: 0, cur: null, timer: 0,
+    cps: DUB_CPS, lastCt: -1, lastAt: 0, movedAt: performance.now(), sync: true, lags: [], dl: null, warm: true };
+  dubPrepare(run).catch((e) => dubRefuse(run, "threw", e?.message || e));
+  return dubStatus();
+}
+
+function dubStatus() {
+  const r = dub;
+  if (!r) return { ok: true, state: "idle" };
+  const lags = r.lags.slice().sort((a, b) => a - b);
+  return { ok: true, state: r.state, step: r.step, reason: r.reason, detail: r.detail, hold: r.hold, kind: r.kind,
+    spokenLang: r.spokenLang, total: r.sents ? r.sents.length : 0, idx: r.idx, spoken: r.spoken, skipped: r.skipped,
+    lost: r.lost, warm: r.warm, dl: r.dl, voice: r.voice ? r.voice.name : "",
+    lagP50: lags.length ? lags[Math.floor(lags.length / 2)] : null };
+}
+
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "GVZ_STATUS") {
     // A frame that exited early (#13b) answers "not-started" and NEVER wakes for a
@@ -4969,6 +5449,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "GET_VOLUME_BOOST") {
     // Silence is sticky and outranks any earlier reason — it means audio is gone.
     sendResponse({ pct: boostPct, reason: boostSilent ? "silent" : lastBoostFailure });
+    return true;
+  }
+  // #168 — الدبلجة: البوب-أب يرسلها إلى الإطار الأعلى وحدَه (frameId 0). **وإطارٌ نائمٌ لا يستيقظ** (#13ب)
+  if (msg?.type === "GVZ_DUB_START" || msg?.type === "GVZ_DUB_STOP" || msg?.type === "GVZ_DUB_STATUS") {
+    if (!startupBegun) {
+      sendResponse({ ok: false, reason: "not-started" });
+      return true;
+    }
+    if (msg.type === "GVZ_DUB_START") sendResponse(dubStart());
+    else if (msg.type === "GVZ_DUB_STOP") { dubStop(msg.why === "other-tab" ? "other-tab" : "user"); sendResponse(dubStatus()); }
+    else sendResponse(dubStatus());
     return true;
   }
 });

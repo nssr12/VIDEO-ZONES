@@ -83,6 +83,12 @@
       color:#92400e;font-size:11.5px;line-height:1.55;
     }
     .boostNote.show.bad{background:#fee2e2;border-color:#fca5a5;color:#991b1b;font-weight:700}
+
+    /* #168 — الدبلجة العربية: البطاقةُ لصفحة مشاهدة يوتيوب وحدَها */
+    #dubCard[hidden]{display:none}
+    .dubRow{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .dubNote{margin-top:8px;font-size:11.5px;line-height:1.55;color:var(--muted)}
+    .dubNote.bad{color:#991b1b;font-weight:700}
   </style>
 </head>
 <body>
@@ -99,6 +105,16 @@
     </div>
   </div>
   <div class="muted" id="siteLabel">...</div>
+
+  <!-- #168 — الدبلجة العربية (تجريبيّة): **تُرسم على صفحة مشاهدة يوتيوب وحدَها**، والسطرُ تحتها
+       يقول ما يجري أو لماذا لا (168ب) -->
+  <div class="card" id="dubCard" hidden>
+    <div class="dubRow">
+      <span style="font-weight:600;font-size:13px">🗣️ الدبلجة العربية (تجريبية)</span>
+      <button class="btn" id="dubBtn" type="button">دبلِج هذا الفيديو</button>
+    </div>
+    <div class="dubNote" id="dubNote"></div>
+  </div>
 
   <!-- Top quick toggles -->
   <div class="card">

@@ -47,7 +47,7 @@ export default [
   { files: ["background.js"],
     languageOptions: { globals: { ...globals.serviceworker } } },
   // منتَجٌ يُشحن ولا صفحةَ له: سكربت المحتوى والعالم الرئيسيّ
-  { files: ["content.js", "yt_quality_main.js"],
+  { files: ["content.js", "yt_quality_main.js", "yt_dub_main.js"],
     languageOptions: { sourceType: "script", ecmaVersion: 2023, globals: BROWSER } },
   ...pageConfigs,
   // مِجَسّاتُ اللصق تعيش في صفحة المضيف — وتُعلن ذلك في رأسها.
