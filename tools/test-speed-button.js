@@ -83,7 +83,12 @@ console.log("\n[2] ⭐ يُصدر أمراً من نحو `ACTION:SPEED` ولا �
   check("[2] ولا كتابة `playbackRate` في العجلة", !!wheel && !/playbackRate\s*=(?!=)/.test(wheel));
   check("[2] ولا كتابة `playbackRate` في النقرة", !!click && !/playbackRate\s*=(?!=)/.test(click));
   // والحارس الأصل ما زال قائماً: موضع كتابة واحد في الملف كلّه
-  const writes = (CODE.match(/\.playbackRate\s*=(?!=)/g) || []).length;
+  // ⚠️ الجولة الثالثة من #168 (2026-11-01): **عنصرُ صوت الدبلجة نفسُه** (`new Audio`) تُضبط سرعتُه لتلائم مدّةُ مقطعه نافذتَه وتتبع
+  // سرعةَ الفيديو — ليس الفيديو ولا يمرّ بتعريف سرعته: يُستثنى **بعينه** (الكتابةُ الوحيدةُ في `dubAzSetRate`، على `c.audio`)،
+  // وكلُّ كتابةٍ سواه تبقى ممنوعة. ⛔ لا يُلتفّ عليه نصّاً (`a["playbackRate"]`): الاستثناءُ مكتوبٌ هنا بسببه
+  const dubAudioWrite = (() => { const i = SRC.indexOf("function dubAzSetRate("); const f = i < 0 ? "" : SRC.slice(i, SRC.indexOf("\n}", i));
+    return (f.match(/\.playbackRate\s*=(?!=)/g) || []).length === 1 && /\bc\.audio\.playbackRate\s*=(?!=)/.test(f) ? 1 : 0; })();
+  const writes = (CODE.match(/\.playbackRate\s*=(?!=)/g) || []).length - dubAudioWrite;
   check("[2] وموضع الكتابة في الإضافة كلّها ما زال واحداً", writes === 1, `العدد ${writes}`);
 }
 

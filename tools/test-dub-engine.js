@@ -52,13 +52,37 @@ function makeEnv(opts) {
   const local = makeStore({ [STICKY]: stickyBefore }), session = makeStore({});
   let track = o.ccOn ? o.ccOn : {}, loaded = !!o.ccOn;
   const emit = (name, status, size, st) => obs.slice().forEach((cb) => cb({ getEntries: () => [{ name, startTime: st, responseStatus: status, encodedBodySize: size, transferSize: size + 300 }] }));
-  const request = (r) => { const st = now(); playerReqs.push(r.url); setTimeout(() => emit(r.url, r.status, r.size, st), (r.delay || 50) / K); };
+  // 📐 المشغّلُ يطلب الترجمةَ بـXHR وjson3 (كروم المالك 2026-11-01) — فطلبُه هنا يمرّ بـ`XMLHttpRequest` عالمِ الصفحة وقتَ النداء:
+  // ما ركّبه `yt_dub_main.js` عليه يرى ردَّه كما يراه على يوتيوب. `arTrack`: سطورُ العربيّة [{t, d, line}] بالثواني (وإلا ملفٌّ فارغ)
+  const plan = new Map();
+  const arJson = () => {
+    const ev = [];
+    (o.arTrack || []).forEach((c) => {
+      ev.push({ tStartMs: Math.round(c.t * 1000), dDurationMs: Math.round(c.d * 1000), wWinId: 1, segs: [{ utf8: c.line, acAsrConf: 0 }] });
+      ev.push({ tStartMs: Math.round(c.t * 1000) + 10, dDurationMs: Math.round(c.d * 1000), wWinId: 1, aAppend: 1, segs: [{ utf8: "\n" }] });
+    });
+    return JSON.stringify({ events: ev });
+  };
+  const request = (r) => {
+    const st = now();
+    playerReqs.push(r.url);
+    plan.set(r.url, r);
+    // إرسالٌ يرمي (`xhrThrows`) ⇐ طلبٌ لم يخرج: يبتلعه المشغّلُ ولا يراه مراقبُ الموارد
+    let sent = true;
+    if (!o.noXhr && mainCtx && mainCtx.XMLHttpRequest) { const x = new mainCtx.XMLHttpRequest(); x.open("GET", r.url); try { x.send(); } catch (e) { sent = false; } }
+    if (sent) setTimeout(() => emit(r.url, r.status, r.size, st), (r.delay || 50) / K);
+  };
   const BASE = "https://www.youtube.com/api/timedtext?v=VID";
   // الفيديو: زمنُه يجري بالساعة ما لم يتوقّف — والقفزُ يُثبّته حتى ينتهي `seeking`
-  const video = { paused: false, playbackRate: 1, seeking: false, _base: 0, _at: now(),
-    get currentTime() { return this.paused || this.seeking ? this._base : this._base + (now() - this._at) / 1000 * this.playbackRate; },
+  // وسرعتُه تتبدّل فيُعاد أساسُ الساعة — ⛔ ~~يُضرب ما مضى كلُّه بالسرعة الجديدة فيقفز الزمن~~ (حَكَمُ الجولة الثالثة)
+  const video = { paused: false, _rate: 1, seeking: false, _base: 0, _at: now(),
+    get playbackRate() { return this._rate; },
+    set playbackRate(r) { this._base = this.currentTime; this._at = now(); this._rate = Number(r) || 1; },
+    get currentTime() { return this.paused || this.seeking ? this._base : this._base + Math.max(0, now() - this._at) / 1000 * this._rate; },
     set currentTime(t) { this._base = t; this._at = now(); },
-    pause() { this._base = this.currentTime; this.paused = true; }, play() { this._at = now(); this.paused = false; } };
+    pause() { this._base = this.currentTime; this.paused = true; this.pauses = (this.pauses | 0) + 1; },
+    // `playLag`: ساعةُ الوسائط تبدأ بعد play() بقليل كما في كروم (مراجعةُ الجولة #1) — الافتراضُ صفر
+    play() { if (this.paused) { this._at = now() + (o.playLag || 0); this.paused = false; } this.plays = (this.plays | 0) + 1; } };
   // الترجمةُ المعروضة: سطورُ الإشارة الجارية متى كانت العربيّةُ معروضة (اختيرت أو عرضناها) — و`rollup` سطرٌ سابقٌ فوقها
   const arOn = () => !!o.alreadyArabic || !!(track && track.translationLanguage && track.translationLanguage.languageCode === "ar");
   const cues = o.cues || [];
@@ -109,7 +133,7 @@ function makeEnv(opts) {
       session.setItem(PREFS, JSON.stringify({ data: JSON.stringify([track.languageCode]), creation: 1 }));
       if (o.setThrows) throw new Error("player threw");
       const rq = o.playerReq ? o.playerReq(track) : { url: BASE + "&lang=en&kind=asr" + (track.variant ? "&variant=" + track.variant : "") +
-        (track.translationLanguage ? "&tlang=" + track.translationLanguage.languageCode : "") + "&pot=POT&c=WEB&fmt=srv3", status: 200, size: 900 };
+        (track.translationLanguage ? "&tlang=" + track.translationLanguage.languageCode : "") + "&pot=POT&c=WEB&xorb=2&fmt=json3", status: 200, size: 900 };
       (Array.isArray(rq) ? rq : rq ? [rq] : []).forEach(request);
     }
   };
@@ -118,15 +142,34 @@ function makeEnv(opts) {
   win.top = win;
   class PO { constructor(cb) { this.cb = cb; } observe() { obs.push(this.cb); } disconnect() { const i = obs.indexOf(this.cb); if (i >= 0) obs.splice(i, 1); } }
   PO.supportedEntryTypes = ["resource"];
-  const EV = [];
-  for (let i = 0; i < 20; i++) EV.push({ tStartMs: 2000 + i * 3000, dDurationMs: 2800, segs: [{ utf8: "Sentence number " + (i + 1) + "." }] });
+  const EV = o.events || [];
+  if (!o.events) for (let i = 0; i < 20; i++) EV.push({ tStartMs: 2000 + i * 3000, dDurationMs: 2800, segs: [{ utf8: "Sentence number " + (i + 1) + "." }] });
   const json3 = JSON.stringify({ events: EV });
   const location = { search: "?v=VID", origin: "https://www.youtube.com", pathname: "/watch", hostname: "www.youtube.com" };
-  const document = { hidden: false, querySelector: (s) => (s === "#movie_player" ? p : s === "#movie_player video" ? video : null) };
+  const docL = {};
+  const document = { hidden: false, querySelector: (s) => (s === "#movie_player" ? p : s === "#movie_player video" ? video :
+    s === "#movie_player .ytp-subtitles-button" ? p.querySelector(".ytp-subtitles-button") : null),
+    addEventListener(t, f) { (docL[t] = docL[t] || []).push(f); }, removeEventListener(t, f) { docL[t] = (docL[t] || []).filter((x) => x !== f); },
+    press(t) { (docL[t] || []).slice().forEach((f) => f({ type: t, isTrusted: true })); }, listeners: (t) => (docL[t] || []).length };
   const timers = { setTimeout: (f, ms) => setTimeout(f, Math.max(0, (ms || 0) / K)), clearTimeout,
     setInterval: (f, ms) => setInterval(f, Math.max(1, (ms || 0) / K)), clearInterval };
+  // XHR عالمِ الصفحة: الردُّ بحسب العنوان — العربيّةُ (`tlang=ar`) من `arTrack`، وغيرُها ملفٌّ فارغ (لا يُستهلك في هذا البيت)
+  class FakeXHR {
+    constructor() { this.status = 0; this.responseType = ""; this.responseText = ""; this._l = {}; }
+    open(m, u) { this._u = String(u); }
+    addEventListener(t, f) { (this._l[t] = this._l[t] || []).push(f); }
+    send() {
+      if (o.xhrThrows && /[?&]tlang=ar/.test(this._u)) throw new Error("send failed");
+      const x = this, r = plan.get(x._u) || { status: 200 };
+      setTimeout(() => {
+        x.status = r.status;
+        x.responseText = r.status === 200 ? (/[?&]tlang=ar/.test(x._u) ? arJson() : JSON.stringify({ events: [] })) : "";
+        ["load", "loadend"].forEach((t) => (x._l[t] || []).forEach((f) => f.call(x, {})));
+      }, Math.max(1, (r.delay || 50) - 5) / K);
+    }
+  }
   const mainCtx = Object.assign({
-    window: win, document, location, URL, URLSearchParams, JSON, Date, Math, Number, String, Array, Object, Promise,
+    window: win, document, location, URL, URLSearchParams, JSON, Date, Math, Number, String, Array, Object, Promise, WeakMap, XMLHttpRequest: FakeXHR,
     localStorage: local, sessionStorage: session, PerformanceObserver: PO, AbortController, CustomEvent: FakeCustomEvent, performance: { now },
     fetch: async (url) => {
       fetched.push(url);
@@ -137,8 +180,10 @@ function makeEnv(opts) {
       return { status, text: async () => (status === 200 ? json3 : "") };
     }
   }, timers);
+  const xhrOrig = { open: FakeXHR.prototype.open, send: FakeXHR.prototype.send };
   vm.createContext(mainCtx);
-  vm.runInContext(MAIN, mainCtx);
+  // `oldMain`: نسخةٌ من عالم الصفحة قبل بروتوكول النسخة — كالتي تبقى في صفحةٍ فُتحت قبل تحديث الإضافة
+  vm.runInContext(o.oldMain ? MAIN.replace("{ ok: true, ver: VER }", "{ ok: true }") : MAIN, mainCtx);
 
   // محرّكُ النطق: طابورٌ واحد · `start` بعد 5ms · مدّةٌ بالحروف والسرعة · `drops` نطقٌ يُسقط بلا `start` ·
   // `hold` صوتٌ آخر يحجز الطابور حتى يُفرَج عنه
@@ -167,11 +212,105 @@ function makeEnv(opts) {
   };
   function SpeechSynthesisUtterance(text) { this.text = text; this.rate = 1; this.volume = 1; }
   const gate = { on: true };
+  // 168ح — Azure مزيّف: الكلامُ يردّ «صوتاً» نصُّه من SSML، والمترجمُ «مترجَم N» — و`azMode`/`trMode` رفضٌ بحاله
+  const azReqs = [], trReqs = [], blobText = new Map(), revoked = new Set();
+  let blobN = 0;
+  class TURL extends URL {}
+  TURL.createObjectURL = (b) => { const u = "blob:fake/" + (++blobN); blobText.set(u, { text: b.text, dur: b.size / 6000, voice: b.voice, real: b.real || 1 }); return u; };
+  TURL.revokeObjectURL = (u) => { revoked.add(u); };
+  // صوتٌ بـ12 حرفاً في الثانية بسرعته الطبيعيّة، تقصّره نسبةُ prosody — وحجمُه بـ48 kbit/s (6000 بايت في الثانية) كما يردّ Azure
+  // · `azDelay` زمنُ الردّ (رقمٌ أو دالّةٌ برقم الطلب) · `blobFails` قراءةُ الجسم تفشل (مراجعة 168ح #3)
+  // · `azDelay`/`azMode`/`blobFails` تأخذ رقمَ الطلب ونصَّه — فيُختار طلبُ جملةٍ بعينها لا برقمٍ يتبدّل بترتيب الجلب
+  const azFetch = async (url, init) => {
+    const h = (init && init.headers) || {};
+    if (/\.tts\.speech\.microsoft\.com\/cognitiveservices\/v1$/.test(url)) {
+      const body = String(init.body || ""), inner = (body.match(/<voice[^>]*>([\s\S]*)<\/voice>/) || [])[1] || "";
+      const pr = /^<prosody rate="([+-]\d+)%">([\s\S]*)<\/prosody>$/.exec(inner);
+      const text = (pr ? pr[2] : inner).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+      const real = pr ? 1 + Number(pr[1]) / 100 : 1, voice = (body.match(/<voice name="([^"]+)"/) || [])[1] || "";
+      azReqs.push({ url, key: h["Ocp-Apim-Subscription-Key"], body, text, t: now(), cred: init.credentials });
+      const n = azReqs.length;
+      await sleep(typeof o.azDelay === "function" ? o.azDelay(n, text) : (o.azDelay || 40));
+      const mode = typeof o.azMode === "function" ? o.azMode(n, text) : (o.azMode || "ok");
+      if (mode !== "ok") return { ok: false, status: Number(mode), text: async () => (o.az403Quota ? "You have reached the quota with your free-tier (F0) Speech resource" : "") };
+      if (o.blobFails && o.blobFails(n, text)) return { ok: true, status: 200, blob: async () => { throw new TypeError("network error"); } };
+      // `azTail`: صمتٌ في آخر المقطع كما يضيفه Azure (📐 بحثُ الجولة الثالثة: نحو 0.85 ث) — يُفكّ بـOfflineAudioContext المزيّف أدناه
+      const speech = Math.max(0.6, text.length / (o.azCps || 12) / real), tail = o.azTail || 0, dur = speech + tail;
+      return { ok: true, status: 200, blob: async () => ({ size: Math.round(dur * 6000), text, voice, real, arrayBuffer: async () => ({ __fake: { speech, tail } }) }) };
+    }
+    if (/api\.cognitive\.microsofttranslator\.com\/translate/.test(url)) {
+      const arr = JSON.parse(init.body);
+      trReqs.push({ url, key: h["Ocp-Apim-Subscription-Key"], region: h["Ocp-Apim-Subscription-Region"], n: arr.length, chars: arr.reduce((n, x) => n + String(x.Text).length, 0), t: now() });
+      await sleep(o.trDelay || 40);
+      const tm = typeof o.trMode === "function" ? o.trMode(trReqs.length) : o.trMode;
+      if (tm && tm !== "ok") { if (tm === "net") throw new TypeError("Failed to fetch"); return { ok: false, status: Number(tm) }; }
+      return { ok: true, status: 200, json: async () => arr.map((x) => ({ translations: [{ text: "مترجَم " + String(x.Text).replace(/[^0-9 ]/g, "").replace(/\s+/g, " ").trim(), to: "ar" }] })) };
+    }
+    throw new Error("unexpected fetch " + url);
+  };
+  // عنصرُ صوتٍ مزيّف: مدّتُه من الملفّ، ويُشغَّل بسرعة تشغيله (`playbackRate`)، **ويتوقّف ثمّ يكمل من حيث وقف** — و`currentTime` زمنُ
+  // الوسيط **بالأجزاء** (ما قبل آخر تبديلٍ للسرعة أو توقّف، ثمّ ما بعده بسرعته) كما في العنصر الحقيقيّ — **وسرعةٌ تتبدّل وهو يعمل
+  // يُعاد بها توقيتُ ما بقي** (حَكَمُ الجولة: ⛔ ~~يُقاس ما مضى كلُّه بالسرعة الجديدة~~) ويُسجَّل «az-rate»
+  class FakeAudio {
+    constructor(url) {
+      const b = blobText.get(url) || {};
+      this.src = url; this.volume = 1; this._rate = 1; this.preservesPitch = false; this.paused = true;
+      this.text = b.text || ""; this.voice = b.voice || ""; this.duration = b.dur || NaN; this.real = b.real || 1; this._pos = 0; this._t0 = null; this._began = false;
+    }
+    get currentTime() { return this._pos + (this.paused || this._t0 == null ? 0 : (now() - this._t0) / 1000 * this._rate); }
+    set currentTime(t) { if (!this._began) this._pos = Math.max(0, Number(t) || 0); }   // موضعُ البدء (يُتخطّى صمتُ أوّله)
+    get playbackRate() { return this._rate; }
+    set playbackRate(r) {
+      r = Number(r) || 1;
+      if (this.paused || this._t0 == null) { this._rate = r; return; }
+      this._pos = this.currentTime; this._t0 = now(); this._rate = r;
+      clearTimeout(this._t); this._arm();
+      spoken.push({ ev: "az-rate", text: this.text, rate: r, t: now() });
+    }
+    _arm() {
+      this._t = setTimeout(() => {
+        this._pos = this.duration || 0.6; this._t0 = null; this.paused = true;
+        spoken.push({ ev: "az-end", text: this.text, vt: video.currentTime, t: now() });
+        if (this.onended) this.onended();
+      }, Math.max(0, (this.duration || 0.6) - this._pos) / this._rate * 1000 / K);
+    }
+    play() {
+      if (!this.paused) return Promise.resolve();
+      this.paused = false;
+      setTimeout(() => {
+        if (this.paused) return;
+        spoken.push(this._began ? { ev: "az-resume", text: this.text, t: now() }
+          : { ev: "az-start", text: this.text, voice: this.voice, volume: this.volume, rate: this._rate, pitch: this.preservesPitch, seek: this._pos, speed: this.real * this._rate, vt: video.currentTime, t: now() });
+        this._began = true;
+        if (this.onplaying) this.onplaying();
+        this._t0 = now();
+        this._arm();
+      }, 5 / K);
+      return Promise.resolve();
+    }
+    pause() {
+      if (this.paused) return;
+      const at = this.currentTime;
+      spoken.push({ ev: "az-pause", text: this.text, at, vt: video.currentTime, t: now() });
+      this.paused = true; clearTimeout(this._t);
+      if (this._t0 != null) { this._pos = at; this._t0 = null; }
+    }
+  }
+  // فكُّ الترميز المزيّف: كلامٌ بعد عُشر ثانيةٍ حتى نهايته، ثمّ صمتُ الذيل — بمئة عيّنةٍ في الثانية (يكفي للعتبة)
+  class FakeOAC {
+    decodeAudioData(buf) {
+      const s = (buf && buf.__fake) || { speech: 1, tail: 0 }, R = 100, d = new Float32Array(Math.round((s.speech + s.tail) * R));
+      for (let i = Math.round(0.1 * R); i < Math.round(s.speech * R); i++) d[i] = 0.3;
+      return Promise.resolve({ sampleRate: R, getChannelData: () => d });
+    }
+  }
+  // `perfN`: كم مرّةً سأل المحرّكُ الساعة — حلقةٌ لا تُعطي الصفحةَ نَفَساً تسألها ملايينَ المرّات (مراجعة 168ح #1)
+  const perf = { n: 0 };
   const contentCtx = Object.assign({
-    window: win, document, location, URL, URLSearchParams, JSON, Date, Math, Number, String, Array, Object, Promise, Map, atob,
-    CustomEvent: FakeCustomEvent, performance: { now }, speechSynthesis, SpeechSynthesisUtterance,
-    Translator: { availability: async () => "available", create: async () => ({ translate: async (t) => "ترجمة " + t.replace(/[^0-9]/g, "") }) },
-    chrome: { runtime: { id: "x" } },
+    window: win, document, location, URL: TURL, URLSearchParams, JSON, Date, Math, Number, String, Array, Object, Promise, Map, Set, atob,
+    CustomEvent: FakeCustomEvent, performance: { now: () => (perf.n++, now()) }, speechSynthesis, SpeechSynthesisUtterance, fetch: azFetch, Audio: FakeAudio, AbortController,
+    Translator: o.noTranslator ? undefined : { availability: async () => "available", create: async () => ({ translate: async (t) => { if (o.trDelay) await sleep(o.trDelay); return "ترجمة " + t.replace(/[^0-9]/g, ""); } }) },
+    chrome: { runtime: { id: "x" } }, OfflineAudioContext: o.azTail ? FakeOAC : undefined,
     extensionActive: () => gate.on, isYouTubeHost: () => true, isInMiniPlayer: () => false
   }, timers);
   contentCtx.globalThis = contentCtx;
@@ -184,7 +323,7 @@ function makeEnv(opts) {
     win.dispatchEvent(new FakeCustomEvent("__vz_dub_req__", { detail: JSON.stringify({ id, op, args }) }));
   });
   return { api: contentCtx.__api, ask, fetched, calls, playerReqs, local, session, STICKY, PREFS, stickyBefore, spoken, engine, video, location, win, p,
-    document, gate, opts: o, maxOurs: () => maxOurs, release: () => { engine.hold = false; pump(); } };
+    document, gate, opts: o, maxOurs: () => maxOurs, xhrNative: () => FakeXHR.prototype.open === xhrOrig.open && FakeXHR.prototype.send === xhrOrig.send, release: () => { engine.hold = false; pump(); }, azReqs, trReqs, blobs: () => blobN, revoked, perf };
 }
 
 const DEV = { source: "device" };
@@ -315,7 +454,7 @@ const isPrefixOf = (said, cues) => {
     await sleep(1000);
     const during = e.spoken.slice(k0).filter((x) => x.ev === "speak").length;
     e.video.seeking = false; e.video.currentTime = 31.95;
-    await until(() => heard(e).some((x) => /(11|12)$/.test(x.text)), 12000);
+    await until(() => heard(e).some((x) => /(11|12)$/.test(x.text)), 30000);   // مهلةٌ تتّسع لحِمل الجهاز (الزمنُ مسرَّع ×10)
     const elevens = e.spoken.filter((x) => x.ev === "speak" && /11$/.test(x.text)).length;
     check("⭐ لا نطقَ أثناء القفز", during === 0, during);
     // ⛔ العيبُ يقولها مرّتين (تبدأ على نبضة القفز فيقطعها التجمّد ثمّ تُعاد) — ومجدوِلٌ أبطأه الحِملُ قد يتخطّاها بحقّ
@@ -417,7 +556,11 @@ const isPrefixOf = (said, cues) => {
     const cues = [{ t: 0, d: 60, line: "سطرٌ" }];
     const e = makeEnv({ cues, ccOn: { languageCode: "en", kind: "asr", translationLanguage: { languageCode: "ar" } } });
     const st = await startRun(e, { source: "yt" });
-    check("العربيّةُ معروضةٌ سلفاً ⇐ لا إجبار", st.state === "running" && !e.calls.some((x) => x.startsWith("set:")), e.calls);
+    // ⛔ ~~«لا إجبار» (لا setOption أصلاً)~~ — الجولة الثالثة: **المسارُ نفسُه يُعاد ضبطُه** فيطلبه المشغّلُ ثانيةً ونقرأ ملفَّه (📐 كروم
+    // المالك 2026-11-01) — **ولا تتبدّل لغتُه**: كلُّ ضبطٍ هو العربيّةُ نفسُها
+    const sets = e.calls.filter((x) => x.startsWith("set:"));
+    check("العربيّةُ معروضةٌ سلفاً ⇐ لا تتبدّل لغتُها (يُعاد ضبطُ المسار نفسِه وحدَه)", st.state === "running" && sets.length <= 1 &&
+      sets.every((x) => /"translationLanguage":\{"languageCode":"ar"/.test(x)), e.calls);
     e.opts.ccOffByHand = true;
     await sleep(400);
     check("وأطفأ المستخدمُ الترجمة ⇐ يقول ذلك ولا يصمت بلا سبب", e.api.dubStatus().hold === "cc-off", e.api.dubStatus());
@@ -478,6 +621,844 @@ const isPrefixOf = (said, cues) => {
     await until(() => e.spoken.some((x) => x.ev === "start"), 15000);
     const first = e.spoken.find((x) => x.ev === "start");
     check("⭐ صوتٌ اختير أثناء التجهيز يُؤخذ (#8 · #11)", first && first.voice === "Majed", first);
+    e.api.dubStop("user");
+  }
+
+  console.log("\n[١٤] 168ح — صوتُ Azure ومترجمُه: يُسمع · حدُّ الطلبات · مفتاحٌ مرفوض · 429 · الإيقاف · ولا مفتاحَ في الحال");
+  const KEY = "TESTKEY0123456789abcdefABCDEF0123", TRK = "TRKEY0123456789abcdefABCDEF012345";
+  const azHeard = (e) => e.spoken.filter((x) => x.ev === "az-start" && !/بدأتِ/.test(x.text));
+  {
+    const e = makeEnv();
+    const st = await startRun(e, { source: "device", engine: "azure", volume: 0.7, az: { key: KEY, region: "uaenorth", voice: "ar-SA-ZariyahNeural" } });
+    check("يعمل بصوت Azure", st.state === "running" && st.engine === "azure", st);
+    await until(() => azHeard(e).length >= 2, 30000);
+    const r0 = e.azReqs[0] || {};
+    check("⭐ جملةُ الإحماء ثمّ المقاطعُ بصوت Azure، بحجم المستخدم", e.spoken.some((x) => x.ev === "az-start" && /بدأتِ/.test(x.text)) && azHeard(e).length >= 2 && azHeard(e).every((x) => x.volume === 0.7), azHeard(e).slice(0, 2));
+    check("⭐ الطلبُ إلى منطقة المستخدم، بمفتاحه في الترويسة، وبالصوت المختار، وبلا كوكيز", /^https:\/\/uaenorth\.tts\.speech\.microsoft\.com\//.test(r0.url) && r0.key === KEY && /ar-SA-ZariyahNeural/.test(r0.body) && r0.cred === "omit", { url: r0.url, cred: r0.cred });
+    check("ولا صوتَ جهازٍ يُخلط به", !e.spoken.some((x) => x.ev === "start"));
+    check("⛔ والمفتاحُ لا يظهر في الحال أبداً — والحروفُ المدفوعة تُعدّ", !JSON.stringify(e.api.dubStatus()).includes(KEY) && e.api.dubStatus().azTts > 0, e.api.dubStatus().azTts);
+    await sleep(70000);                                                // دقيقةٌ وأكثر من تشغيلٍ متّصل (مسرَّعة)
+    const ts = e.azReqs.map((x) => x.t);
+    let worst = 0;
+    for (const t0 of ts) worst = Math.max(worst, ts.filter((t) => t >= t0 && t < t0 + 60000).length);
+    check("⭐ المقاطعُ مضمومة ⇐ لا تتجاوز طلباتُ النطق 18 في أيّ دقيقة (حدُّ F0 عشرون)", ts.length >= 6 && worst <= 18, { n: ts.length, worst });
+    const playing = e.spoken.filter((x) => x.ev === "az-start").length;
+    e.api.dubStop("user");
+    await sleep(300);
+    check("⭐ الإيقافُ يُسكت صوتَ Azure فوراً ويُحرّر ما جُلب", e.spoken.slice(-3).some((x) => x.ev === "az-pause") || e.spoken[e.spoken.length - 1].ev === "az-end", e.spoken.slice(-3));
+    check("ولا رابطَ صوتٍ يبقى معلَّقاً", e.revoked.size === e.blobs(), { made: e.blobs(), freed: e.revoked.size, playing });
+  }
+  {
+    const e = makeEnv({ azMode: "401" });
+    const st = await startRun(e, { source: "device", engine: "azure", az: { key: KEY, region: "uaenorth" } });
+    await until(() => e.spoken.some((x) => x.ev === "start" && /^ترجمة/.test(x.text)), 30000);
+    const n0 = e.azReqs.length;
+    await sleep(8000);
+    check("⭐ مفتاحٌ مرفوض ⇐ صوتُ الجهاز بقيّةَ التشغيلة، ويُقال", st.state === "running" && e.api.dubStatus().azOff === "key" && e.spoken.some((x) => x.ev === "start" && /^ترجمة/.test(x.text)), e.api.dubStatus());
+    check("ولا طلبَ Azure بعد الرفض", e.azReqs.length === n0 && n0 <= 2, { n0, after: e.azReqs.length });
+    e.api.dubStop("user");
+  }
+  {
+    const e = makeEnv({ azMode: (n) => (n === 2 ? "429" : "ok") });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEY, region: "uaenorth" } });
+    await until(() => e.api.dubStatus().azWarn === "rate", 30000);
+    const n0 = e.azReqs.length;
+    await until(() => e.spoken.some((x) => x.ev === "start" && /^ترجمة/.test(x.text)), 15000);
+    await sleep(3000);
+    check("⭐ 429 ⇐ دقيقةٌ بصوت الجهاز بلا طلب Azure", e.api.dubStatus().azWarn === "rate" && e.azReqs.length === n0 && e.spoken.some((x) => x.ev === "start" && /^ترجمة/.test(x.text)), { n0, now: e.azReqs.length });
+    e.api.dubStop("user");
+  }
+  {
+    const e = makeEnv();
+    await startRun(e, { source: "azure", engine: "system", az: { trKey: TRK, trRegion: "uaenorth" } });
+    await until(() => e.spoken.some((x) => x.ev === "start" && /^مترجَم/.test(x.text)), 30000);
+    const t0 = e.trReqs[0] || {};
+    check("⭐ «مترجم Azure»: دفعةُ مقاطعَ في طلبٍ واحد، بمفتاحه ومنطقته", t0.n >= 2 && t0.key === TRK && t0.region === "uaenorth", t0);
+    check("وما يُنطق نصُّ مترجم Azure", e.spoken.filter((x) => x.ev === "start" && !/بدأتِ/.test(x.text)).every((x) => /^مترجَم/.test(x.text)));
+    e.api.dubStop("user");
+  }
+  {
+    const e = makeEnv({ trMode: "401" });
+    await startRun(e, { source: "azure", engine: "system", az: { trKey: TRK, trRegion: "uaenorth" } });
+    await until(() => e.spoken.some((x) => x.ev === "start" && /^ترجمة/.test(x.text)), 30000);
+    check("⭐ مفتاحُ المترجم مرفوض ⇐ مترجمُ كروم، ويُقال", e.api.dubStatus().trOff === "key" && e.spoken.some((x) => x.ev === "start" && /^ترجمة/.test(x.text)), e.api.dubStatus());
+    e.api.dubStop("user");
+  }
+  {
+    const e = makeEnv({ cues: CUES(20, (k) => "سطرٌ عربيٌّ رقم " + k) });
+    await startRun(e, { source: "yt", engine: "azure", az: { key: KEY, region: "uaenorth", voice: "ar-SA-HamedNeural" } });
+    e.video.currentTime = 4.9;
+    await until(() => e.spoken.filter((x) => x.ev === "az-start" && /رقم/.test(x.text)).length >= 2, 25000);
+    check("⭐ «ترجمة يوتيوب» بصوت Azure: السطورُ المعروضة تُقرأ بحامد", e.spoken.filter((x) => x.ev === "az-start" && /رقم/.test(x.text)).length >= 2 && /ar-SA-HamedNeural/.test((e.azReqs[1] || {}).body || ""));
+    e.api.dubStop("user");
+  }
+  {
+    const e = makeEnv();
+    const st = await startRun(e, { source: "device", engine: "azure", az: {} });
+    check("صوتُ Azure بلا مفتاح ⇐ يُرفض بسببه قبل أيّ طلب", st.state === "refused" && st.reason === "az-nokey" && e.azReqs.length === 0, st);
+  }
+
+  // ── الجولة الثالثة (ملاحظتا المالك 2026-11-01 ومراجعة 168ح) — كلُّ سيناريو هنا رُئي أحمرَ على الكود قبلها (قرار 47) ──────────
+  // سطورُ ملفّ العربيّة بشكله المقيس: جملٌ تامّةٌ تُقسَّم سطوراً بنحو 30 حرفاً — فنهايةُ الجملة تقع وسطَ السطر غالباً
+  const AR_SENT = (k) => "هذه الجملة رقم " + k + " وهي كاملة.";
+  const arTrack = (n, first, step, long) => {
+    const words = [];
+    for (let k = 1; k <= n; k++) words.push(...(long ? AR_SENT(k).replace(" وهي", " وهي جملةٌ طويلةٌ جدّاً تمتدّ كثيراً وهي") : AR_SENT(k)).split(" "));
+    const lines = [];
+    let cur = "";
+    for (const w of words) { if (cur && (cur + " " + w).length > 30) { lines.push(cur); cur = w; } else cur = cur ? cur + " " + w : w; }
+    if (cur) lines.push(cur);
+    return lines.map((line, j) => ({ t: first + j * step, d: step * 2, line }));
+  };
+  const KEYZ = "TESTKEY0123456789abcdefABCDEF0123";
+  const saidAll = (e, ev) => e.spoken.filter((x) => x.ev === ev && !/بدأتِ/.test(x.text));
+
+  console.log("\n[١٥] الجولة الثالثة — «ترجمة يوتيوب» بقراءةٍ مسبقة: ملفُّ العربيّة من ردّ طلب المشغّل نفسِه، يُنطق جملاً كاملةً في مواعيدها");
+  {
+    const e = makeEnv({ arTrack: arTrack(24, 2, 2) });
+    const st = await startRun(e, { source: "yt" });
+    check("⭐ يعمل بوضع الجمل «ytar» لا بوضع العرض — ⛔ ~~«display»~~", st.state === "running" && st.kind === "ytar" && st.total > 3, st);
+    check("⭐ وبصفر طلبٍ منّا — المشغّلُ وحدَه طلب العربيّة", e.fetched.length === 0 && e.playerReqs.some((u) => /tlang=ar/.test(u)), { f: e.fetched });
+    await until(() => saidAll(e, "start").length >= 4, 40000);
+    const got = saidAll(e, "start");
+    const SENT = /^(هذه الجملة رقم \d+ وهي كاملة\.)( هذه الجملة رقم \d+ وهي كاملة\.)*$/;
+    check("⭐ كلُّ ما نُطق جملٌ كاملة — لا يقف الصوتُ وسطَ جملة", got.length >= 4 && got.every((x) => SENT.test(x.text)), got.map((x) => x.text));
+    const nums = got.map((x) => x.text.match(/\d+/g).map(Number)).flat();
+    check("⭐ وبترتيبها بلا تكرارٍ ولا ثغرة", nums.every((n, i) => i === 0 || n === nums[i - 1] + 1), nums);
+    // صوتُ الجهاز المزيّف بطيءٌ عمداً (8.15 حرفاً/ث، «ليلى») وجملُ العربيّة أطولُ من نوافذها: فالأولى في موعدها، وما بعدها **لا يتراكم
+    // تأخّرُه** — يُسرَّع ليلحق (`dubCapFor`) ويتوقّف الفيديو حين يبلغ DUB_WAIT_BEHIND_S (2.5 ث) حتى يفرغ الصوت ⇒ يبقى ما يُسمع مع ما يُعرض
+    const sents = e.api.dub.sents, lag = got.map((x) => { const u = sents.find((s) => s.ar === x.text); return u ? x.vt - u.start / 1000 : 99; });
+    check("⭐ الأولى في موعدها، وتأخّرُ ما بعدها محدودٌ لا يتراكم (يلحق ثمّ ينتظره الفيديو)", Math.abs(lag[0]) < 0.3 && lag.every((l) => l > -0.2 && l < 3.0),
+      lag.map((l) => l.toFixed(2)));
+    e.api.dubStop("user");
+  }
+  {
+    const e = makeEnv({ arTrack: arTrack(12, 2, 2), ccOn: { languageCode: "en", kind: "asr", translationLanguage: { languageCode: "ar" } } });
+    const st = await startRun(e, { source: "yt" });
+    check("⭐ العربيّةُ معروضةٌ سلفاً ⇐ يُعاد ضبطُ المسار نفسِه فيُلتقط ملفُّه — ⛔ ~~يُقرأ ما يظهر وحدَه~~", st.kind === "ytar" && st.total > 2, st);
+    check("واللاصقةُ ببياناتها، ولا شيءَ يُطفأ عند الإيقاف", dataOf(e.local.getItem(e.STICKY)) === dataOf(e.stickyBefore), e.local.getItem(e.STICKY));
+    e.api.dubStop("user");
+    await sleep(500);
+    check("ولا يُطفئ ما لم يُشغّله", !e.calls.some((x) => x.startsWith("unload")), e.calls);
+  }
+  {
+    const e = makeEnv({ arTrack: arTrack(12, 2, 2), noXhr: true, cues: CUES(20, (k) => "سطرٌ عربيٌّ رقم " + k) });
+    const st = await startRun(e, { source: "yt" });
+    check("لم يُلتقط الملفّ ⇐ يُقرأ ما يظهر سطراً سطراً كما كان (لا رفض)", st.state === "running" && st.kind === "display", st);
+    e.api.dubStop("user");
+  }
+
+  console.log("\n[١٦] مراجعة 168ح — لا تجميد · حدٌّ للصفحة · قراءةٌ تفشل · ردٌّ بطيء · تحذيرٌ حيّ · صوتٌ يتبدّل · مترجمٌ أمام الموضع · مفتاحٌ يُصحَّح");
+  {
+    // #1 · #7 · #13 — العرضُ بصوت Azure وسطورٌ أسرعُ من 18 في الدقيقة: كان الحدُّ الممتلئ يُعيد النبضةَ في سلسلة وعودٍ تُجمّد الصفحة
+    const cues = []; for (let k = 0; k < 80; k++) cues.push({ t: 2 + k * 2, d: 1.9, line: "سطرٌ رقم " + (k + 1) });
+    const e = makeEnv({ cues });
+    await startRun(e, { source: "yt", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    e.video.currentTime = 1.9;
+    const n0 = e.perf.n;
+    await sleep(120000);
+    const asks = e.perf.n - n0;
+    check("⭐ دقيقتان من سطرٍ كلَّ ثانيتين بصوت Azure ⇐ لا حلقةَ تُجمّد الصفحة (سؤالُ الساعة بالآلاف لا بالملايين)", asks < 60000, asks);
+    check("ويُسمع الكلام", e.spoken.filter((x) => x.ev === "az-start" && /رقم/.test(x.text)).length >= 10, e.spoken.filter((x) => x.ev === "az-start").length);
+    e.api.dubStop("user");
+  }
+  {
+    // #2 · #8 — ستُّ ضغطاتٍ في دقيقة: الحدُّ للصفحة لا للتشغيلة ⇒ لا تتجاوز طلباتُ النطق 18 في أيّ ستين ثانية
+    const e = makeEnv();
+    for (let k = 0; k < 6; k++) {
+      await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+      await sleep(7000);
+      e.api.dubStop("user");
+      await sleep(2000);
+    }
+    const ts = e.azReqs.map((x) => x.t);
+    let worst = 0;
+    for (const t0 of ts) worst = Math.max(worst, ts.filter((t) => t >= t0 && t < t0 + 60000).length);
+    check("⭐ ستُّ ضغطاتٍ في نحو دقيقة ⇐ لا تتجاوز طلباتُ النطق 18 في أيّ ستين ثانية — ⛔ ~~24~~", worst <= 18 && ts.length >= 6, { worst, n: ts.length });
+  }
+  {
+    // ⭐ حَكَمُ الجولة S4: قراءةٌ تفشل مرّةً (فشلٌ عابر) ⇐ يُعاد طلبُ جملتها مرّةً عبر الحدّ نفسِه فتُسمع — ⛔ ~~تضيع~~
+    let once = "";
+    const e = makeEnv({ blobFails: (n, text) => (n === 3 ? ((once = text), true) : false) });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => !!once && saidAll(e, "az-start").some((x) => x.text === once), 30000);
+    check("⭐ قراءةٌ فشلت مرّةً ⇐ أُعيد طلبُها مرّةً وسُمعت، ولا ضائع", !!once && saidAll(e, "az-start").some((x) => x.text === once) && e.api.dubStatus().lost === 0 &&
+      e.azReqs.filter((r) => r.text === once).length === 2, { once, lost: e.api.dubStatus().lost, tries: e.azReqs.filter((r) => r.text === once).length });
+    e.api.dubStop("user");
+  }
+  {
+    // #3 — وتفشل مرّتين للجملة نفسِها: المقطعُ يُعدّ ضائعاً وتمضي الدبلجة — ⛔ ~~ثلاثون ثانيةً صامتة و«صوتٌ آخر يسبقنا»~~
+    let bad = "";
+    const e = makeEnv({ blobFails: (n, text) => { if (n === 3) bad = text; return !!bad && text === bad; } });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.api.dubStatus().lost >= 1, 30000);
+    const holds = new Set();
+    const t0 = now();
+    while (now() - t0 < 12000) { holds.add(e.api.dubStatus().hold); await sleep(200); }
+    check("⭐ قراءةٌ فشلت مرّتين للجملة نفسِها ⇐ ضاع مقطعٌ وقيل، ومضت الدبلجةُ بلا «صوتٌ آخر يسبقنا»", e.api.dubStatus().lost >= 1 && !holds.has("queue") && e.spoken.filter((x) => x.ev === "az-start").length >= 2,
+      { lost: e.api.dubStatus().lost, holds: Array.from(holds) });
+    e.api.dubStop("user");
+  }
+  {
+    // #4 — ردٌّ بطيء (3.5 ث) في وضع العرض (يُجلب كلُّ سطرٍ عند ظهوره): ⛔ ~~قاعدةُ الثلاث ثوانٍ لطابور النطق تُسقطه صامتاً~~ ⇒ يُسمع
+    const e = makeEnv({ azDelay: (n) => (n === 1 ? 40 : 3500), cues: CUES(20, (k) => "سطرٌ عربيٌّ رقم " + k) });
+    await startRun(e, { source: "yt", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    e.video.currentTime = 4.9;
+    await until(() => e.spoken.filter((x) => x.ev === "az-start" && /رقم/.test(x.text)).length >= 2, 40000);
+    check("⭐ ردُّ Azure البطيء يُسمع ولا يُسقط — ولا «صوتٌ آخر يسبقنا»", e.spoken.filter((x) => x.ev === "az-start" && /رقم/.test(x.text)).length >= 2 &&
+      e.api.dubStatus().hold !== "queue", e.api.dubStatus());
+    e.api.dubStop("user");
+  }
+  {
+    // #5 · #14 — بعد 429 ودقيقة الانتظار: Azure يعود والتحذيرُ يزول — ⛔ ~~«بلغتَ الحدّ» بقيّةَ التشغيلة~~ (فيديو دقيقتين: يبقى ما يُقال)
+    const EVL = [];
+    for (let i = 0; i < 44; i++) EVL.push({ tStartMs: 2000 + i * 3000, dDurationMs: 2800, segs: [{ utf8: "Sentence number " + (i + 1) + "." }] });
+    const e = makeEnv({ events: EVL, azMode: (n) => (n === 2 ? "429" : "ok") });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.api.dubStatus().azWarn === "rate", 30000);
+    check("429 ⇐ «الحدّ» يُقال، وصوتُ الجهاز يخلف (azOn مطفأ)", e.api.dubStatus().azOn === false, e.api.dubStatus());
+    await sleep(62000);
+    await until(() => e.api.dubStatus().azOn === true, 5000);
+    const n0 = saidAll(e, "az-start").length;
+    await until(() => saidAll(e, "az-start").length > n0, 20000);
+    check("⭐ وبعد الدقيقة: Azure يتكلّم ثانيةً والتحذيرُ زال", e.api.dubStatus().azWarn === "" && e.api.dubStatus().azOn === true && saidAll(e, "az-start").length > n0, e.api.dubStatus());
+    e.api.dubStop("user");
+  }
+  {
+    // #6 — صوتٌ يتبدّل وسطَ التشغيل: ما جُلب بالقديم يسقط ⇒ الجملةُ التالية بالجديد
+    const e = makeEnv();
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth", voice: "ar-SA-HamedNeural" } });
+    await until(() => saidAll(e, "az-start").length >= 1, 20000);
+    e.api.dubSetOptions({ az: { key: KEYZ, region: "uaenorth", voice: "ar-SA-ZariyahNeural" } });
+    const n0 = saidAll(e, "az-start").length;
+    await until(() => saidAll(e, "az-start").length > n0, 20000);
+    const nx = saidAll(e, "az-start")[n0] || {};
+    check("⭐ الجملةُ التالية بعد التبديل بالصوت الجديد — ⛔ ~~بما جُلب مسبقاً بالقديم~~", nx.voice === "ar-SA-ZariyahNeural", nx);
+    e.api.dubStop("user");
+  }
+  {
+    // #9 — مترجمُ Azure أمام الموضع: ⛔ ~~الفيديو كلُّه في ثانية~~ ⇒ دفعةٌ واحدةٌ لما أمامه (فيديو أطولُ من دفعة: 90 جملة)
+    const EVT = [];
+    for (let i = 0; i < 90; i++) EVT.push({ tStartMs: 2000 + i * 3000, dDurationMs: 2800, segs: [{ utf8: "Sentence number " + (i + 1) + "." }] });
+    const e = makeEnv({ events: EVT });
+    await startRun(e, { source: "azure", engine: "system", az: { trKey: TRK, trRegion: "uaenorth" } });
+    await sleep(4000);
+    const units = e.api.dubStatus().total, asked = e.trReqs.reduce((n, x) => n + x.n, 0);
+    check("⭐ لا يُترجم إلا ما أمام الموضع (دفعةٌ واحدة) — لا الفيديو كلَّه", units > 25 && e.trReqs.length === 1 && asked <= 25 && asked < units, { reqs: e.trReqs.length, asked, units });
+    e.api.dubStop("user");
+  }
+  {
+    // #11 — المترجمُ لا يصل (شبكة): ⛔ ~~يُعاد كلَّ نبضة أبداً~~ ⇒ انتظارٌ يتضاعف، وبعد ثلاثةٍ يتوقّف ويُقال
+    const e = makeEnv({ trMode: "net" });
+    await startRun(e, { source: "azure", engine: "system", az: { trKey: TRK, trRegion: "uaenorth" } });
+    await sleep(20000);
+    check("⭐ عشرون ثانيةً بلا شبكة ⇐ ثلاثةُ طلباتٍ لا مئة، ثمّ «تعذّر» ويخلفه مترجمُ كروم", e.trReqs.length <= 4 && e.api.dubStatus().trOff === "net", { n: e.trReqs.length, st: e.api.dubStatus().trOff });
+    e.api.dubStop("user");
+  }
+  {
+    // #11 (ب) — مترجمُ Azure يُرفض ولا مترجمَ كروم: يُقال «لا مترجم» — ⛔ ~~«بمترجم كروم» وهو غيرُ موجود~~
+    const e = makeEnv({ trMode: "401", noTranslator: true });
+    await startRun(e, { source: "azure", engine: "system", az: { trKey: TRK, trRegion: "uaenorth" } });
+    await until(() => e.api.dubStatus().hold === "tr-off", 15000);
+    check("⭐ لا مترجمَ يخلف ⇐ «tr-off» لا صمتٌ بلا سبب", e.api.dubStatus().hold === "tr-off", e.api.dubStatus());
+    e.api.dubStop("user");
+  }
+  {
+    // #16 — مفتاحٌ رُفض ثمّ صُحّح وسطَ التشغيل ⇒ يُجرَّب الآن — ⛔ ~~«مرفوض» بقيّةَ التشغيلة~~
+    const e = makeEnv({ azMode: (n) => (n <= 1 ? "401" : "ok") });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.api.dubStatus().azOff === "key", 15000);
+    e.api.dubSetOptions({ az: { key: "FIXEDKEY0123456789abcdefABCDEF01", region: "uaenorth" } });
+    await until(() => saidAll(e, "az-start").length >= 1, 20000);
+    check("⭐ المفتاحُ المصحَّح يُجرَّب فوراً ويُسمع Azure", e.api.dubStatus().azOff === "" && saidAll(e, "az-start").length >= 1 && e.azReqs.some((r) => r.key === "FIXEDKEY0123456789abcdefABCDEF01"), e.api.dubStatus());
+    e.api.dubStop("user");
+  }
+
+  console.log("\n[١٧] الجولة الثالثة — جملٌ كاملة · «يتوقّف الفيديو لحظةً حتى يجهز الصوت» (قرارُ المالك) · صوتُ Azure يتوقّف مع الفيديو ويكمل");
+  {
+    // ملاحظةُ المالك ٢: «توقفات غير منطقيه في الكلام في منتصف جمل» — تلقائيّةٌ بتوقيت الكلمات، وفي كلّ جملةٍ سكتةُ تردّدٍ
+    // (900ms بين كلمتين) تقطع المُقسِّمَ هناك ⇒ ⛔ ~~مقطعٌ «We went to» يُنطق وحدَه ثمّ صمتٌ حتى باقيه~~ ⇒ المقطعُ يُتمّ جملتَه
+    const W = [["We", 0], [" went", 300], [" to", 600], [" the", 1500], [" old", 1800], [" market", 2100], [" and", 2400], [" bought", 2700], [" apples", 3000]];
+    const EV2 = [];
+    for (let k = 0; k < 12; k++) EV2.push({ tStartMs: 2000 + k * 6000, dDurationMs: 5500, segs: W.map((w) => ({ utf8: w[0], tOffsetMs: w[1] })).concat([{ utf8: " " + (k + 1) + ".", tOffsetMs: 3300 }]) });
+    const e = makeEnv({ events: EV2 });
+    await startRun(e, { source: "device" });
+    const units = (e.api.dub && e.api.dub.sents) || [];
+    check("⭐ كلُّ مقطعٍ جملةٌ كاملة (ينتهي بترقيمه) — ⛔ ~~«We went to» وحدَه وسطَ الجملة~~", units.length >= 6 &&
+      units.every((u) => /^We went to the old market and bought apples \d+\.$/.test(u.text)), units.slice(0, 3).map((u) => u.win + "|" + u.text));
+    e.api.dubStop("user");
+  }
+  {
+    // ⭐ الانتظار مفعّل: صوتُ أوّل جملةٍ يتأخّر أربعَ ثوانٍ (يُطلب نحو ثلاثٍ قبل موعدها فيصل بعده بنحو ثانية — داخل مهلة الانتظار)
+    // ⇒ يتوقّف الفيديو في موعدها ويكمل حين يجهز ⇒ تبدأ في موعدها من الفيديو
+    const e = makeEnv({ azDelay: (n) => (n === 2 ? 4000 : 40) });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => saidAll(e, "az-start").length >= 1, 40000);
+    const a = saidAll(e, "az-start")[0], u = e.api.dub.sents.find((s) => s.ar === a.text);
+    check("⭐ «يتوقّف الفيديو لحظة»: أُوقف الفيديو ثمّ أُكمل، والجملةُ بدأت في موعدها منه — ⛔ ~~متأخّرةً أو محذوفة~~",
+      e.video.pauses >= 1 && !e.video.paused && u && Math.abs(a.vt - u.start / 1000) < 0.5 && e.api.dubStatus().waits >= 1, { vt: a.vt, start: u && u.start, waits: e.api.dubStatus().waits });
+    e.api.dubStop("user");
+  }
+  {
+    // ⭐ ومهلةُ الانتظار ثلاثُ ثوانٍ مرّةً واحدةً للجملة: صوتٌ تأخّر اثنتي عشرة ثانية ⇐ يتوقّف الفيديو مرّةً ثمّ يكمل ولا يعود يتوقّف لها
+    // — ⛔ ~~يكمل لحظةً ثمّ يتوقّف ثانيةً فثالثة~~ (تقطيعٌ للفيديو نفسِه)
+    const e = makeEnv({ azDelay: (n) => (n === 2 ? 12000 : 40) });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => saidAll(e, "az-start").length >= 1, 40000);
+    check("⭐ انتظارٌ واحدٌ بمهلته ثمّ يكمل الفيديو — لا إيقافَ ثانٍ للجملة نفسِها", e.video.pauses === 1 && !e.video.paused, { pauses: e.video.pauses, waits: e.api.dubStatus().waits });
+    e.api.dubStop("user");
+  }
+  {
+    // والانتظارُ مطفأ: لا يُلمس الفيديو — الجملةُ تبدأ متأخّرةً ولا تُحذف
+    const e = makeEnv({ azDelay: (n) => (n === 2 ? 4000 : 40) });
+    await startRun(e, { source: "device", engine: "azure", wait: false, az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => saidAll(e, "az-start").length >= 1, 40000);
+    check("والانتظارُ مطفأ ⇐ لا يُوقَف الفيديو أبداً، والجملةُ تُسمع", !(e.video.pauses > 0) && saidAll(e, "az-start").length >= 1, { pauses: e.video.pauses });
+    e.api.dubStop("user");
+  }
+  {
+    // ⛔ ~~من ضغط مفتاحاً أثناء إيقافنا صار الإيقافُ له: لا نُكمل الفيديو عنه~~ — سُحب (حَكَمُ الجولة S1، 📐 كان موقوفاً بعد 8.5 ث): نقرةٌ في
+    // أيّ مكانٍ في الصفحة أثناء ثلاث ثوانٍ تركت الفيديو موقوفاً بلا نهاية ⇒ مهلةُ الانتظار تحكم، ولا مستمعَ لنا على المستند
+    const e = makeEnv({ azDelay: (n) => (n === 2 ? 7000 : 40) });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.paused, 30000);
+    const t0 = now();
+    e.document.press("mousedown"); e.document.press("keydown");
+    await until(() => !e.video.paused, 8000);
+    check("⭐ نقرةٌ ومفتاحٌ أثناء انتظارنا ⇐ يكمل الفيديو بمهلة الانتظار (≤3.2 ث) — ⛔ ~~يبقى موقوفاً بلا نهاية~~ — ولا مستمعَ على المستند",
+      !e.video.paused && now() - t0 <= 3200 && e.document.listeners("keydown") === 0 && e.document.listeners("mousedown") === 0, { paused: e.video.paused, ms: now() - t0 });
+    e.api.dubStop("user");
+  }
+  {
+    // وإيقافُ الدبلجة أثناء انتظارنا ⇐ الفيديو يكمل: لا يبقى موقوفاً بلا سبب
+    const e = makeEnv({ azDelay: (n) => (n === 2 ? 7000 : 40) });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.paused, 30000);
+    e.api.dubStop("user");
+    check("⭐ «أوقف الدبلجة» أثناء انتظارنا ⇐ يكمل الفيديو", !e.video.paused, { paused: e.video.paused });
+  }
+  {
+    // ⭐ صوتُ Azure يتوقّف مع الفيديو ويكمل من حيث وقف — لا تُقطع جملته ولا تُعاد
+    const e = makeEnv({ arTrack: arTrack(16, 2, 2, true) });
+    await startRun(e, { source: "yt", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => saidAll(e, "az-start").length >= 1, 30000);
+    await sleep(800);
+    const first = saidAll(e, "az-start")[0].text;
+    e.video.pause();
+    await sleep(2500);
+    e.video.play();
+    await until(() => e.spoken.some((x) => x.ev === "az-end" && x.text === first), 30000);
+    const starts = e.spoken.filter((x) => x.ev === "az-start" && x.text === first).length;
+    check("⭐ أوقفتُ الفيديو وسطَ جملةٍ وأكملتُه ⇐ صوتُها توقّف وأكمل، وقيلت مرّةً واحدة — ⛔ ~~قُطعت وضاع باقيها~~",
+      e.spoken.some((x) => x.ev === "az-pause") && e.spoken.some((x) => x.ev === "az-resume" && x.text === first) && starts === 1, { starts });
+    e.api.dubStop("user");
+  }
+  {
+    // ⭐ صمتُ آخر مقطع Azure (📐 نحو 0.85 ث): السرعةُ تُتعلَّم من الكلام وحدَه، والجملةُ التاليةُ المستحقّة لا تنتظره
+    const e = makeEnv({ arTrack: arTrack(30, 2, 2, true), azTail: 0.85 });
+    await startRun(e, { source: "yt", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => saidAll(e, "az-start").length >= 6, 60000);
+    const cps = e.api.dub.cpsAz;
+    check("⭐ سرعةُ Azure تُتعلَّم من الكلام لا من صمت ذيله (12 حرفاً/ث في الحارس) — لا أبطأَ بنحو الخُمس", Math.abs(cps - 12) < 1.2, cps);
+    let early = 0, prompt = 0;
+    e.spoken.forEach((x, i) => {
+      if (x.ev !== "az-pause" || !x.text || /بدأتِ/.test(x.text)) return;
+      early++;
+      const nx = e.spoken.slice(i + 1).find((y) => y.ev === "az-start");
+      if (nx && nx.t - x.t < 300) prompt++;
+    });
+    check("⭐ المقطعُ يُنهى عند نهاية كلامه، والتاليةُ المستحقّةُ تبدأ فوراً — لا بعد صمت ذيله", early >= 2 && prompt >= 1, { early, prompt });
+    const sk = saidAll(e, "az-start").map((x) => x.seek);
+    check("⭐ ويبدأ كلُّ مقطعٍ من أوّل كلامه لا من صمت أوّله (عُشرُ ثانيةٍ في الحارس)", sk.length >= 3 && sk.every((x) => x > 0.05 && x < 0.1), sk);
+    e.api.dubStop("user");
+  }
+
+  console.log("\n[١٨] تصميمُ الجولة — قفزٌ والفيديو متوقّف · لا نعاند المستخدم · مقطعٌ جاهزٌ يُنطق في مهلة 429 · حصّةٌ نفدت · كلامٌ كثيف");
+  {
+    // R1 — أوقفتُ الفيديو وسطَ جملةٍ بصوت Azure ثمّ سحبتُ الشريط ثلاثين ثانيةً وأكملتُ: ⛔ ~~يكمل المقطعُ القديم في الموضع الجديد~~
+    const e = makeEnv({ arTrack: arTrack(40, 2, 2, true) });
+    await startRun(e, { source: "yt", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => saidAll(e, "az-start").length >= 1, 30000);
+    await sleep(500);
+    const old = saidAll(e, "az-start")[saidAll(e, "az-start").length - 1].text;
+    e.video.pause();
+    await sleep(800);
+    e.video.currentTime = e.video.currentTime + 30;
+    await sleep(800);
+    e.video.play();
+    await sleep(4000);
+    check("⭐ قفزٌ والفيديو متوقّف ⇐ لا يكمل المقطعُ القديم، ويُنطق من الموضع الجديد", !e.spoken.some((x) => x.ev === "az-resume" && x.text === old) &&
+      saidAll(e, "az-start").some((x) => x.vt > 30), { resumedOld: e.spoken.some((x) => x.ev === "az-resume" && x.text === old) });
+    e.api.dubStop("user");
+  }
+  {
+    // R2 — المستخدمُ ضغط «تشغيل» أثناء انتظارنا ⇐ القرارُ له: لا نوقفه ثانيةً لهذه الجملة
+    const e = makeEnv({ azDelay: (n) => (n === 2 ? 9000 : 40) });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.paused, 30000);
+    const p0 = e.video.pauses;
+    e.video.play();
+    await sleep(2500);
+    check("⭐ «تشغيل» أثناء انتظارنا ⇐ لا إيقافَ ثانٍ لها — ⛔ ~~نوقفه بعد لحظة~~", e.video.pauses === p0 && !e.video.paused, { before: p0, after: e.video.pauses });
+    e.api.dubStop("user");
+  }
+  {
+    // R4 — 429 على طلبٍ مسبق والمقاطعُ التاليةُ جاهزة ⇒ تُنطق بصوت Azure — ⛔ ~~صوتُ الجهاز وما دُفع يُرمى~~
+    const e = makeEnv({ azMode: (n) => (n === 4 ? "429" : "ok") });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.api.dubStatus().azWarn === "rate", 30000);
+    const ready = e.api.dub.sents.filter((x) => x.clip && x.clip.res && x.clip.res.ok).map((x) => x.ar);
+    await sleep(9000);
+    const az = saidAll(e, "az-start").map((x) => x.text), dev = e.spoken.filter((x) => x.ev === "start" && /^ترجمة/.test(x.text)).map((x) => x.text);
+    check("⭐ ما جُلب قبل الـ429 يُنطق بصوت Azure لا بصوت الجهاز", ready.length >= 1 && ready.every((t) => !dev.includes(t)) && ready.some((t) => az.includes(t)), { ready, az, dev });
+    e.api.dubStop("user");
+  }
+  {
+    // 📄 403 بنصٍّ يذكر الحصّة ⇒ «نفدت الحصّة» لا «المفتاح مرفوض»، وصوتُ الجهاز يخلف
+    const e = makeEnv({ azMode: (n) => (n >= 2 ? "403" : "ok"), az403Quota: true });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.api.dubStatus().azOff !== "", 30000);
+    check("⭐ حصّةُ الشهر نفدت ⇐ يُقال بسببه («quota»)", e.api.dubStatus().azOff === "quota", e.api.dubStatus().azOff);
+    e.api.dubStop("user");
+  }
+  {
+    // ⭐ كلامٌ كثيف بصوت Azure والانتظارُ مفعّل: «حامد» بسرعته (📄 107 كلمة/د ⇐ نحو 11.1 حرفاً/ث) وسطرٌ كلَّ 1.8 ث (كثافةُ العربيّة
+    // المقيسة: تحتاج فوق 1.4) ⇒ يلحق بالتسريع ولا يتوقّف الفيديو إلا نادراً — ⛔ ~~سقفٌ ثابت 1.4 وإيقافٌ عند 1.5 ث: مرّاتٌ في الدقيقة~~
+    // 📐 بشروط تصميم الجولة: صمتُ ذيلٍ 0.85 ث وردٌّ في 600ms — القديمُ (لقطةُ 11:49) أوقف الفيديو 3.04 مرّةً في الدقيقة وتأخّرُه p90 1.69 ث
+    const e = makeEnv({ arTrack: arTrack(70, 2, 1.8, true), azCps: 11.1, azTail: 0.85, azDelay: 600 });
+    await startRun(e, { source: "yt", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    const v0 = e.video.currentTime, p0 = e.video.pauses | 0;
+    await sleep(60000);
+    const mins = Math.max(0.5, (e.video.currentTime - v0) / 60), perMin = ((e.video.pauses | 0) - p0) / mins;
+    const sents = e.api.dub.sents, lags = saidAll(e, "az-start").map((x) => { const u = sents.find((t) => t.ar === x.text); return u ? x.vt - u.start / 1000 : 9; }).sort((a, b) => a - b);
+    const p90 = lags.length ? lags[Math.min(lags.length - 1, Math.floor(0.9 * lags.length))] : 9;
+    // بالعدّ لا بالمعدّل: دقيقةٌ من الكلام الكثيف ⇐ إيقافٌ واحدٌ على الأكثر (قد يكون انتظارَ أوّل مقطعٍ عند البدء) — القديمُ 2–3
+    const pauses = (e.video.pauses | 0) - p0;
+    check("⭐ كلامٌ كثيف ⇐ إيقافُ الفيديو نادر (مرّةٌ في الدقيقة على الأكثر) وتأخّرُ الجمل p90 أقلُّ من ثانية، ولا تُتخطّى",
+      pauses <= 1 && p90 < 1 && lags.length >= 8 && e.api.dubStatus().skipped === 0,
+      { perMin: perMin.toFixed(2), p90: p90.toFixed(2), n: lags.length, skipped: e.api.dubStatus().skipped, waits: e.api.dubStatus().waits });
+    e.api.dubStop("user");
+  }
+
+  {
+    // ⭐ صوتُ الجهاز («ليلى» 8.15 حرفاً/ث) على كلامٍ كثيف لا يلحق: إيقافُ اللحاق مرّةً كلَّ عشرين ثانيةً على الأكثر (تصميمُ الجولة G5)
+    // — ⛔ ~~يتوقّف الفيديو كلَّ جملة~~ (21 مرّةً في ثلاث دقائق في التصميم)
+    const e = makeEnv({ arTrack: arTrack(70, 2, 1.8, true) });
+    await startRun(e, { source: "yt" });
+    const p0 = e.video.pauses | 0;
+    await sleep(60000);
+    const pauses = (e.video.pauses | 0) - p0;
+    check("⭐ صوتٌ لا يلحق ⇐ ثلاثةُ إيقافاتٍ في الدقيقة على الأكثر (مرّةٌ كلَّ عشرين ثانية)", pauses <= 3, { pauses, waits: e.api.dubStatus().waits });
+    e.api.dubStop("user");
+  }
+
+  console.log("\n[١٩] حَكَمُ الجولة الثالثة — قفزٌ وانتظارُنا يُمسك الفيديو · 429 يُغلق الحدَّ لحظةَ يصل · فشلٌ عابرٌ يُعاد · مقطعٌ متأخّرٌ جدّاً يُتخطّى · انتظارٌ بعد القفز · سرعةُ الفيديو وسطَ المقطع · سرعةٌ ثابتة · أرقامُ القياس");
+  const EV40 = []; for (let i = 0; i < 40; i++) EV40.push({ tStartMs: 2000 + i * 3000, dDurationMs: 2800, segs: [{ utf8: "Sentence number " + (i + 1) + "." }] });
+  {
+    // S2 (P4) — سحبُ الشريط ثلاثين ثانيةً إلى الوراء وانتظارُنا يُمسك الفيديو: ⛔ ~~النبضةُ تعود من الانتظار قبل فحص القفز فيُبتلع، ويبقى
+    // الموضعُ عند الجملة القديمة فلا مقطعَ حتى يبلغها الفيديو~~ ⇒ موضعُ إيقافنا محفوظ ⇒ يُنطق من الموضع الجديد فورَ الإطلاق
+    let slow = "";
+    const e = makeEnv({ events: EV40, azDelay: (n, text) => (text && text === slow ? 6000 : 40) });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.currentTime > 40, 90000);
+    const u = e.api.dub.sents.find((x) => x.start / 1000 > e.video.currentTime + 30 && x.ar);
+    slow = u.ar;
+    e.video.currentTime = u.start / 1000 + 0.4;                       // قفزةٌ إلى جملةٍ لم يُجلب صوتُها: تستحقّ الآن وطلبُها ست ثوانٍ ⇐ انتظار
+    const waited = await until(() => e.video.paused && /^wait-/.test(e.api.dubStatus().hold), 8000);
+    const at = e.video.currentTime, n0 = saidAll(e, "az-start").length;
+    e.video.currentTime = at - 30;                                     // يسحب الشريط والفيديو موقوفٌ بنا
+    await until(() => !e.video.paused, 8000);
+    await until(() => saidAll(e, "az-start").length > n0, 15000);
+    const first = saidAll(e, "az-start")[n0];
+    check("⭐ قفزٌ والانتظارُ يُمسك الفيديو ⇐ يُنطق من الموضع الجديد خلال ثانيةٍ ونصف — ⛔ ~~صمتٌ حتى يبلغ الفيديو الجملةَ القديمة~~",
+      waited && !!first && first.text !== slow && Math.abs(first.vt - (at - 30)) < 1.5, { waited, first: first && { vt: first.vt, text: first.text }, seekTo: at - 30 });
+    e.api.dubStop("user");
+  }
+  {
+    // S3 · S4 (P1) — 429 على طلبٍ مسبق، وAzure يخنق ثماني ثوانٍ بعده (كلُّ طلبٍ فيها 429): ⛔ ~~يُصنَّف الرفضُ حين تُنطق جملتُه ⇐ تذهب
+    // طلباتٌ أخرى في نافذة الخنق، وتُنطق جملٌ بصوت الماك~~ ⇒ يُغلق الحدُّ لحظةَ يصل الرفض، وجملتُه تُعاد بعد المهلة بصوت Azure
+    let thr = -1, n429 = 0, refused = "";
+    const e = makeEnv({ azMode: (n, text) => {
+      const t = now();
+      if (n === 4) { thr = t + 8000; n429++; refused = text; return "429"; }
+      if (t < thr) { n429++; return "429"; }
+      return "ok";
+    } });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => !!refused && saidAll(e, "az-start").some((x) => x.text === refused), 40000);
+    const mac = e.spoken.filter((x) => x.ev === "start" && /^ترجمة/.test(x.text)).length;
+    check("⭐ 429 على طلبٍ مسبق ⇐ رفضٌ واحدٌ لا أكثر، ولا جملةَ بصوت الماك، وجملتُه سُمعت بصوت Azure بعد المهلة", n429 === 1 && mac === 0 &&
+      saidAll(e, "az-start").some((x) => x.text === refused), { n429, mac, refused, heard: saidAll(e, "az-start").some((x) => x.text === refused) });
+    e.api.dubStop("user");
+  }
+  {
+    // S4 — 500 على طلبٍ مسبق ⇐ يُعاد مرّةً عبر الحدّ نفسِه وتُسمع جملتُه — ⛔ ~~يُشغَّل فاشلاً فتضيع~~ · والمفتاحُ المرفوضُ لا يُعاد (انظر [١٤])
+    let failed = "";
+    const e = makeEnv({ azMode: (n, text) => (n === 4 ? ((failed = text), "500") : "ok") });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => !!failed && saidAll(e, "az-start").some((x) => x.text === failed), 30000);
+    const tries = e.azReqs.filter((r) => r.text === failed).length;
+    check("⭐ 500 ⇐ طلبٌ واحدٌ زائد وسُمعت الجملة، ولا ضائع", tries === 2 && e.api.dubStatus().lost === 0 && saidAll(e, "az-start").some((x) => x.text === failed),
+      { tries, lost: e.api.dubStatus().lost });
+    e.api.dubStop("user");
+  }
+  {
+    // S5 — الانتظارُ مطفأ وصوتُ جملةٍ وصل بعد موعدها بأكثرَ من ست ثوانٍ ⇐ يُتخطّى ويُعدّ — ⛔ ~~يُنطق متأخّراً فيُزحم كلُّ ما بعده~~
+    let slow = "";
+    const e = makeEnv({ events: EV40, azDelay: (n, text) => (text && text === slow ? 7500 : 40) });
+    await startRun(e, { source: "device", engine: "azure", wait: false, az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.currentTime > 20, 60000);
+    const u = e.api.dub.sents.find((x) => x.start / 1000 > e.video.currentTime + 30 && x.ar);
+    slow = u.ar;
+    const sk0 = e.api.dubStatus().skipped;
+    e.video.currentTime = u.start / 1000 + 0.2;
+    await sleep(11000);
+    check("⭐ صوتٌ وصل متأخّراً 7.7 ث ⇐ تُخطّي وعُدّ ولم يُنطق — والدبلجةُ مضت", e.api.dubStatus().skipped > sk0 && !saidAll(e, "az-start").some((x) => x.text === slow) &&
+      saidAll(e, "az-start").some((x) => x.vt > u.start / 1000 + 6), { skipped: e.api.dubStatus().skipped - sk0, heardSlow: saidAll(e, "az-start").some((x) => x.text === slow) });
+    e.api.dubStop("user");
+  }
+  {
+    // S6 — انتظارٌ انقضت مهلتُه ثمّ قفزٌ إلى ما قبل جملته وصوتُها لم يجهز ثانيةً ⇐ تُنتظر من جديد — ⛔ ~~«انتُظرت مرّةً» تبقى بعد القفز
+    // فلا يُنتظر لها أبداً~~
+    let slow = "";
+    const e = makeEnv({ events: EV40, azDelay: (n, text) => (text && text === slow ? 4500 : 40) });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.currentTime > 20, 60000);
+    const u = e.api.dub.sents.find((x) => x.start / 1000 > e.video.currentTime + 30 && x.ar);
+    slow = u.ar;
+    e.video.currentTime = u.start / 1000 + 0.3;
+    await until(() => saidAll(e, "az-start").some((x) => x.text === slow), 20000);     // انتظارٌ انقضت مهلتُه ثمّ وصل الصوتُ فنُطق متأخّراً
+    const p0 = e.video.pauses | 0;
+    await sleep(500);
+    e.video.currentTime = u.start / 1000 - 1;                          // قفزٌ إلى ما قبلها بثانية: صوتُها يُطلب ثانيةً (4.5 ث)
+    await until(() => (e.video.pauses | 0) > p0, 6000);
+    check("⭐ بعد القفز تُنتظر الجملةُ ثانيةً — ⛔ ~~لا انتظارَ لها أبداً~~", (e.video.pauses | 0) > p0, { before: p0, after: e.video.pauses | 0 });
+    e.api.dubStop("user");
+  }
+  {
+    // S7 (R3) — سرعةُ الفيديو من 1× إلى 1.5× عند ثلث مقطعٍ يملأ نافذتَه: ⛔ ~~يبقى بسرعته فيتجاوز نافذتَه~~ ⇒ تتبعها سرعتُه في نبضة
+    const e = makeEnv({ arTrack: arTrack(16, 2, 2, true) });
+    await startRun(e, { source: "yt", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => saidAll(e, "az-start").length >= 2, 30000);
+    const n0 = saidAll(e, "az-start").length;
+    await until(() => saidAll(e, "az-start").length > n0, 20000);
+    const a = saidAll(e, "az-start")[n0], u = e.api.dub.sents.find((x) => x.ar === a.text);
+    await sleep(u.win * 0.3);
+    const tc = now();
+    e.video.playbackRate = 1.5;
+    await until(() => e.spoken.some((x) => (x.ev === "az-end" || x.ev === "az-pause") && x.text === a.text), 20000);
+    const rt = e.spoken.find((x) => x.ev === "az-rate" && x.text === a.text && x.t >= tc), end = e.spoken.find((x) => (x.ev === "az-end" || x.ev === "az-pause") && x.text === a.text);
+    const over = end ? end.vt - (u.start + u.win) / 1000 : 9;
+    check("⭐ الفيديو أسرعُ وسطَ المقطع ⇐ تتبعه سرعتُه خلال 200ms، وينتهي في نافذته (±0.3 ث) — ⛔ ~~يتجاوزها~~", !!rt && rt.t - tc <= 200 && rt.rate > 1.3 && over < 0.3,
+      { rateAfter: rt && rt.rate, ms: rt && rt.t - tc, over });
+    e.api.dubStop("user");
+  }
+  {
+    // S8 — سرعةٌ ثابتة 2× بصوت Azure ⇐ يُطلب بها نفسِها (+100%) — ⛔ ~~بمنحنى «ليلى» (+91%)~~
+    const e = makeEnv();
+    await startRun(e, { source: "device", engine: "azure", rate: "2", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => saidAll(e, "az-start").length >= 2, 30000);
+    const pr = e.azReqs.filter((r) => !/بدأتِ/.test(r.text)).map((r) => (r.body.match(/prosody rate="([^"]+)"/) || [])[1] || "none");
+    check("⭐ «2×» ⇐ كلُّ طلبٍ بـ+100%", pr.length >= 2 && pr.every((x) => x === "+100%"), pr);
+    e.api.dubStop("user");
+  }
+  {
+    // S12 — أرقامُ القياس في الحال بعد ثلاثة مقاطع (يجيب عنها تشغيلُ المالك القادم بلا طلبٍ زائد) — ولا مفتاحَ فيها
+    const e = makeEnv({ arTrack: arTrack(30, 2, 2, true), azTail: 0.85 });
+    await startRun(e, { source: "yt", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => saidAll(e, "az-end").length + e.spoken.filter((x) => x.ev === "az-pause" && !/بدأتِ/.test(x.text)).length >= 3 && e.api.dubStatus().spoken >= 3, 60000);
+    const st = e.api.dubStatus();
+    check("⭐ الحالُ بأرقام القياس: سرعةُ الصوت · صمتا المقطع (عُشرٌ في أوّله و0.85 في آخره في الحارس) · السرعة · ما تحتاجه الجمل · التأخّر",
+      st.cps > 9 && st.cps < 15 && Math.abs(st.leadMs - 100) <= 20 && Math.abs(st.tailMs - 850) <= 30 && Array.isArray(st.spd) && st.spd[0] >= 1 && st.spd[1] >= st.spd[0] &&
+      Array.isArray(st.need) && st.need[0] > 0 && st.need[1] >= st.need[0] && typeof st.lagP90 === "number" && typeof st.stallS === "number",
+      { cps: st.cps, leadMs: st.leadMs, tailMs: st.tailMs, spd: st.spd, need: st.need, lagP90: st.lagP90, stallS: st.stallS });
+    check("⛔ ولا مفتاحَ في الحال", !JSON.stringify(st).includes(KEYZ));
+    e.api.dubStop("user");
+    // ⭐ ومتصفّحٌ لا يفكّ المقطع (بلا OfflineAudioContext) ⇐ صمتا المقطع «غيرُ معروفَين» (null) — ⛔ ~~«أوّله 0 م.ث»~~ رقمٌ يُقرأ قياساً ولم يُقس
+    const f = makeEnv({ arTrack: arTrack(30, 2, 2, true) });
+    await startRun(f, { source: "yt", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => f.api.dubStatus().spoken >= 3, 60000);
+    const sf = f.api.dubStatus();
+    check("⭐ بلا فكٍّ للمقطع ⇐ صمتا المقطع null لا صفر", sf.spoken >= 3 && sf.leadMs === null && sf.tailMs === null, { leadMs: sf.leadMs, tailMs: sf.tailMs });
+    f.api.dubStop("user");
+  }
+  {
+    // S12 — ملاحظةُ المالك ١ في مصدرَي الترجمة: يوتيوب يعرض ترجمتَه العربيّة (اللاصقةُ عنده عربيّة) وأنا أقرأ ترجمةً أخرى ⇐ يُقال
+    const AR_ON = { languageCode: "en", kind: "asr", translationLanguage: { languageCode: "ar" } };
+    const e = makeEnv({ ccOn: AR_ON });
+    await startRun(e, { source: "device" });
+    await sleep(6000);
+    const d1 = e.api.dubStatus().shownDiffers;
+    e.api.dubStop("user");
+    const f = makeEnv();
+    await startRun(f, { source: "device" });
+    await sleep(6000);
+    check("⭐ «مترجم كروم» ويوتيوب يعرض ترجمتَه العربيّة ⇐ `shownDiffers` — وبلا ترجمةٍ معروضة ⇐ لا", d1 === true && f.api.dubStatus().shownDiffers === false,
+      { arabicShown: d1, none: f.api.dubStatus().shownDiffers });
+    f.api.dubStop("user");
+  }
+
+  console.log("\n[٢٠] مراجعةُ الجولة الثالثة المستقلّة — ما يُقرأ هو ما يُعرض · العربيّةُ المعروضة لا تُرفض · اختيارُ المستخدم أثناء انتظارنا · عرضٌ واحد · أسبابٌ صادقة");
+  const URL_AR = "https://www.youtube.com/api/timedtext?v=VID&lang=en&kind=asr&tlang=ar&pot=POT&c=WEB&xorb=2&fmt=json3";
+  const AR_ON = { languageCode: "en", kind: "asr", translationLanguage: { languageCode: "ar" } };
+  const SHOW = { v: "VID", code: "en", asr: true, ql: "en", qk: "asr" };
+  {
+    // #1 — ⛔ ~~ملفٌّ لم يُقرأ ⇐ ترجمةُ المسار السابق من ذاكرة الإضافة~~ (مفتاحُها الفيديو والمصدر لا المسار) ⇒ يُقرأ ما يظهر ويُقال لماذا
+    const e = makeEnv({ arTrack: arTrack(20, 2, 2) });
+    const s1 = await startRun(e, { source: "yt" });
+    e.api.dubStop("user");
+    await sleep(3000);
+    e.opts.noXhr = true;                                               // ملفُّ المسار الآخر لا يُقرأ هذه المرّة
+    e.p.setOption("captions", "track", { languageCode: "en", kind: "", translationLanguage: { languageCode: "ar" } });
+    const s2 = await startRun(e, { source: "yt" });
+    check("⭐ مسارٌ آخر معروضٌ وملفُّه لم يُقرأ ⇐ يُقرأ كما يظهر ويُقال لماذا — ⛔ ~~ترجمةُ المسار السابق والمعروضُ غيرُها~~",
+      s1.kind === "ytar" && s2.state === "running" && s2.kind === "display" && !!s2.ytWhy, { first: s1.kind, second: s2.kind, why: s2.ytWhy });
+    e.api.dubStop("user");
+  }
+  {
+    // #2 — العربيّةُ معروضةٌ سلفاً وإعادةُ طلبها رُفضت (429) ⇐ ⛔ ~~رفضٌ «breaker» والمفاتيحُ بطوابعنا~~ ⇒ تقرأ ما يظهر، والمفاتيحُ بحروفها،
+    // والقاطعُ قائمٌ لما بعده
+    const e = makeEnv({ ccOn: AR_ON, arTrack: arTrack(20, 2, 2), playerReq: () => ({ url: URL_AR, status: 429, size: 0 }) });
+    const keys = () => JSON.stringify([e.local.getItem(e.STICKY), e.local.getItem("yt-player-sticky-caption"), e.session.getItem(e.PREFS)]);
+    const before = keys();
+    const st = await startRun(e, { source: "yt" });
+    await sleep(2600);
+    check("⭐ العربيّةُ معروضةٌ وإعادةُ طلبها رُفضت ⇐ تقرأ ما يظهر ويُقال لماذا — ⛔ ~~«رفض يوتيوب» والترجمةُ على الشاشة~~",
+      st.state === "running" && st.kind === "display" && /^refused:429/.test(st.ytWhy), { state: st.state, reason: st.reason, kind: st.kind, why: st.ytWhy });
+    check("⭐ والمفاتيحُ اللاصقةُ بحروفها — ⛔ ~~بطوابع إعادة الضبط~~", keys() === before, { before, after: keys() });
+    e.api.dubStop("user");
+    const st2 = await startRun(e, { source: "device" });
+    check("والقاطعُ قائمٌ لما بعده: لا التقاطَ منّا في الصفحة", st2.state === "refused" && st2.reason === "breaker" && e.fetched.length === 0, { st: st2.state, reason: st2.reason, fetched: e.fetched.length });
+  }
+  {
+    // #3 — غيّر المستخدمُ لغةَ ترجمته أثناء انتظارنا ردَّ إعادة الضبط ⇐ ⛔ ~~يُعاد مفتاحُه إلى «العربيّة» الآن وبعد ثانيتين~~
+    const e = makeEnv({ ccOn: AR_ON, arTrack: arTrack(20, 2, 2), playerReq: () => ({ url: URL_AR, status: 200, size: 900, delay: 3000 }) });
+    e.api.dubStart({ source: "yt" });
+    await sleep(1500);
+    const mine = JSON.stringify({ data: "en", expiration: 9, creation: 7 });
+    e.local.setItem(e.STICKY, mine);
+    await until(() => e.api.dubStatus().state === "running", 20000);
+    await sleep(2600);
+    check("⭐ اختيارُ المستخدم أثناء انتظارنا يبقى — ⛔ ~~يُطمس بلقطة ما قبلنا~~", e.local.getItem(e.STICKY) === mine, e.local.getItem(e.STICKY));
+    e.api.dubStop("user");
+  }
+  {
+    // #5 — عرضان متداخلان ⇐ ⛔ ~~تُزال المراقبتان بغير ترتيب تركيبهما فتبقى دالّتُنا على نموذج XHR~~ ⇒ الثاني «busy»
+    let n = 0;
+    const e = makeEnv({ arTrack: arTrack(20, 2, 2), playerReq: () => { n++; return { url: URL_AR, status: 200, size: 900, delay: n === 1 ? 300 : 4000 }; } });
+    const p1 = e.ask("show", SHOW);
+    await sleep(150);
+    const r2 = await e.ask("show", SHOW);
+    const r1 = await p1;
+    await sleep(5000);
+    check("⭐ عرضان متداخلان ⇐ الثاني «busy»، ونموذجُ XHR أصليٌّ بعدهما — ⛔ ~~دالّتُنا عليه إلى أن تُغلق الصفحة~~", r2.reason === "busy" && r1.ok === true && e.xhrNative(),
+      { r1: r1.ok, r2: r2.reason, native: e.xhrNative() });
+    await e.ask("hide");
+  }
+  {
+    // #5 — عرضٌ تجاوز مهلةَ طالبه ⇐ «late» ويتراجع عمّا فعل — ⛔ ~~ترجمةٌ معروضةٌ لا يُخفيها أحد~~
+    const e = makeEnv({ arTrack: arTrack(20, 2, 2), playerReq: () => ({ url: URL_AR, status: 200, size: 900, delay: 2500 }) });
+    const r = await e.ask("show", Object.assign({ dl: 1000 }, SHOW));
+    const cc = e.p.querySelector(".ytp-subtitles-button").getAttribute("aria-pressed");
+    check("⭐ عرضٌ تجاوز مهلةَ طالبه ⇐ «late» وCC مطفأٌ كما كان", r.reason === "late" && cc === "false", { reason: r.reason, cc });
+  }
+  {
+    // #6 — إرسالُ XHR يرمي ⇐ ⛔ ~~يبقى «قيد التنفيذ» فيُنتظر خمسَ عشرةَ ثانيةً ويُقال «parse»~~ ⇒ «no-request» بعد المهلة القصيرة
+    const e = makeEnv({ arTrack: arTrack(20, 2, 2), xhrThrows: true });
+    const t0 = now();
+    const r = await e.ask("show", SHOW);
+    check("⭐ إرسالٌ رمى ⇐ «no-request» في نحو خمس ثوانٍ", r.ok === true && r.why === "no-request" && now() - t0 < 8000, { why: r.why, ms: now() - t0 });
+    await e.ask("hide");
+  }
+  {
+    // #7 — نصٌّ أكبرُ من ثمانية ملايين حرف (فيديو طويلٌ جدّاً) ⇐ ⛔ ~~«not-json3» ولا يُعاد في الصفحة~~ — السقفُ للقراءة المسبقة وحدَها
+    const BIG = [], w = "word ".repeat(600);
+    for (let i = 0; i < 3000; i++) BIG.push({ tStartMs: 2000 + i * 3000, dDurationMs: 2800, segs: [{ utf8: w + i + "." }] });
+    const e = makeEnv({ events: BIG });
+    const st = await startRun(e, { source: "device" });
+    check("⭐ نصٌّ بأكثرَ من ثمانية ملايين حرف ⇐ يُلتقط ويعمل", st.state === "running" && st.total > 0, { state: st.state, reason: st.reason, total: st.total });
+    e.api.dubStop("user");
+  }
+  {
+    // #9 — نسخةٌ أقدم من عالم الصفحة بقيت في صفحةٍ فُتحت قبل التحديث ⇐ ⛔ ~~تعمل صامتةً بلا ما بُني بعدها~~ ⇒ «main-old»
+    const e = makeEnv({ oldMain: true });
+    const st = await startRun(e, { source: "device" });
+    check("⭐ نسخةٌ قديمةٌ في الصفحة ⇐ رفضٌ «main-old» (أعد تحميل الصفحة)", st.state === "refused" && st.reason === "main-old", st);
+  }
+  {
+    // نافذة #4 — «مترجم Azure» ولا مترجمَ كروم ⇐ الحالُ تقوله (`trLocal`) فلا يُدَّعى «بمترجم كروم» حين يتوقّف Azure
+    const e = makeEnv({ noTranslator: true });
+    const st = await startRun(e, { source: "azure", engine: "system", az: { trKey: TRK, trRegion: "uaenorth" } });
+    check("⭐ لا مترجمَ كروم ⇐ `trLocal` false", st.state === "running" && st.trLocal === false, { state: st.state, trLocal: st.trLocal });
+    e.api.dubStop("user");
+  }
+  {
+    // نافذة #10 — «مترجم Azure» بلا مفتاح مترجم ولا مترجمَ كروم ⇐ يُسمّى المفتاحُ الناقص — ⛔ ~~«مترجم كروم غير متاح» وحدَه~~
+    const e = makeEnv({ noTranslator: true });
+    const st = await startRun(e, { source: "azure", engine: "system", az: {} });
+    check("⭐ بلا مفتاح مترجم ⇐ «az-trnokey»", st.state === "refused" && st.reason === "az-trnokey", st);
+  }
+  {
+    // نافذة #5 — نقرأ اليدويّةَ العربيّة نفسَها («speak») ويوتيوب يعرضها ⇐ ⛔ ~~«يوتيوب يعرض ترجمتَه وأنا أقرأ ترجمةً أخرى»~~
+    const AR_MAN = { languageCode: "ar", kind: "" };
+    // طلبُ المشغّل بلغة المسار نفسِه (لا «en/asr» الافتراضيّ) — فيُلتقط اليدويُّ العربيّ
+    const byTrack = (t) => ({ url: "https://www.youtube.com/api/timedtext?v=VID&lang=" + t.languageCode + (t.kind ? "&kind=" + t.kind : "") +
+      (t.translationLanguage ? "&tlang=" + t.translationLanguage.languageCode : "") + "&pot=POT&c=WEB&xorb=2&fmt=json3", status: 200, size: 900 });
+    const e = makeEnv({ captionTracks: [{ baseUrl: "/api/timedtext?v=VID&lang=ar", languageCode: "ar", kind: "" }], tracklist: [AR_MAN], playerReq: byTrack });
+    const st = await startRun(e, { source: "device" });
+    e.p.setOption("captions", "track", AR_MAN);
+    await sleep(6000);
+    const s2 = e.api.dubStatus();
+    check("⭐ «speak» ويوتيوب يعرض اليدويّةَ العربيّة نفسَها ⇐ لا `shownDiffers`", st.kind === "speak" && s2.state === "running" && e.api.dub.trackLang === "ar" &&
+      s2.shownDiffers === false, { kind: st.kind, state: s2.state, reason: s2.reason, trackLang: e.api.dub && e.api.dub.trackLang, shownDiffers: s2.shownDiffers });
+    e.api.dubStop("user");
+  }
+  {
+    // نافذة #6 — أصواتُ الجهاز اختيرت وسطَ التشغيل ولا صوتَ عربيّ ⇐ ⛔ ~~«يُدبلج» وكلُّ جملةٍ تضيع صامتة~~ ⇒ «no-voice»
+    const e = makeEnv({ voices: [] });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    e.api.dubSetOptions({ engine: "system", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.api.dubStatus().hold === "no-voice", 6000);
+    check("⭐ لا صوتَ عربيّ في الجهاز والمحرّكُ «الجهاز» ⇐ «no-voice» يُقال", e.api.dubStatus().hold === "no-voice", e.api.dubStatus().hold);
+    e.api.dubStop("user");
+  }
+
+  console.log("\n[٢١] مراجعةُ الجولة الثالثة — توقيتُ المحرّك: تشغيلُ المستخدم يُحترم · إيقافٌ واحدٌ للجملة · لا انتظارَ بلا مترجم · قفزٌ أثناء الانتظار · استئنافٌ صادق");
+  // جملةٌ بعيدةٌ لم يُجلب صوتُها، يُقفز إليها فتحلّ الآن — `slowOf(text)` يبطّئ طلبَ صوتها وحدَه
+  const jumpFar = (e, ahead, into) => { const u = e.api.dub.sents.find((x) => x.start / 1000 > e.video.currentTime + ahead && x.ar); e.video.currentTime = u.start / 1000 + (into || 0.3); return u; };
+  {
+    // #1 — المستخدمُ شغّل الفيديو أثناء انتظارنا وساعةُ كروم تبدأ بعد play() بـ150ms ⇐ ⛔ ~~«متجمّد» ⇐ مزامنة ⇐ نوقفه ثانيةً~~
+    let slow = "";
+    const e = makeEnv({ events: EV40, playLag: 150, azDelay: (n, text) => (text && text === slow ? 6000 : 40) });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.currentTime > 20, 60000);
+    const u = e.api.dub.sents.find((x) => x.start / 1000 > e.video.currentTime + 30 && x.ar);
+    slow = u.ar;
+    e.video.currentTime = u.start / 1000 + 0.3;
+    await until(() => e.video.paused && /^wait-/.test(e.api.dubStatus().hold), 8000);
+    await sleep(600);
+    const p0 = e.video.pauses | 0;
+    e.video.play();                                                     // المستخدم
+    await sleep(2000);
+    check("⭐ تشغيلُ المستخدم أثناء انتظارنا يُحترم ولو تأخّرت ساعةُ كروم — لا إيقافَ بعده لجملته", (e.video.pauses | 0) === p0 && !e.video.paused,
+      { before: p0, after: e.video.pauses | 0, paused: e.video.paused });
+    e.api.dubStop("user");
+  }
+  {
+    // #2 — قفزٌ إلى جملةٍ لم تُترجم وصوتُها Azure ⇐ ⛔ ~~إيقافٌ للترجمة ثمّ يكمل ثمّ إيقافٌ ثانٍ لصوتها~~ ⇒ إيقافٌ واحد
+    const e = makeEnv({ events: EV40, trDelay: 800 });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.currentTime > 10, 60000);
+    await sleep(300);
+    const p0 = e.video.pauses | 0, n0 = saidAll(e, "az-start").length;
+    const u = e.api.dub.sents.find((x) => x.start / 1000 > e.video.currentTime + 40 && x.ar == null);   // لم تُترجم بعد
+    e.video.currentTime = u.start / 1000 + 0.3;
+    await until(() => saidAll(e, "az-start").length > n0, 15000);
+    check("⭐ ترجمةٌ ثمّ صوتٌ للجملة نفسِها ⇐ إيقافٌ واحدٌ للفيديو", (e.video.pauses | 0) - p0 === 1 && u.ar != null, { pauses: (e.video.pauses | 0) - p0, at: u.start });
+    e.api.dubStop("user");
+  }
+  {
+    // #3 — لا مترجمَ يبقى (مفتاحُ مترجم Azure مرفوض ولا مترجمَ كروم) ⇐ ⛔ ~~كلُّ جملةٍ توقف الفيديو ثلاثَ ثوانٍ بلا نهاية~~
+    const e = makeEnv({ events: EV40, noTranslator: true, trMode: "401" });
+    await startRun(e, { source: "azure", engine: "system", az: { trKey: TRK, trRegion: "uaenorth" } });
+    const p0 = e.video.pauses | 0;
+    await sleep(25000);
+    check("⭐ لا مترجمَ يبقى ⇐ لا يُقطَّع الفيديو (إيقافٌ واحدٌ على الأكثر قبل أن يُعرف)، و«tr-off» يُقال", (e.video.pauses | 0) - p0 <= 1 && e.api.dubStatus().hold === "tr-off",
+      { pauses: (e.video.pauses | 0) - p0, hold: e.api.dubStatus().hold });
+    e.api.dubStop("user");
+  }
+  {
+    // #4 — صوتُ الجملة المنتظَرة ردّ 503 خلال الانتظار ⇐ ⛔ ~~«جاهز» فيكمل الفيديو ثمّ يتوقّف للمحاولة~~ ⇒ إيقافٌ واحدٌ وتُسمع
+    let slow = "", tries = 0;
+    const e = makeEnv({ events: EV40, azDelay: (n, text) => (text && text === slow && tries === 0 ? 1000 : 40),
+      azMode: (n, text) => (text && text === slow && tries++ === 0 ? "503" : "ok") });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.currentTime > 20, 60000);
+    const u = e.api.dub.sents.find((x) => x.start / 1000 > e.video.currentTime + 30 && x.ar);
+    slow = u.ar;
+    const p0 = e.video.pauses | 0;
+    e.video.currentTime = u.start / 1000 + 0.3;
+    await until(() => saidAll(e, "az-start").some((x) => x.text === slow), 15000);
+    check("⭐ 503 أثناء انتظار الصوت ⇐ أُعيد في الانتظار نفسِه: إيقافٌ واحدٌ وسُمعت", (e.video.pauses | 0) - p0 === 1 && saidAll(e, "az-start").some((x) => x.text === slow),
+      { pauses: (e.video.pauses | 0) - p0, tries });
+    e.api.dubStop("user");
+  }
+  {
+    // #5 — صوتُ الجهاز قُطع وسطَ جملةٍ بإيقاف الفيديو ⇐ ⛔ ~~صمتٌ حتى الجملة التالية~~ ⇒ تُعاد من أوّلها
+    const e = makeEnv({ arTrack: arTrack(30, 2, 2, true) });
+    await startRun(e, { source: "yt" });
+    await until(() => heard2(e).length >= 2 || e.spoken.filter((x) => x.ev === "start" && /الجملة/.test(x.text)).length >= 2, 30000);
+    const said = () => e.spoken.filter((x) => x.ev === "start" && /الجملة/.test(x.text));
+    const last = said()[said().length - 1];
+    const u = e.api.dub.sents.find((x) => x.ar === last.text);
+    await until(() => e.video.currentTime >= u.start / 1000 + 2.0, 10000);
+    e.video.pause();
+    await sleep(1000);
+    e.video.play();
+    await sleep(1500);
+    const again = said().filter((x) => x.text === last.text).length;
+    check("⭐ قُطعت جملتُه وسطَها بإيقافٍ قصير ⇐ تُعاد بعد الاستئناف — لا صمتَ حتى التالية", again >= 2, { again, win: u.win });
+    e.api.dubStop("user");
+  }
+  {
+    // #7 — جملةٌ قيلت كلُّها ثمّ إيقافٌ قصيرٌ في نافذتها ⇐ ⛔ ~~تُعاد بعد الاستئناف (قاعدةُ الاستئناف)~~ ⇒ لا تُعاد
+    const e = makeEnv({ events: EV40 });
+    await startRun(e, DEV);
+    await until(() => heard(e).length >= 2, 30000);
+    const said = heard(e)[heard(e).length - 1];
+    await until(() => e.spoken.some((x) => x.ev === "end" && x.text === said.text), 10000);
+    const u = e.api.dub.sents.find((x) => x.ar === said.text);
+    await until(() => e.video.currentTime >= u.start / 1000 + 1.2, 10000);
+    e.video.pause();
+    await sleep(800);
+    e.video.play();
+    await sleep(1500);
+    const again = heard(e).filter((x) => x.text === said.text).length;
+    check("⭐ قيلت كلُّها ثمّ إيقافٌ قصيرٌ في نافذتها ⇐ لا تُعاد", again === 1 && e.video.currentTime - u.start / 1000 < 1.5 + 0.8 + 1.5 + 0.5, { again, at: e.video.currentTime - u.start / 1000 });
+    e.api.dubStop("user");
+  }
+  {
+    // #6 — انتظارُ اللحاق ومقطعُنا يتكلّم، فسحب المستخدمُ الشريط ⇐ ⛔ ~~يكمل المقطعُ القديم في الموضع الجديد حتى المهلة~~ ⇒ يسكت فوراً
+    const e = makeEnv({ arTrack: arTrack(60, 2, 2, true), azCps: 4 });
+    await startRun(e, { source: "yt", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    const got = await until(() => e.api.dubStatus().hold === "wait-behind", 60000);
+    const cur = saidAll(e, "az-start")[saidAll(e, "az-start").length - 1];
+    const tS = now();
+    e.video.currentTime = e.video.currentTime + 30;
+    await sleep(500);
+    const stop = e.spoken.find((x) => (x.ev === "az-pause" || x.ev === "az-end") && x.text === cur.text && x.t >= tS);
+    check("⭐ قفزٌ أثناء انتظار اللحاق ⇐ يسكت المقطعُ القديم خلال 300ms ويُستأنف من الموضع الجديد", got && !!stop && stop.ev === "az-pause" && stop.t - tS < 300 && !e.video.paused,
+      { got, stop: stop && { ev: stop.ev, ms: stop.t - tS }, paused: e.video.paused });
+    e.api.dubStop("user");
+  }
+  {
+    // #8 — أُطفئت الإضافة أثناء انتظارنا ⇐ ⛔ ~~يبقى الفيديو موقوفاً بنا~~ ⇒ يكمل
+    let slow = "";
+    const e = makeEnv({ events: EV40, azDelay: (n, text) => (text && text === slow ? 6000 : 40) });
+    await startRun(e, { source: "device", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.currentTime > 20, 60000);
+    const u = e.api.dub.sents.find((x) => x.start / 1000 > e.video.currentTime + 30 && x.ar);
+    slow = u.ar;
+    e.video.currentTime = u.start / 1000 + 0.3;
+    await until(() => e.video.paused && /^wait-/.test(e.api.dubStatus().hold), 8000);
+    e.gate.on = false;
+    await until(() => e.api.dubStatus().state === "stopped", 3000);
+    check("⭐ إطفاءُ الإضافة أثناء انتظارنا ⇐ توقّفت ويكمل الفيديو", e.api.dubStatus().state === "stopped" && !e.video.paused, { state: e.api.dubStatus().state, paused: e.video.paused });
+    e.gate.on = true;
+  }
+  {
+    // #10 — قفزٌ إلى جملةٍ لم تُترجم ودفعةُ مترجم Azure لغيرها في الطريق ⇐ ⛔ ~~لا تُطلب أثناء الانتظار فيبلغ مهلتَه~~ ⇒ تُطلب حين تفرغ الدفعة
+    // أوّلُ جملةٍ عند 10 ث (لا انتظارَ عند البدء) · ودفعةُ المترجم 25 مقطعاً ⇐ القفزُ أبعدُ منها
+    const EVX = []; for (let i = 0; i < 120; i++) EVX.push({ tStartMs: 10000 + i * 3000, dDurationMs: 2800, segs: [{ utf8: "Sentence number " + (i + 1) + "." }] });
+    const e = makeEnv({ events: EVX, trDelay: 1000 });
+    await startRun(e, { source: "azure", engine: "system", az: { trKey: TRK, trRegion: "uaenorth" } });
+    await until(() => e.api.dub && e.api.dub.trBusy, 5000);            // أوّلُ دفعةٍ في الطريق
+    const s0 = e.api.dubStatus().stallS;
+    const u = e.api.dub.sents.find((x) => x.start / 1000 > e.video.currentTime + 200);   // لم تُترجم بعد
+    e.video.currentTime = u.start / 1000 + 0.3;
+    await until(() => !e.api.dub.wait && e.api.dubStatus().stallS > s0, 8000);
+    const held = e.api.dubStatus().stallS - s0;
+    check("⭐ الترجمةُ المنتظرة تُطلب أثناء الانتظار ⇐ يكمل الفيديو قبل المهلة", held > 0 && held < 2.8 && u.ar != null, { held, translated: u.ar != null });
     e.api.dubStop("user");
   }
 

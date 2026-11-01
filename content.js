@@ -4917,10 +4917,30 @@ async function loadRulesForThisHost(pre) {
 // 🎯 **كلُّ رقمٍ هنا اختيارُ تصميمٍ يُثبَّت بعد 168أ إلا ما عليه 📐.**
 const DUB_TICK_MS = 100;            // 🎯 نبضةُ المُجدوِل
 const DUB_LEAD_S = 0.1;             // 🎯 نبدأ قبل موعد الجملة بقليل: كمونُ المحرّك
+const DUB_GLUE_S = 0.8;             // 🎯 وتتمّةُ قطعةٍ لم تنتهِ بترقيمها تبدأ قبل موعدها بهذا حين يفرغ صوتُ سابقتها — لا فجوةَ وسطَ الكلام الجاري
 // ⛔ ~~1.0 ث و60٪~~ (خ13) — **سُحبا 2026-11-01 بأذن المالك («الكلام متقطع وغير مفهوم») وبالسابقة:** تخطّي جملةٍ كاملة
 // يقطّع الحكاية، وتأخّرٌ صغيرٌ يتراكم ثمّ يُستنفد في السكتات (📄 tongting · Yandex) ⇒ ثانيتان و30٪ — 🎯 يحكم فيهما أذنُه ثانيةً
-const DUB_LATE_MAX_S = 2.0;         // 🎯 جملةٌ يتأخّر بدؤها أكثرَ من ثانيتين تُتخطّى
-const DUB_REMAIN_MIN = 0.3;         // 🎯 ولا تُنطق جملةٌ بقي من نافذتها أقلُّ من 30٪
+// ⛔ ~~وضعُ الجمل: «تأخّرٌ فوق ثانيتين أو بقي من نافذتها أقلُّ من 30٪ ⇐ تُتخطّى» (`DUB_REMAIN_MIN` 0.3)~~ — **سُحبتا في الجولة
+// الثالثة 2026-11-01 بحكم أذنه بنصّه: «توقفات غير منطقيه في الكلام في منتصف جمل عكس التشغيل في اضافه DubFlow ف الجمل لا تتقطع
+// ويستمر في الحديث متزامنا مع الفديو»** ⇒ **الجملةُ تُنطق ولو بدأت متأخّرةً بعد سابقتها، أسرعَ** (حتى `DUB_AUTO_MAX`)، **ولا
+// تُتخطّى إلا من تأخّرت فوق `DUB_BEHIND_MAX_S`** (إعلانٌ أو تبويبٌ نام) — **ومع «أوقف الفيديو حتى يجهز الصوت» لا يتراكم التأخّر**
+const DUB_LATE_MAX_S = 2.0;         // 🎯 وضعُ العرض وحدَه: سطرٌ غاب عن الشاشة منذ أكثرَ من ثانيتين يُتخطّى
+const DUB_BEHIND_MAX_S = 6;         // 🎯 وضعُ الجمل: لا تُتخطّى جملةٌ إلا متأخّرةً فوق ست ثوانٍ
+// ⭐ **«يتوقّف الفيديو لحظةً حتى يجهز الصوت»** — قرارُ المالك 2026-11-01 («يتوقّف الفيديو لحظة (موصى)»، فكرةُ DubFlow (ب)):
+// خيارٌ مفعّلٌ افتراضيّاً يُطفأ من البوب-أب، في وضع الجمل وحدَه (وضعُ العرض لا يعرف السطرَ قبل ظهوره)
+const DUB_WAIT_MAX_MS = 3000;       // 🎯 أطولُ إيقافٍ واحد — ثمّ يكمل الفيديو ولو لم يجهز الصوت
+// ⛔ ~~1.5 ث~~ — 📐 تصميمُ الجولة (محاكاةٌ على ملفٍّ بشكل المقيس): العربيّةُ أطولُ من الإنجليزيّة (تحتاج وسيطاً 1.52× من سرعة «حامد»)،
+// فعند 1.5 ث يتوقّف الفيديو 3.4 مرّةً في الدقيقة ⇒ **التسريعُ يلحق أوّلاً** (`dubCapFor`) **والإيقافُ شبكةُ أمانٍ نادرة** (نحو 0.2 في الدقيقة)
+const DUB_WAIT_BEHIND_S = 2.5;      // 🎯 الجملةُ التالية مستحقّةٌ منذ هذا وصوتُنا ما زال يتكلّم ⇐ يتوقّف الفيديو حتى يفرغ
+const DUB_WAIT_BUDGET_MS = 20000;   // 🎯 وإيقافُ اللحاق هذا مرّةً كلَّ عشرين ثانيةً على الأكثر
+// ⭐ اللحاقُ بالتأخّر: سقفُ السرعة الفعليّة يرتفع مع تأخّر الجملة عن موعدها — 1.4 حتى 0.3 ث، ثمّ 1.6 حتى ثانية، ثمّ R_max (1.91: أعلى ما
+// فهمه المالكُ جملةً جملة، س21 · س23) — فلا يتراكم التأخّرُ ولا يتوقّف الفيديو، والسرعةُ العاليةُ للحاق وحدَه لا للعادة
+const DUB_CATCH_LAG0_S = 0.3;
+const DUB_CATCH_LAG1_S = 1.0;
+const DUB_CATCH_MAX = 1.6;
+// ⭐ ولصوت Azure سقفٌ أدنى للحاق: 1.7 لا R_max — 📐 تصميمُ الجولة: بـR_max نُطق 15٪ من الكلام الكثيف فوق 1.8× بسرعة «حامد»، و1.91 قيس
+// على «ليلى» جملةً جملةً لا سماعاً متّصلاً؛ وصوتُ الجهاز يحتاج R_max ليلحق فيبقى له
+const DUB_CATCH_CEIL_AZ = 1.7;
 const DUB_FREEZE_MS = 400;          // 🎯 فيديو متجمّدٌ هذا القدرَ ⇐ صمت
 const DUB_SEEK_S = 1.0;             // 🎯 قفزةٌ أكبرُ من ثانية ⇐ صمتٌ ثمّ استئنافٌ من الموضع
 const DUB_AHEAD = 8;                // 🎯 جملٌ تُترجم أمام الموضع
@@ -4940,7 +4960,30 @@ const DUB_SEG_CAP_M = 25;           // 🎯 وسقفُها بالكلمات
 const DUB_SEG_END_PAD = 500;        // 🎯 نافذةُ الجملة الأخيرة: نهايتُها + نصف ثانية
 const DUB_BRIDGE_MAX = 20000000;    // 🎯 حدُّ طول الردّ من عالم الصفحة (حرفاً)
 const DUB_STABLE_MS = 700;          // 🎯 سطرٌ يكبر (roll-up) يُعدّ مكتملاً إن سكن هذا القدر
-const DUB_HELLO = "بدأتِ الدبلجة";   // جملةُ الإحماء: 📐 المحرّكُ يُسقط أوّلَ نطقين بعد خمس دقائق صمت
+const DUB_HELLO = "بدأتِ الدبلجة";
+// ── 168ح — أصواتُ Azure العصبيّة بمفتاح المالك (طلبُه 2026-11-01: «ممتاز طيب الان نبدا ب Azure») ──────────
+const DUB_AZ_FORMAT = "audio-24khz-48kbitrate-mono-mp3";   // 📄 مخرجٌ صغير: نحو 24KB لأربع ثوانٍ
+const DUB_AZ_BPS = 6000;            // 📄 48 kbit/s ثابتة ⇒ مدّةُ المقطع = حجمُه ÷ 6000 — تُعرف قبل تشغيله
+const DUB_AZ_PER_MIN = 18;          // 📄 F0: 20 طلبَ نطقٍ في الدقيقة لا تُرفع ⇒ هامشٌ اثنان (🎯)
+// ⛔ ~~`DUB_AZ_BURST` 4 — دلوٌ يمتلئ 18 في الدقيقة لكلّ تشغيلة~~ — **سُحب (مراجعة 168ح #2 · #8، مقيس): الدلوُ يُدخل السعةَ فوق
+// المعدّل (4 + 18 = 22 في دقيقة)، ويمتلئ من جديد بكلّ «دبلِج» وينسى 429** ⇒ `dubAzGate`: سجلُّ نافذةٍ منزلقةٍ للصفحة
+const DUB_AZ_TRIES = 2;             // 🎯 فشلٌ عابرٌ (شبكة · 204 · 429 · 5xx) لصوت جملةٍ يُعاد مرّةً (حَكَمُ الجولة) — والمفتاحُ المرفوضُ لا
+const DUB_AZ_AHEAD = 3;             // 🎯 مقاطعُ يُجلب صوتُها أمام الموضع (⛔ ~~2~~: الجلبُ عند الحاجة يصنع السكتات)
+const DUB_AZ_TIMEOUT_MS = 8000;     // 🎯 مهلةُ طلب الصوت
+// ⛔ ~~بعد 429: دقيقةٌ بصوت الجهاز بلا طلب~~ — 📄 «أكثرُ 429 في النطق من سعة الخادم لصوتٍ في منطقة، لا من الحصّة»، ومايكروسوفت تطلب
+// إعادةَ المحاولة (بحثُ الجولة الثالثة) ⇒ عشرُ ثوانٍ تتضاعف مع كلّ 429 متتالٍ حتى دقيقة، وأوّلُ نجاحٍ يُعيدها عشراً
+const DUB_AZ_BACKOFF0_MS = 10000;   // 🎯 أوّلُ انتظارٍ بعد 429
+const DUB_AZ_BACKOFF_MS = 60000;    // 🎯 وأطولُه
+const DUB_AZ_TR_BATCH = 25;         // 🎯 مقاطعُ في طلب ترجمةٍ واحد (📄 الحدُّ 1000 عنصر و50 ألف حرف)
+const DUB_TR_TIMEOUT_MS = 8000;     // 🎯 مهلةُ طلب الترجمة (مراجعة 168ح #11: بلا مهلةٍ كان طلبٌ معلَّقٌ يحبس المترجمَين)
+const DUB_TR_FAILS = 3;             // 🎯 ثلاثةُ إخفاقاتٍ متتالية ⇐ مترجمُ Azure متوقّفٌ بقيّةَ التشغيلة (ويُقال)
+const DUB_CPS_AZ = 12;              // 🎯 حروفُ صوت Azure في الثانية بسرعته الطبيعيّة — بدايةٌ ثمّ يتعلّم من مدّة كلّ مقطع
+const DUB_UNIT_MIN_MS = 3500;       // 🎯 مقطعٌ أقصرُ يُضمّ إلى تاليه: أقلُّ من 18 طلباً في الدقيقة، وسياقٌ أطولُ للترجمة
+const DUB_UNIT_MAX_MS = 9000;       // 🎯 ولا يطول بالضمّ لقِصَره فوق هذا   // جملةُ الإحماء: 📐 المحرّكُ يُسقط أوّلَ نطقين بعد خمس دقائق صمت
+const DUB_UNIT_GAP_MS = 2000;       // 🎯 صمتٌ بثانيتين بين قطعتين لا يُضمّ عبره (📖 قاعدةُ DubFlow) — يسكت الصوتُ حين يسكت المتكلّم
+const DUB_SENT_MAX_MS = 15000;
+const DUB_TX_KEEP = 8;              // 🎯 نصوصٌ ملتقَطةٌ في ذاكرة سكربت الإضافة — وما يُنسى منها تبقى أحداثُه في ذاكرة الصفحة فيُعاد بلا طلب
+const DUB_MAIN_VER = 3;             // ⭐ نسخةُ بروتوكول `yt_dub_main.js` — نسخةٌ قديمةٌ بقيت في صفحةٍ فُتحت قبل التحديث تُرفض بسببها      // 🎯 الجولة الثالثة: جملةٌ لم تنتهِ بترقيمها تُتمّ بما بعدها حتى هذا — لا يقف الصوتُ وسطَها
 
 let dub = null;                     // ⭐ التشغيلةُ الجارية — null حتى أوّل «دبلِج»
 let dubToken = 0;
@@ -4950,6 +4993,9 @@ const dubCapP = new Map();          // المفتاحُ نفسُه ⇒ وعدُ 
 // ⭐ إجبارُ المشغّل (العرضُ أو الالتقاط) واحدٌ في الصفحة أبداً: تشغيلةٌ تبدأ تنتظر ما تركته التي أوقفتها، فإرجاعُ تلك
 // (متزامنٌ عبر الجسر) يقع قبل لقطة هذه — وإلا عرضان متداخلان يتركان CC عربيّاً بلا إرجاع (مراجعة 2 #4 · #7 · #13)
 let dubBridge = Promise.resolve();
+// ⭐ حدُّ F0 **للصفحة لا للتشغيلة** (مراجعة 168ح #2 · #8): أزمنةُ طلبات النطق في آخر ستين ثانية، ومهلةُ ما بعد 429 —
+// إعادةُ «دبلِج» لا تُفرغهما، فلا يُتجاوز العشرون ولا يُعاد إلى نافذةٍ رفضتنا
+const dubAzGate = { log: [], until: 0, n429: 0 };
 
 // البوّابةُ الواحدة أوّلاً (#64)، ثمّ النطاق: صفحةُ المشاهدة في الإطار الأعلى (§٢)
 function dubActive() {
@@ -5050,8 +5096,10 @@ function dubSegment(raw) {
     : e));
   const clean = (s) => String(s || "").replace(/\[[^\]]*\]|♪+/g, " ").replace(/\s+/g, " ").trim();
   const nW = (s) => (String(s).trim() ? String(s).trim().split(/\s+/).length : 0);
-  const PUNCT = /[.?!…؟]["'”’)]*$/;
-  const SPLIT = /(?<=[.?!…]["'”’)]*)(?<!(?:^|\s)(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs)\.)\s+(?=["'“‘(]*[A-Z0-9])/;
+  const PUNCT = /[.?!…؟]["'”’)»]*$/;
+  // ⭐ الجولة الثالثة: **والعربيّةُ تُشقّ أيضاً** — 📐 في ملفّ ترجمة يوتيوب العربيّة تقع نهايةُ الجملة **وسطَ السطر** في 91 سطراً
+  // مقابل 23 في آخره (كروم المالك 2026-11-01)، ولا حرفَ كبيراً بعدها ⇒ ما بعد العلامة حرفٌ أو رقمٌ عربيّ يكفي
+  const SPLIT = /(?<=[.?!…؟]["'”’)»]*)(?<!(?:^|\s)(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs)\.)\s+(?=["'“‘(«]*[A-Z0-9ء-ي٠-٩])/;
   const cut3 = (e, eEnd, txt) => {
     const L = txt.length || 1, d = eEnd - e.tStartMs;
     let off = 0;
@@ -5064,7 +5112,10 @@ function dubSegment(raw) {
   const asr = E.some((e) => e && Array.isArray(e.segs) && e.segs.some((g) => g && g.tOffsetMs != null));
   const out = [], why = { gap: 0, punct: 0, cap: 0, end: 0 }, W = [];
   let drop = 0, cur = null;
-  let F = E.filter((e) => e && Array.isArray(e.segs) && typeof e.tStartMs === "number" && !(asr && e.aAppend));
+  // وحدثُ سطرٍ جديدٍ فارغ («\n» في التمرير) لا يُحسب حدثاً — 📐 ملفُّ العربيّة نصفُه أحداثُه (294 من 588)، وبينها كان يقصّر
+  // زمنَ السطر الذي قبله إلى لحظة السطر الجديد
+  let F = E.filter((e) => e && Array.isArray(e.segs) && typeof e.tStartMs === "number" && !(asr && e.aAppend) &&
+    e.segs.some((g) => g && String(g.utf8 || "").trim()));
   if (!asr) F = F.slice().sort((a, b) => a.tStartMs - b.tStartMs).reduce((o, e) => {
     const p = o[o.length - 1];
     if (p && p.tStartMs === e.tStartMs) {
@@ -5121,6 +5172,23 @@ function dubFirstAt(sents, ct) {
   return sents.length;
 }
 
+// ⭐ الجولة الثالثة — إلّا أن نكون في أوّل جملةٍ بدأت (ثانيةً ونصفاً منها أو أقلَّ من ثلثها): تُنطق هي متأخّرةً قليلاً بلحاقها — ⛔ ~~صمتٌ
+// حتى التي بعدها~~ وقد تبعد مقاطعُ الجمل الكاملة 6–15 ث (تصميمُ الجولة G4: بدءٌ أو قفزةٌ إلى ما بعد أوّل الجملة بقليل) — خالص
+function dubResyncAt(sents, ct) {
+  const i = dubFirstAt(sents, ct), p = i > 0 ? sents[i - 1] : null;
+  if (p && ct - p.start / 1000 <= Math.min(1.5, 0.3 * p.win / 1000)) return i - 1;
+  return i;
+}
+
+// ⭐ الاستئنافُ بعد إيقافٍ أو تجمّد — **لا بعد قفز** (مراجعةُ الجولة #5 · #7) — خالص: ⛔ ~~يُعاد نطقُ جملةٍ قيلت كلُّها~~ ⇒ لا رجوعَ إلى ما قبل
+// الموضع (`idx`) · **إلا جملةً قطعناها وسطَها** (`cut` — صوتُ الجهاز لا يتوقّف ويكمل): ⛔ ~~صمتٌ حتى التي بعدها~~ وقد تطول المقاطعُ حتى
+// 15 ث ⇒ تُعاد من أوّلها ما دام الموضعُ في نصف نافذتها الأوّل وقبل حدّ التخطّي — فتُلحق بسرعة اللحاق
+function dubResumeAt(sents, ct, i, idx, cut) {
+  const c = cut != null ? sents[cut] : null;
+  if (c && ct >= c.start / 1000 && ct - c.start / 1000 <= Math.min(0.5 * c.win / 1000, DUB_BEHIND_MAX_S)) return cut;
+  return Math.max(i, idx);
+}
+
 // مصدرُ «ترجمة يوتيوب»: ما يقرّره §٣ نفسُه — **إلا أنّ يوتيوب يترجم من أيّ لغةٍ إلى العربيّة**، فـ«لغةُ الكلام ليست
 // الإنجليزيّة» (خ12: قيدُ مترجم الجهاز) لا تُرفض هنا: تُعرض يدويّةُ لغة الكلام أو تلقائيّتُه مترجمةً. وما يرفضه §٣ لغير ذلك يُرفض.
 function dubYtSource(d, caps) {
@@ -5128,6 +5196,14 @@ function dubYtSource(d, caps) {
   if (d.k !== "lang") return null;
   const ok = (caps || []).filter((c) => !c.tlang && c.variant !== "timing-optimized");
   return ok.find((c) => !c.asr && c.lang === d.spoken) || ok.find((c) => c.asr && !c.variant) || ok.find((c) => c.asr) || null;
+}
+
+// الجولة الثالثة — ملفُّ ترجمة يوتيوب العربيّة كما ردّه المشغّلُ (أحداثٌ مضغوطة من عالم الصفحة) ⇐ مقاطعُ جملٍ كاملة **نصُّها
+// العربيّةُ المعروضةُ نفسُها** (لا ترجمةَ منّا) — أو null إن لم يكن فيه كلام — خالص
+function dubYtUnits(events) {
+  const seg = dubSegment(events);
+  if (!seg.sents.length) return null;
+  return { kind: "ytar", sents: dubMergeUnits(seg.sents.map((x) => ({ start: x.start, win: x.win, end: x.end, text: x.text, ar: x.text }))) };
 }
 
 // ── «ترجمة يوتيوب كما تظهر» (طلبُ المالك 2026-11-01): **سطورُ الترجمة المعروضة على الفيديو** تُقرأ بنصّها ──
@@ -5159,9 +5235,9 @@ function dubDisplayNext(pending, shown, now, win, cps, rMax, curve, fixed) {
   if (!shown.includes(pending.line) && now - pending.at > DUB_LATE_MAX_S * 1000) return { skip: true };
   const remain = Math.max(0.6, (win - (now - pending.at)) / 1000);
   const need = pending.text.length / cps / remain;
-  if (typeof fixed === "number" && fixed > 0) return { speak: true, rate: fixed, need };
+  if (typeof fixed === "number" && fixed > 0) return { speak: true, rate: fixed, real: fixed, need };
   const real = Math.min(rMax, Math.max(1, need));
-  return { speak: true, rate: Math.min(DUB_RATE_CAP, dubChromeRate(real, curve)), need };
+  return { speak: true, rate: Math.min(DUB_RATE_CAP, dubChromeRate(real, curve)), real, need };
 }
 
 // ⭐ قرارُ النبضة — خالص: أيّ جملةٍ تُنطق الآن وبأيّ سرعة، أم ننتظر، أم تُتخطّى.
@@ -5169,19 +5245,32 @@ function dubDisplayNext(pending, shown, now, win, cps, rMax, curve, fixed) {
 // **والسرعةُ:** مدّتُها المقدّرة بسرعة 1 ÷ ما بقي من نافذتها بزمن الساعة (سرعةُ الفيديو تقصّرها)،
 // بين 1 وR_max، ثمّ تُقلب على المنحنى المقيس — جملةٌ لا تتّسع حتى بالسقف تُنطق به وتتخطّى ما بعدها.
 // **و`fixed` سرعةُ كروم يختارها المستخدم** («تلقائيّة» ⇐ غائبة): تُنطق بها كلُّ جملة، والتخطّي بقاعدتيه.
+// ⭐ سقفُ السرعة الفعليّة بحسب التأخّر (`DUB_CATCH_*`) — خالص
+function dubCapFor(lag) {
+  return lag <= DUB_CATCH_LAG0_S ? DUB_AUTO_MAX : lag <= DUB_CATCH_LAG1_S ? DUB_CATCH_MAX : DUB_R_MAX;
+}
+
+// ⛔ ~~وضعُ الجمل يتخطّى المتأخّرةَ ثانيتين أو ما بقي من نافذتها أقلُّ من 30٪~~ (سُحب في الجولة الثالثة — انظر `DUB_BEHIND_MAX_S`):
+// **جملةٌ بدأت متأخّرةً بعد سابقتها تُنطق أسرعَ لا تُحذف**، و`behind` تأخّرُها لقرار الانتظار. **والسقفُ يرتفع مع التأخّر**
+// (`dubCapFor`، مضروباً في سرعة الفيديو) **لا يتجاوز `rMax`** — من يمرّر سقفَ التلقائيّة يبقى عنده
 function dubNext(sents, idx, ct, rate, cps, rMax, curve, fixed) {
   let skipped = 0;
   for (let i = idx; i < sents.length; i++) {
-    const s = sents[i], st = s.start / 1000, win = Math.max(0.2, s.win / 1000), end = st + win;
-    if (ct < st - DUB_LEAD_S) return { i, skipped, wait: "early" };
-    if (ct - st > DUB_LATE_MAX_S || (end - ct) / win < DUB_REMAIN_MIN) { skipped++; continue; }
-    if (s.ar == null) return { i, skipped, wait: "translate" };
+    const s = sents[i], st = s.start / 1000, win = Math.max(0.2, s.win / 1000), end = st + win, behind = Math.max(0, ct - st);
+    // ⭐ التتمّة تُعرف بنصّ المصدر (`text`) كما يضمّ `dubMergeUnits` — ⛔ ~~بالعربيّة وحدَها~~: مترجمٌ يُسقط النقطةَ كان يجعل كلَّ جملةٍ
+    // تامّةٍ «تتمّةً» فتبدأ قبل موعدها بـ0.7 ث (📐 رِكازُ كروم الحقيقيّ) — والعربيّةُ لمقطعٍ بلا نصّ مصدر
+    const pv = i > 0 ? sents[i - 1] : null, pt = pv ? String(pv.text != null ? pv.text : pv.ar || "").trim() : "";
+    // ⭐ وفي كلامٍ جارٍ وحدَه: ⛔ ~~وعبر صمتٍ بين القطعتين~~ — يتكلّم الصوتُ والمتكلّمُ ساكت (مراجعةُ الجولة #9)
+    const glue = !!pt && !/[.?!…؟]["'”’)»]*$/.test(pt) && (pv.end == null || s.start - pv.end < DUB_GLUE_S * 1000);
+    if (ct < st - (glue ? DUB_GLUE_S : DUB_LEAD_S)) return { i, skipped, wait: "early" };
+    if (ct - st > DUB_BEHIND_MAX_S) { skipped++; continue; }
+    if (s.ar == null) return { i, skipped, wait: "translate", behind };
     if (!s.ar) { skipped++; continue; }
     const wall = Math.max(0.2, (end - Math.max(ct, st)) / Math.max(0.25, rate));
     const need = s.ar.length / cps / wall;
-    if (typeof fixed === "number" && fixed > 0) return { i, skipped, speak: true, real: dubRealSpeed(fixed, curve), need, rate: fixed };
-    const real = Math.min(rMax, Math.max(1, need));
-    return { i, skipped, speak: true, real, need, rate: Math.min(DUB_RATE_CAP, dubChromeRate(real, curve)) };
+    if (typeof fixed === "number" && fixed > 0) return { i, skipped, speak: true, real: dubRealSpeed(fixed, curve), need, rate: fixed, behind };
+    const real = Math.min(rMax, dubCapFor(behind) * Math.max(1, rate), Math.max(1, need));
+    return { i, skipped, speak: true, real, need, rate: Math.min(DUB_RATE_CAP, dubChromeRate(real, curve)), behind };
   }
   return { i: sents.length, skipped, done: true };
 }
@@ -5195,6 +5284,90 @@ function dubPickVoice(list, uri) {
   const score = (v) => (v.localService ? 4 : 0) + (/(enhanced|premium|محسّن|محسن)/i.test(v.name || "") ? 2 : 0) +
     (/(laila|ليلى)/i.test(v.name || "") ? 1 : 0);
   return ar.length ? ar.slice().sort((a, b) => score(b) - score(a))[0] : null;
+}
+
+// ── 168ح: دوالُّ Azure الخالصة ───────────────────────────────────────────────────────
+function dubXmlEsc(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+// جملةٌ بـSSML: الصوتُ ولغتُه منه، والسرعةُ نسبةٌ مئويّة من سرعته الطبيعيّة (📄 prosody rate بين 0.5 و2) —
+// **وبسرعته الطبيعيّة بلا `<prosody>` أصلاً**: وسمُه يُحسب من الحروف المدفوعة (مراجعة 168ح #12) ولا يغيّر شيئاً. **والنصُّ يُهرَّب
+// بأقلّ ما يلزمه** (`& < >`): 📄 كلُّ حرفٍ في الطلب مدفوع، و`&quot;` ستّةُ أحرفٍ مكانَ واحد — والسماتُ وحدَها تحتاج علامتَي الاقتباس
+function dubSsml(text, voice, real) {
+  const pct = Math.round((Math.max(0.5, Math.min(2, Number(real) || 1)) - 1) * 100);
+  const m = /^([a-z]{2}-[A-Z]{2})-/.exec(String(voice || ""));
+  const body = String(text == null ? "" : text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="' + (m ? m[1] : "ar-SA") + '">' +
+    '<voice name="' + dubXmlEsc(voice) + '">' + (pct ? '<prosody rate="' + (pct > 0 ? "+" : "") + pct + '%">' + body + "</prosody>" : body) +
+    "</voice></speak>";
+}
+
+// ⛔ ~~`dubBucketTake` — دلوٌ لكلّ تشغيلة~~ (مراجعة 168ح #2 · #8). **حدُّ F0 بنافذةٍ منزلقة — خالص:** السجلُّ بعد إسقاط ما مضت عليه
+// ستون ثانية، وهل يُسمح بطلبٍ الآن (لا يأخذ مكاناً — صاحبُ الطلب يُسجّله): أقلُّ من DUB_AZ_PER_MIN في آخر ستين ثانية، ولا مهلةَ 429
+function dubAzLimit(log, now, until) {
+  const L = (log || []).filter((t) => now - t < 60000);
+  return { ok: now >= (until || 0) && L.length < DUB_AZ_PER_MIN, log: L };
+}
+
+// حروفُ طلب النطق المدفوعة — 📄 تُحسب كلُّها إلا وسمَي `<speak>` و`<voice>` (مراجعة 168ح #12) — خالص
+function dubAzBill(ssml) {
+  return String(ssml || "").replace(/<\/?speak\b[^>]*>|<\/?voice\b[^>]*>/g, "").length;
+}
+
+// ⭐ الجولة الثالثة — سرعةُ تشغيل المقطع المجلوب: مدّتُه الفعليّة على ما بقي من نافذته بزمن الساعة، بين 1 والسقف
+// (مقسوماً على ما طُلب به من سرعة) — فمقطعٌ أطولُ من نافذته يُسرَّع ولا يزحم ما بعده، والأقصرُ يُترك بسرعته — خالص
+function dubAzFit(dur, remainWall, realAsked, cap) {
+  if (!(dur > 0)) return 1;
+  // ونافذتُه أُغلقت سلفاً (مقطعٌ متأخّر) ⇐ بسقفه — ⛔ ~~بسرعة 1~~ فكان المتأخّرُ أبطأَ من الذي في موعده (حَكَمُ الجولة)
+  if (!(remainWall > 0)) return Math.max(1, cap / Math.max(1, realAsked || 1));
+  return Math.max(1, Math.min(cap / Math.max(1, realAsked || 1), dur / remainWall));
+}
+
+// المقطع (⭐ الجولة الثالثة): **جملةٌ كاملةٌ أو أكثر.** ما لم ينتهِ بترقيمه ضُمّ إليه تاليه (حتى DUB_SENT_MAX_MS) — **فلا يقف الصوتُ
+// وسطَ جملة** (ملاحظةُ المالك) — وما قصُر عن DUB_UNIT_MIN_MS ضُمّ إليه تاليه (حتى DUB_UNIT_MAX_MS): أقلُّ من 18 طلباً في الدقيقة،
+// وسياقٌ أطولُ للترجمة. **ونصٌّ بلا ترقيمٍ أصلاً** (تلقائيّةٌ قديمة) يبقى بالنوافذ وحدَها كما كان. النافذةُ من بدء المقطع إلى بدء
+// تاليه، فمقاطعُ متتاليةٌ تغطّي الزمنَ نفسَه بلا فجوة — خالص
+function dubMergeUnits(sents) {
+  const P = /[.?!…؟]["'”’)»]*$/;
+  const ss = sents || [];
+  const punct = ss.some((s) => P.test(String(s.text || "").trim()));
+  const out = [];
+  for (const s of ss) {
+    const last = out[out.length - 1];
+    const open = !!last && punct && !P.test(last.text.trim());
+    const short = !!last && last.win < DUB_UNIT_MIN_MS;
+    const gap = last && last.end != null && s.start - last.end >= DUB_UNIT_GAP_MS;
+    if (last && !gap && ((open && last.win + s.win <= DUB_SENT_MAX_MS) || (short && last.win + s.win <= DUB_UNIT_MAX_MS))) {
+      last.text += " " + s.text;
+      last.ar = last.ar != null && s.ar != null ? last.ar + " " + s.ar : null;
+      last.win += s.win; last.n++; last.end = s.end;
+    } else out.push({ start: s.start, win: s.win, end: s.end, text: s.text, ar: s.ar == null ? null : s.ar, n: 1 });
+  }
+  return out;
+}
+
+// ذاكرةُ النصوص الملتقَطة بحدٍّ، والأحدثُ استعمالاً يبقى (مراجعةُ الجولة الثالثة #8 — ⛔ ~~بلا حدٍّ طولَ جلسة يوتيوب~~). **ولا يُدفع
+// ثمنُ ما يُنسى:** أحداثُه في ذاكرة الصفحة (`MEM.req`) فتُعاد بلا طلب — خالص بخريطته
+function dubTxKeep(map, key, t, max) {
+  map.delete(key);
+  map.set(key, t);
+  while (map.size > max) map.delete(map.keys().next().value);
+  return t;
+}
+
+// مفاتيحُ Azure ومناطقُه كما تصل من البوب-أب — تُتحقَّق قبل أن تدخل رابطاً أو ترويسة. **ومنطقةٌ كُتبت ولا تصلح يُقال عنها**
+// (`bad`) — ⛔ ~~تُستبدل بـuaenorth صامتاً~~: مفتاحُ منطقةٍ أخرى كان يُرفض بـ401 فيُلام المفتاحُ لا المنطقة (مراجعة 168ح #15)
+function dubAzOpts(x) {
+  const o = x || {};
+  const key = (k) => (typeof k === "string" && /^[A-Za-z0-9]{16,128}$/.test(k) ? k : "");
+  const reg = (r) => (typeof r === "string" && /^[a-z0-9]{2,32}$/.test(r) ? r : "");
+  const given = (r) => typeof r === "string" && r.trim() !== "";
+  const voice = typeof o.voice === "string" && /^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/.test(o.voice) ? o.voice : "ar-SA-HamedNeural";
+  return { key: key(o.key), region: reg(o.region) || "uaenorth", voice,
+    trKey: key(o.trKey), trRegion: reg(o.trRegion) || reg(o.region) || "uaenorth",
+    bad: given(o.region) && !reg(o.region) ? "region" : given(o.trRegion) && !reg(o.trRegion) ? "tr-region" : "" };
 }
 
 // ── الجسرُ إلى عالم الصفحة: نصٌّ JSON بحدٍّ، ويُقبل الردُّ بمعرّف طلبه وحدَه ──────────
@@ -5220,7 +5393,9 @@ function dubRefuse(run, reason, detail) {
   if (dub !== run || run.state === "stopped") return;
   run.state = "refused"; run.reason = reason; run.detail = String(detail || "").slice(0, 120); run.step = "";
   clearInterval(run.timer);
+  dubWaitRelease(run);                                            // فيديو أوقفناه ننتظر صوتَه يكمل — لا يبقى موقوفاً بلا سبب
   dubUnshow(run);
+  dubAzFree(run);
 }
 
 // مترجمُ كروم — 📐 متاحٌ لسكربت الإضافة ويُنشأ بعد التنزيل بلا إيماءة؛ **وأوّلُ تنزيلٍ يحتاج نقرةً حديثة**
@@ -5293,6 +5468,14 @@ function dubSilence(run) {
   const c = run.cur;
   if (!c) return;
   c.stale = true;
+  // صوتُ Azure عنصرٌ لنا وحدَنا: يُوقف فوراً، ولا طابورَ مشتركاً يُقطع ولا حاجزَ يُنتظر
+  if (c.az) {
+    clearTimeout(c.endT);
+    if (c.audio) { try { c.audio.pause(); } catch { /* انتهى سلفاً */ } }
+    if (c.url) dubBlobFree(run, c.url);
+    run.cur = null;
+    return;
+  }
   if (c.started && !c.ended) dubCancelOurs();
   run.cur = c.started ? null : c;
 }
@@ -5308,8 +5491,12 @@ function dubStop(why) {
   if (!run || run.state === "stopped" || run.state === "refused") return;
   run.state = "stopped"; run.reason = why; run.hold = ""; run.step = "";
   clearInterval(run.timer);
+  // فيديو أوقفناه ننتظر صوتَه **يكمل** — ⛔ ~~ويبقى موقوفاً في المصغّر أو بإطفاء الإضافة~~: المصغّرُ الفيديو نفسُه يكمل، والإطفاءُ لا يُبقي
+  // إيقافاً لنا (مراجعةُ الجولة #8) · **إلا فيديو آخر** (`nav`): ما أوقفناه غادره المستخدم
+  if (why === "nav") dubWaitEnd(run); else dubWaitRelease(run);
   dubSilence(run);
   dubUnshow(run);
+  dubAzFree(run);
 }
 
 // ما أظهرناه من ترجمةٍ عربيّة يُعاد عند الإيقاف أو الرفض (عالمُ الصفحة يعرف ما غيّره وحدَه)
@@ -5352,11 +5539,16 @@ async function dubPrepare(run) {
     if (why) { dubStop(why); return false; }
     return true;
   };
-  const yt = run.opts.source === "yt";
-  const key = run.vid + "|" + run.opts.source;
-  const trP = yt ? null : dubTranslatorGet(run);
+  const yt = run.opts.source === "yt", az = run.opts.engine === "azure";
+  // منطقةٌ كُتبت ولا تصلح ⇐ يُقال قبل أيّ طلب، لا يُلام المفتاح (مراجعة 168ح #15)
+  if ((az && run.opts.az.bad === "region") || (run.opts.source === "azure" && run.opts.az.trKey && run.opts.az.bad)) return dubRefuse(run, "az-region");
+  // ⛔ ~~مقاطعُ مضمومةٌ مع Azure وحدَه (`|u`)~~ ⇒ ⭐ **الجولة الثالثة: مقاطعُ جملٍ كاملةٍ لكلّ مصدرٍ ومحرّك** — فتبديلُ المحرّك وسطَ
+  // التشغيل لا يجعل كلَّ جملةٍ قصيرةٍ طلباً (مراجعة 168ح #10)، ولا يقف صوتُ الجهاز وسطَ جملةٍ أيضاً
+  const key = run.vid + "|" + run.opts.source + "|u3";
+  const trP = yt ? null : dubTranslatorGet(run);                 // ومع «مترجم Azure» احتياطٌ لا شرط
   const voiceP = dubVoiceGet(run.opts.voice);
   let tx = yt ? null : dubTranscripts.get(key);
+  if (tx) dubTxKeep(dubTranscripts, key, tx, DUB_TX_KEEP);        // استُعمل ⇐ الأحدث
   if (!tx && !yt && dubCapP.has(key)) { tx = await dubCapP.get(key); if (!live()) return; }
   if (!tx) {
     const prevB = dubBridge;
@@ -5368,6 +5560,7 @@ async function dubPrepare(run) {
       const ping = await dubMainCall("ping", null, 1500);
       if (!live()) return;
       if (!ping.ok) return dubRefuse(run, "main-missing");
+      if (ping.ver !== DUB_MAIN_VER) return dubRefuse(run, "main-old");
       const f = await dubMainCall("facts", null, 6000);
       if (!live()) return;
       if (!f.ok) return dubRefuse(run, f.reason || "facts", f.status);
@@ -5381,11 +5574,18 @@ async function dubPrepare(run) {
         if (!src) return dubRefuse(run, d.k, d.spoken || "");
         if (f.stop) return dubRefuse(run, "breaker", f.stop);
         run.step = "show";
-        const sh = await dubMainCall("show", { v: run.vid, code: src.code, asr: src.asr }, 10000);
+        const sh = await dubMainCall("show", { v: run.vid, code: src.code, asr: src.asr, ql: src.ql, qk: src.qk, dl: 19000 }, 20000);
         if (sh.ok && sh.how !== "already") run.shown = true;      // قبل live(): إيقافٌ أثناء الانتظار يُعيدها
         if (!live()) { dubUnshow(run); return; }
         if (!sh.ok) return dubRefuse(run, sh.reason || "show", sh.why || "");
-        tx = { kind: "display", sents: null };
+        // ⭐ الجولة الثالثة: **ملفُّ العربيّة كاملاً من ردّ طلب المشغّل نفسِه** (📐 XHR · json3 — صفرُ طلبٍ منّا) ⇒ وضعُ الجمل بقراءةٍ
+        // مسبقة: يُنطق ما يُعرض نفسُه في موعده جملةً كاملة — وما لم يُلتقط يُقرأ كما يظهر سطراً سطراً (وضعُ العرض) كما كان
+        const t2 = Array.isArray(sh.events) && sh.events.length ? dubYtUnits(sh.events) : null;
+        // ⛔ ~~وما لم يُقرأ الآن يُؤخذ من ذاكرة الإضافة~~ (مراجعةُ الجولة الثالثة #1): مفتاحُها الفيديو والمصدرُ لا المسار — فتُقرأ ترجمةُ
+        // مسارٍ آخر والمعروضُ غيرُها، وهي ملاحظةُ المالك ١ بعينها. **وتكرارُ المسار نفسِه تحفظه ذاكرةُ الصفحة** (`MEM.ar`) بلا طلب ⇒ ما
+        // لم يُقرأ يُقرأ كما يظهر، ويُقال لماذا
+        tx = t2 || { kind: "display", sents: null };
+        run.ytWhy = tx.kind === "display" ? String(sh.why || (sh.events ? "empty" : "")).slice(0, 40) : "";   // لماذا لم يُقرأ مسبقاً — يُقال
       } else {
         if (!d.src) return dubRefuse(run, d.k, d.spoken || "");
         if (f.stop && f.asked !== "cached") return dubRefuse(run, "breaker", f.stop);
@@ -5398,8 +5598,8 @@ async function dubPrepare(run) {
             if (c.ok) {
               const seg = dubSegment(c.events);
               if (seg.sents.length) {
-                t2 = { kind: d.k, sents: seg.sents.map((x) => ({ start: x.start, win: x.win, text: x.text, ar: d.k === "speak" ? x.text : null })) };
-                dubTranscripts.set(key, t2);
+                const ss = seg.sents.map((x) => ({ start: x.start, win: x.win, end: x.end, text: x.text, ar: d.k === "speak" ? x.text : null }));
+                t2 = dubTxKeep(dubTranscripts, key, { kind: d.k, sents: dubMergeUnits(ss) }, DUB_TX_KEEP);
               }
             }
             return { c, t2 };
@@ -5419,19 +5619,24 @@ async function dubPrepare(run) {
     run.step = "translator";
     const t = await trP;
     if (!live()) return;
-    if (!t.ok) return dubRefuse(run, t.reason, t.detail);
-    run.tr = t.tr;
+    const azTr = run.opts.source === "azure" && !!run.opts.az.trKey;
+    if (t.ok) run.tr = t.tr;
+    // «مترجم Azure» بلا مفتاحِ مترجمٍ ولا مترجمِ كروم ⇐ يُسمّى المفتاحُ الناقص — ⛔ ~~«مترجم كروم غير متاح» وحدَه~~ (مراجعةُ الجولة #10)
+    else if (!azTr) return dubRefuse(run, run.opts.source === "azure" ? "az-trnokey" : t.reason, t.detail);
+    if (run.opts.source === "azure" && !azTr) run.trOff = "nokey";   // بلا مفتاح مترجم ⇐ مترجمُ كروم، ويُقال
   }
   run.step = "voice";
   const v0 = await voiceP;
   if (!live()) return;
   // صوتٌ اختير في البوب-أب أثناء التجهيز يُؤخذ هنا — الوعدُ بُدئ بخيار الضغطة (مراجعة 2 #8 · #11)
   const voice = v0 ? (dubPickVoice(speechSynthesis.getVoices() || [], run.opts.voice) || v0) : null;
-  if (!voice) return dubRefuse(run, "no-voice");
-  run.voice = voice;
+  if (az && !run.opts.az.key) return dubRefuse(run, "az-nokey");
+  if (!voice && !az) return dubRefuse(run, "no-voice");
+  run.voice = voice;                                             // مع Azure: صوتُ الجهاز احتياطٌ وقد يغيب
   run.step = "warmup";
   let heard = false;
-  for (let k = 0; k < 3 && live(); k++) {
+  if (az) heard = (await dubSayAz(run, DUB_HELLO)) === "heard";
+  for (let k = 0; k < 3 && !heard && run.voice && !dubAzOn(run) && live(); k++) {
     const r = await dubSay(run, DUB_HELLO);
     if (r === "heard") { heard = true; break; }
     if (r === "pending") break;                                  // صوتٌ آخر يسبقنا في الطابور: لا نكدّس خلفه
@@ -5445,7 +5650,9 @@ async function dubPrepare(run) {
 }
 
 function dubTranslateAhead(run) {
-  if (!run.tr) return;
+  if (run.opts.source === "azure" && run.opts.az.trKey && !run.trOff) return dubAzTranslateAhead(run);
+  // مترجمُ Azure توقّف ولا مترجمَ كروم يخلفه ⇐ يُقال ولا يُسكت عنه — ⛔ ~~«بمترجم كروم»~~ وهو غيرُ موجود (مراجعة 168ح #11)
+  if (!run.tr) { const s = run.sents[run.idx]; if (run.trOff && s && s.ar == null) run.hold = "tr-off"; return; }
   const end = Math.min(run.sents.length, run.idx + DUB_AHEAD);
   for (let i = run.idx; i < end && run.inflight < DUB_TR_INFLIGHT; i++) {
     const s = run.sents[i];
@@ -5457,21 +5664,24 @@ function dubTranslateAhead(run) {
 }
 
 // تعلّمُ سرعة المحرّك من مدّة ما نُطق فعلاً — جملٌ مقطوعة لا تُعلِّم
-function dubLearn(run, chars, sec, rate) {
+function dubLearn(run, chars, sec, rate, linear) {
   if (!(sec > 0.6)) return;
-  const cps1 = chars / (sec * dubRealSpeed(rate, DUB_CURVE_MAC));
+  const cps1 = chars / (sec * (linear ? rate : dubRealSpeed(rate, DUB_CURVE_MAC)));
   run.cps = Math.min(12, Math.max(5, 0.8 * run.cps + 0.2 * cps1));
 }
 
-// جملةٌ من النصّ الملتقَط (`plan.i`) — وجملتُها التالية تُخطَّط من الفهرس
+// جملةٌ من النصّ الملتقَط (`plan.i`) — وجملتُها التالية تُخطَّط من الفهرس. ونهايةُ نافذتها تصحب المقطعَ لضبط سرعته عند تشغيله
 function dubSpeak(run, plan) {
   const s = run.sents[plan.i];
   run.idx = plan.i + 1;
-  dubUtter(run, { text: s.ar, i: plan.i, start: s.start / 1000 }, plan.rate);
+  dubUtter(run, { text: s.ar, i: plan.i, start: s.start / 1000, end: (s.start + s.win) / 1000 }, plan.rate, plan.real, s);
 }
 
-// النطقُ الواحد للوضعين: جملةٌ ملتقَطة (`i`) أو سطرٌ معروض (`line`) — وجملةٌ واحدةٌ منّا في الطابور
-function dubUtter(run, unit, rate) {
+// النطقُ الواحد للوضعين: جملةٌ ملتقَطة (`i`) أو سطرٌ معروض (`line`) — وجملةٌ واحدةٌ منّا في الطابور.
+// `rate` سرعةُ كروم لأصوات الجهاز، و`real` السرعةُ الفعليّة لصوت Azure (نسبةُ prosody)، و`s` الجملةُ وما جُلب لها مسبقاً
+function dubUtter(run, unit, rate, real, s) {
+  if (dubAzOn(run) || (dubAzEngine(run) && s && s.clip)) return dubUtterAz(run, unit, rate, real, s);
+  if (!run.voice) { run.lost++; return; }                         // Azure متوقّفٌ ولا صوتَ جهازٍ يخلفه
   const u = new SpeechSynthesisUtterance(unit.text);
   u.voice = run.voice; u.lang = run.voice.lang; u.rate = rate; u.volume = run.opts.volume;
   const c = { u, i: unit.i == null ? -1 : unit.i, started: false, ended: false, stale: false, at: performance.now(), t0: 0 };
@@ -5480,6 +5690,7 @@ function dubUtter(run, unit, rate) {
     c.started = true; c.t0 = performance.now();
     if (c.stale || dub !== run || run.state !== "running") { dubCancelOurs(); return; }
     run.warm = true;                                             // سُمعت جملة ⇒ لا «أهو تبويبٌ مكتوم؟» بعدها
+    run.speeds.push(real || rate); if (run.speeds.length > 20) run.speeds.shift();   // للقياس: السرعةُ الفعليّة لا رقمُ كروم
     const v = document.querySelector("#movie_player video");
     if (v && unit.start != null) { run.lags.push(v.currentTime - (run.off || 0) - unit.start); if (run.lags.length > 60) run.lags.shift(); }
   };
@@ -5502,7 +5713,318 @@ function dubUtter(run, unit, rate) {
   speechSynthesis.speak(u);
 }
 
-// سطرٌ نهائيٌّ لم يُنطق يصير «المنتظر» — والأحدثُ يغلب ما لم يأتِ دوره (يُعدّ متخطّى). ونافذةُ السرعة من إيقاع السطور نفسِها
+// ── 168ح: محرّكُ Azure ─────────────────────────────────────────────────────────────
+// محرّكُ Azure مختارٌ بمفتاحٍ لم يُرفض — فما جُلب له يُنطق به **ولو كان طلبٌ جديدٌ ممنوعاً الآن** (مهلةُ 429): ⛔ ~~مقطعٌ مدفوعٌ جاهزٌ
+// يُترك وتُنطق جملتُه بصوت الجهاز~~ (تصميمُ الجولة R4 — يخلط الأصوات ويرمي ما دُفع)
+function dubAzEngine(run) {
+  return run.opts.engine === "azure" && !!run.opts.az.key && !run.azOff;
+}
+
+// ويُطلب منه الآن: **ولا مهلةَ 429 على الصفحة** (`dubAzGate` — لا على التشغيلة)
+function dubAzOn(run) {
+  return dubAzEngine(run) && performance.now() >= dubAzGate.until;
+}
+
+// يُسمح بطلب نطقٍ الآن؟ — يُنظّف سجلَّ الصفحة ولا يأخذ مكاناً (الطالبُ يُسجّل)
+function dubAzCan(now) {
+  const l = dubAzLimit(dubAzGate.log, now, dubAzGate.until);
+  dubAzGate.log = l.log;
+  return l.ok;
+}
+
+function dubBlobFree(run, url) {
+  try { URL.revokeObjectURL(url); } catch { /* أُبطل سلفاً */ }
+  run.blobs.delete(url);
+}
+
+// كلُّ ما بقي من صوتٍ مجلوب يُحرَّر عند الإيقاف — والمقاطعُ المجلوبةُ مسبقاً تُنسى (الرابطُ يموت بتحريره، والجملُ تبقى في
+// الذاكرة لتشغيلةٍ تالية: مقطعٌ منسيٌّ هنا كان سيُشغَّل ميّتاً)
+function dubAzFree(run) {
+  if (run.warmA) { try { run.warmA.pause(); } catch { /* انتهى */ } run.warmA = null; }
+  for (const u of run.blobs) { try { URL.revokeObjectURL(u); } catch { /* أُبطل سلفاً */ } }
+  run.blobs.clear();
+  if (run.sents) for (const x of run.sents) { x.clip = null; x.tries = 0; }   // والجملُ باقيةٌ لتشغيلةٍ تالية: محاولاتُها من جديد
+}
+
+// مقطعٌ جُلب مسبقاً ثمّ سقط (صوتٌ أو مفتاحٌ أو سرعةٌ تغيّرت — مراجعة 168ح #6): صوتُه يُحرَّر حين يصل
+function dubClipDrop(run, s) {
+  const c = s.clip;
+  s.clip = null;
+  if (c) c.p.then((r) => { if (r && r.ok) dubBlobFree(run, r.url); });
+}
+
+// طلبُ صوت Azure لمقطع — **بحدّ الصفحة**، **والمفتاحُ ترويسةٌ لا يُطبع ولا يُعاد في الحال أبداً**.
+// ⭐ **يُحلّ بنتيجةٍ دائماً** — ⛔ ~~قراءةُ الجسم إن فشلت تُفلت~~ فتُعلِّق مقطعاً ثلاثين ثانية أو ترفض التشغيلةَ «عطباً داخليّاً»
+// (مراجعة 168ح #3) — **ومدّةُ الصوت من حجمه** (48 kbit/s ثابتة) فتُعرف قبل تشغيله، **والحروفُ المدفوعة تُعدّ بعد النجاح وحدَه**
+function dubAzFetch(run, text, real) {
+  const az = run.opts.az, t0 = performance.now();
+  if (!dubAzCan(t0)) return Promise.resolve({ ok: false, status: "rate-local" });
+  dubAzGate.log.push(t0);
+  const ssml = dubSsml(text, az.voice, real);
+  const ac = new AbortController(), timer = setTimeout(() => ac.abort(), DUB_AZ_TIMEOUT_MS);
+  return fetch("https://" + az.region + ".tts.speech.microsoft.com/cognitiveservices/v1", {
+    method: "POST", signal: ac.signal, credentials: "omit", cache: "no-store",
+    headers: { "Ocp-Apim-Subscription-Key": az.key, "Content-Type": "application/ssml+xml", "X-Microsoft-OutputFormat": DUB_AZ_FORMAT },
+    body: ssml })
+    .then(async (r) => {
+      if (!r.ok) {
+        // 📄 403 قد يكون نفادَ حصّة F0 الشهريّة لا مفتاحاً مرفوضاً — نصُّ الردّ يقوله (بحثُ الجولة الثالثة)
+        let t = "";
+        if (r.status === 403) { try { t = await r.text(); } catch { t = ""; } }
+        return { ok: false, status: /quota/i.test(t) ? "quota" : r.status };
+      }
+      const blob = await r.blob();
+      if (!blob.size) return { ok: false, status: 204 };
+      dubAzGate.n429 = 0;
+      run.azTts += dubAzBill(ssml);                              // مدفوعٌ وإن لم يُشغَّل
+      const gone = () => dub !== run || (run.state !== "running" && run.state !== "preparing");
+      if (gone()) return { ok: false, status: "gone" };
+      const span = await dubAzSpanOf(blob), dur = blob.size / DUB_AZ_BPS;
+      if (gone()) return { ok: false, status: "gone" };
+      const url = URL.createObjectURL(blob);
+      run.blobs.add(url);
+      return { ok: true, url, dur, speech: span ? Math.min(dur, span.end) : dur, lead: span ? span.lead : 0, dec: !!span, real: Number(real) || 1 };
+    })
+    .catch((e) => ({ ok: false, status: 0, err: String(e?.name || e) }))
+    // ⭐ الرفضُ يُصنَّف **لحظةَ يصل** — ⛔ ~~حين تُشغَّل جملتُه~~: 429 على طلبٍ مسبق كان يترك بوّابةَ الصفحة مفتوحةً فيصطدم بها طلبٌ آخر
+    // وتُنطق جملتان بصوت الماك (حَكَمُ الجولة P1، مقيس)
+    .then((res) => { if (!res.ok) dubAzFail(run, res); return res; })
+    .finally(() => clearTimeout(timer));
+}
+
+// فشلُ Azure: مفتاحٌ مرفوض ⇐ صوتُ الجهاز بقيّةَ التشغيلة · 429 ⇐ دقيقةٌ بصوت الجهاز بلا طلب **على الصفحة كلِّها** ·
+// وتعذّرُ الاتصال يُقال — ⛔ ~~ويبقى مقولاً بقيّةَ التشغيلة~~: يُمحى بأوّل مقطعٍ يُسمع، و«الحدّ» يُقرأ حيّاً (مراجعة 168ح #5 · #14)
+function dubAzFail(run, res) {
+  const st = res && res.status;
+  if (st === 401 || st === 403) run.azOff = "key";
+  else if (st === "quota") run.azOff = "quota";                  // حصّةُ الشهر نفدت: صوتُ الجهاز حتى الشهر التالي، ويُقال بسببه
+  else if (st === 429) {
+    dubAzGate.n429++;
+    dubAzGate.until = performance.now() + Math.min(DUB_AZ_BACKOFF_MS, DUB_AZ_BACKOFF0_MS * Math.pow(2, dubAzGate.n429 - 1));
+  } else if (st !== "rate-local" && st !== "gone") run.azWarn = "net";
+}
+
+// ⭐ الجولة الثالثة — أين ينتهي الكلامُ في المقطع؟ 📐 يضيف Azure صمتاً في آخر كلّ مقطع (بحثُ الجولة الثالثة على أصواته: 0.7–0.97 ث،
+// والوسيطُ 0.84) ⇒ **مدّتُه كلُّها تُفسد ضبطَ السرعة وتعلّمَها** (أطولُ بنحو الخُمس فيُسرَّع ما لا يلزم) **وتطيل ما بين الجمل**. والعتبةُ
+// نحو −48 dBFS — خالص: { lead · end } بالثواني، أو null لمقطعٍ صامت
+function dubAzSpan(data, rate) {
+  const TH = 0.004;
+  let a = -1, b = -1;
+  for (let i = 0; i < data.length; i++) if (Math.abs(data[i]) > TH) { a = i; break; }
+  if (a < 0 || !(rate > 0)) return null;
+  for (let i = data.length - 1; i >= a; i--) if (Math.abs(data[i]) > TH) { b = i; break; }
+  return { lead: a / rate, end: (b + 1) / rate };
+}
+
+// فكُّ ترميز المقطع لمعرفة ذلك — 📐 أجزاءٌ من الألف من الثانية لمقطعٍ بستّ ثوانٍ، وفي الجلب المسبق لا في طريق الصوت.
+// وما لا يُفكّ (متصفّحٌ بلا Web Audio · ردٌّ تالف) يُعامل بمدّته كاملةً كما كان
+function dubAzSpanOf(blob) {
+  const OAC = globalThis.OfflineAudioContext;
+  if (typeof OAC !== "function" || !blob || typeof blob.arrayBuffer !== "function") return Promise.resolve(null);
+  return blob.arrayBuffer().then((buf) => new OAC(1, 1, 24000).decodeAudioData(buf))
+    .then((ab) => dubAzSpan(ab.getChannelData(0), ab.sampleRate))
+    .catch(() => null);
+}
+
+// ⭐ الجولة الثالثة — سرعةُ التشغيل الآن: **ما بقي من كلام المقطع** على ما بقي من نافذة جملته بزمن الساعة (`dubAzFit`). **والسرعةُ
+// الثابتة التي اختارها المستخدمُ طُلب بها المقطعُ فلا يُزاد عليها**، وسطرُ العرض لا نافذةَ له. `mid`: وسطَ المقطع (تبدّلت سرعةُ
+// الفيديو) ⇐ الباقي من موضعه، والسقفُ بتأخّر بدئه (`lag0`) — ⛔ ~~ويبدأ بعُشر صمت أوّله محسوباً كلاماً~~ (حَكَمُ الجولة)
+function dubAzRateNow(run, unit, c, mid) {
+  if (typeof run.opts.rate === "number" || unit.end == null) return 1;
+  const v = document.querySelector("#movie_player video");
+  if (!v) return 1;
+  const vr = v.playbackRate || 1, ct = v.currentTime - (run.off || 0), st = unit.start == null ? ct : unit.start;
+  if (!mid) c.lag0 = Math.max(0, ct - st);
+  const left = (c.speech || c.dur) - (mid && c.audio ? c.audio.currentTime : Math.max(0, (c.lead || 0) - 0.02));
+  const remain = (unit.end - Math.max(ct, st)) / vr;
+  return dubAzFit(left, remain, c.real, Math.min(DUB_R_MAX, Math.min(DUB_CATCH_CEIL_AZ, dubCapFor(c.lag0 || 0)) * Math.max(1, vr)));
+}
+
+// ⛔ **الموضعُ الوحيد لكتابة سرعة عنصرِ صوتِنا** (لا الفيديو أبداً — خ5): حارسا السرعة يستثنيانه بعينه
+function dubAzSetRate(c, r) {
+  c.audio.playbackRate = r;
+  c.vr = (document.querySelector("#movie_player video") || {}).playbackRate || 1;
+}
+
+// تعلّمُ سرعة صوت Azure الطبيعيّة من مدّة مقاطعه والسرعةِ التي طُلبت بها — أوّلُ ثلاثةٍ بنصف الوزن: تلحق سريعاً
+function dubLearnAz(run, chars, dur, real) {
+  if (!(dur > 0.6) || !(chars > 0)) return;
+  const w = run.azN < 3 ? 0.5 : 0.2;
+  run.azN++;
+  run.cpsAz = Math.min(20, Math.max(6, (1 - w) * run.cpsAz + w * chars / (dur * Math.max(0.5, real || 1))));
+}
+
+// المقطعُ بصوت Azure: ممّا جُلب له مسبقاً إن كان بالصوت نفسِه، وإلا يُطلب الآن — ويُشغَّل عنصرَ صوتٍ لنا وحدَنا **بسرعة تشغيلٍ
+// تُلائم مدّتَه الفعليّة ما بقي من نافذته** (الجولة الثالثة) فلا يزحم ما بعده، ويتوقّف مع الفيديو ويكمل معه (`held`)
+function dubUtterAz(run, unit, rate, real, s) {
+  const c = { az: true, i: unit.i == null ? -1 : unit.i, started: false, ended: false, stale: false, held: false,
+    at: performance.now(), t0: 0, audio: null, url: "", dur: 0, real: Number(real) || 1 };
+  run.cur = c;
+  const fin = (ended, quiet) => {
+    if (c.ended) return;
+    c.ended = true;
+    clearTimeout(c.endT);
+    if (c.url) dubBlobFree(run, c.url);
+    if (run.cur === c) run.cur = null;
+    if (c.stale) return;
+    if (ended && c.started) {
+      run.spoken++; dubLearnAz(run, unit.text.length, (c.speech - c.lead) || c.dur, c.real);
+      // أرقامٌ للقياس في البوب-أب (لا نصَّ ولا مفتاح): صمتا الطرفين **ممّا فُكّ وحدَه** — ⛔ ~~«0» لمقطعٍ لم يُفكّ~~: رقمٌ يُقرأ قياساً
+      // ولم يُقس؛ فالعدمُ (null) يقول إنّ الفكَّ غيرُ متاح
+      if (c.dec) {
+        run.tails.push(Math.max(0, c.dur - c.speech)); if (run.tails.length > 10) run.tails.shift();
+        run.leads.push(c.lead || 0); if (run.leads.length > 10) run.leads.shift();
+      }
+    } else if (!quiet) run.lost++;
+    // التالية من حدث الصوت لا من المؤقّت (مراجعة #9) — وحدثُ الصوت مهمّةٌ لا وعد، فلا سلسلة
+    if (dub === run && run.state === "running") dubTick(run);
+  };
+  c.fin = fin;                                                     // النبضةُ تُنهيه حين ينتهي كلامُه ويبقى صمتُ آخره
+  // ⭐ نهايةُ الكلام بمؤقّتٍ واحدٍ يُسلَّح عند كلّ تشغيل (تصميمُ الجولة G3): النبضةُ وحدَها كانت تنتظر حتى 0.15 ث بعد آخر كلمة عند كلّ
+  // حدّ جملة — مهمّةٌ مؤقّتةٌ لا سلسلةُ وعود، والنبضةُ و`onended` احتياطٌ خلفه
+  c.arm = () => {
+    clearTimeout(c.endT);
+    const a = c.audio;
+    if (!a || c.ended || c.held || !(c.speech > 0) || !(c.speech < c.dur - 0.1)) return;
+    c.endT = setTimeout(() => {
+      if (c.ended || c.held || run.cur !== c) return;
+      try { a.pause(); } catch { /* انتهى */ }
+      fin(true);
+    }, Math.max(0, (c.speech - a.currentTime) / (a.playbackRate || 1) * 1000 + 15));
+  };
+  const play = (res) => {
+    if (c.stale || dub !== run || run.state !== "running") { if (res && res.ok) dubBlobFree(run, res.url); fin(false, true); return; }
+    if (!res || !res.ok) {
+      // (صُنِّف الرفضُ حين وصل — `dubAzFetch`) · ⛔ حدُّ الصفحة ممتلئ: تُعاد الجملةُ **في نبضة المؤقّت التالية** — ⛔ ~~fin ثمّ dubTick هنا~~: وعدُ الرفض محلولٌ سلفاً فكانت
+      // النبضةُ تُعاد في سلسلة وعودٍ لا تُعطي الصفحةَ نَفَساً حتى يتّسع الحدّ — **جمّدت يوتيوب حتى ثانيتين ونصفٍ مراراً**
+      // (مراجعة 168ح #1 · #7 · #13، مقيس) — **ولا خلطَ أصواتٍ** لحدٍّ ممتلئ
+      if (res && res.status === "rate-local") {
+        if (c.i >= 0) run.idx = c.i; else if (!run.pending) run.pending = unit;
+        c.ended = true;
+        if (run.cur === c) run.cur = null;
+        return;
+      }
+      // مفتاحٌ مرفوضٌ أو 429: المقطعُ نفسُه بصوت الجهاز إن وُجد
+      if (!dubAzOn(run) && run.voice && run.cur === c) { c.ended = true; run.cur = null; dubUtter(run, unit, rate, real); return; }
+      fin(false);
+      return;
+    }
+    // ⭐ وصل صوتُ جملةٍ متأخّراً فوق DUB_BEHIND_MAX_S (جلبٌ أبطأ من المهلة بعد قرار النطق) ⇐ يُتخطّى ويُعدّ — يُزحم كلُّ ما بعده إن نُطق
+    const vv = document.querySelector("#movie_player video");
+    if (vv && unit.start != null && vv.currentTime - (run.off || 0) - unit.start > DUB_BEHIND_MAX_S) {
+      dubBlobFree(run, res.url); run.skipped++; fin(false, true); return;
+    }
+    const a = new Audio(res.url);
+    c.audio = a; c.url = res.url; c.dur = res.dur || 0; c.speech = res.speech || c.dur; c.lead = res.lead || 0; c.real = res.real || c.real; c.dec = !!res.dec;
+    a.volume = run.opts.volume;
+    try { a.preservesPitch = true; } catch { /* متصفّحٌ قديم: السرعةُ تغيّر الطبقة */ }
+    c.unit = unit;
+    dubAzSetRate(c, dubAzRateNow(run, unit, c));
+    // ⭐ ويبدأ من أوّل الكلام لا من صمت أوّله (تصميمُ الجولة G3: نحو عُشر ثانيةٍ عند كلّ حدّ جملة)
+    if (c.lead > 0.03 && c.lead < c.speech - 0.1) { try { a.currentTime = c.lead - 0.02; } catch { /* يبدأ من أوّله */ } }
+    a.onplaying = () => {
+      c.arm();                                                      // ومع كلّ تشغيلٍ بعد توقّف: يُسلَّح ثانيةً
+      if (c.started) return;
+      c.started = true; c.t0 = performance.now(); run.warm = true; run.azWarn = "";
+      run.speeds.push(c.real * (a.playbackRate || 1)); if (run.speeds.length > 20) run.speeds.shift();
+      const v = document.querySelector("#movie_player video");
+      if (v && unit.start != null) { run.lags.push(v.currentTime - (run.off || 0) - unit.start); if (run.lags.length > 60) run.lags.shift(); }
+    };
+    a.onended = () => fin(true);
+    a.onerror = () => fin(false);
+    const pr = a.play();
+    if (pr && typeof pr.catch === "function") pr.catch(() => fin(false));
+  };
+  // ما جُلب مسبقاً بصوتٍ آخر لا يُشغَّل — يُحرَّر ويُطلب بالصوت المختار (مراجعة 168ح #6)
+  const clip = s ? s.clip : null;
+  if (s) s.clip = null;
+  const use = clip && clip.voice === run.opts.az.voice ? clip : null;
+  if (clip && !use) clip.p.then((r) => { if (r && r.ok) dubBlobFree(run, r.url); });
+  (use ? use.p : dubAzFetch(run, unit.text, dubAzAsk(run, real))).then(play);
+}
+
+// جملةُ الإحماء بصوت Azure — وهي أوّلُ اختبارٍ للمفتاح: مرفوضٌ ⇐ صوتُ الجهاز من البداية
+function dubSayAz(run, text) {
+  return dubAzFetch(run, text, 1).then((res) => new Promise((resolve) => {
+    if (!res.ok) { resolve("dropped"); return; }
+    if (dub !== run || run.state !== "preparing") { dubBlobFree(run, res.url); resolve("dropped"); return; }
+    const a = new Audio(res.url);
+    let started = false, t = 0;
+    const done = (r) => { clearTimeout(t); dubBlobFree(run, res.url); if (run.warmA === a) run.warmA = null; resolve(r); };
+    a.volume = run.opts.volume;
+    a.onplaying = () => { started = true; };
+    a.onended = () => done(started ? "heard" : "dropped");
+    a.onerror = () => done("dropped");
+    run.warmA = a;
+    t = setTimeout(() => { try { a.pause(); } catch { /* انتهى */ } done(started ? "heard" : "pending"); }, 6000);
+    a.play().catch(() => done("dropped"));
+  }));
+}
+
+// جلبٌ مسبقٌ لصوت المقاطع التالية بترتيبها (DUB_AZ_AHEAD) — بسرعةٍ تُحسب على أنها تبدأ في موعدها، **وواحدٌ في كلّ نبضة**.
+// ⛔ **ولا طلبَ والحدُّ ممتلئ**: ⛔ ~~رفضٌ يُخزَّن في المقطع~~ كان يُعاد تشغيلُه رفضاً في سلسلة التجميد (مراجعة 168ح #1)
+function dubAzPrefetch(run, rate, cap) {
+  const end = Math.min(run.sents.length, run.idx + DUB_AZ_AHEAD);
+  let flying = 0;
+  for (let i = run.idx; i < end; i++) { const c = run.sents[i].clip; if (c && !c.res) flying++; }
+  if (flying >= 2) return;                                       // طلبان في الطريق على الأكثر (تصميمُ الجولة)
+  for (let i = run.idx; i < end; i++) {
+    const s = run.sents[i];
+    // ⭐ فشلٌ عابرٌ يُسقط مقطعَه فيُطلب ثانيةً عبر الحدّ نفسِه (مرّةً) — ⛔ ~~يُشغَّل فاشلاً فتضيع جملتُه~~
+    if (dubAzRetryable(run, s)) s.clip = null;
+    if (!s.ar || s.clip) continue;
+    if (!dubAzCan(performance.now())) return;
+    // ⭐ مكانان في الدقيقة للجملة المستحقّة: ما بعد التالية لا يُطلب والسجلُّ فوق 16 — فالتي حلّت تجد مكاناً دائماً (تصميمُ الجولة)
+    if (i > run.idx && dubAzGate.log.length > DUB_AZ_PER_MIN - 2) return;
+    const plan = dubNext([s], 0, s.start / 1000, rate, run.cpsAz, cap, DUB_CURVE_MAC, run.opts.rate);
+    if (!plan.speak) continue;
+    dubAzClip(run, s, plan.real);
+    return;
+  }
+}
+
+// مترجمُ Azure: دفعةٌ من المقاطع **أمام الموضع** في طلبٍ واحد — ⛔ ~~حتى آخر الفيديو~~: كان يترجم الفيديو كلَّه في ثانية (مراجعة
+// 168ح #9) ⇒ **لا يُطلب إلا وفي الثماني القادمة مقطعٌ بلا ترجمة**، والدفعةُ حتى 25 من الموضع. مفتاحٌ مرفوضٌ أو 429 ⇐ مترجمُ كروم
+// بقيّةَ التشغيلة · وغيرُهما (شبكةٌ · 5xx · ردٌّ غيرُ JSON) ⇐ ⛔ ~~يُعاد كلَّ نبضةٍ أبداً~~ **انتظارٌ يتضاعف حتى ثلاثين ثانية، وبعد
+// ثلاثةٍ متتالية يتوقّف ويُقال** — ومهلةٌ كطلب الصوت (مراجعة 168ح #11). **والحروفُ تُعدّ بعد النجاح وحدَه** (#12)
+function dubAzTranslateAhead(run) {
+  if (run.trBusy || performance.now() < run.trUntil) return;
+  let need = false;
+  for (let i = run.idx; i < Math.min(run.sents.length, run.idx + DUB_AHEAD) && !need; i++) need = run.sents[i].ar == null && !run.sents[i].trq;
+  if (!need) return;
+  const batch = [];
+  for (let i = run.idx; i < run.sents.length && batch.length < DUB_AZ_TR_BATCH; i++) { const s = run.sents[i]; if (s.ar == null && !s.trq) batch.push(s); }
+  const az = run.opts.az, ac = new AbortController(), timer = setTimeout(() => ac.abort(), DUB_TR_TIMEOUT_MS);
+  run.trBusy = true;
+  for (const s of batch) s.trq = true;
+  fetch("https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=en&to=ar", {
+    method: "POST", signal: ac.signal, credentials: "omit", cache: "no-store",
+    headers: { "Ocp-Apim-Subscription-Key": az.trKey, "Ocp-Apim-Subscription-Region": az.trRegion, "Content-Type": "application/json" },
+    body: JSON.stringify(batch.map((s) => ({ Text: s.text }))) })
+    .then(async (r) => {
+      if (!r.ok) return r.status;
+      let j = null;
+      try { j = await r.json(); } catch { j = null; }
+      if (!Array.isArray(j)) return "json";
+      batch.forEach((s, k) => { const t = j[k] && j[k].translations && j[k].translations[0]; s.ar = t && typeof t.text === "string" ? t.text.trim() : ""; });
+      run.azTr += batch.reduce((n, s) => n + s.text.length, 0);
+      return 200;
+    })
+    .catch(() => 0)
+    .then((st) => {
+      if (st === 200) { run.trFails = 0; return; }
+      if (st === 401 || st === 403) { run.trOff = "key"; return; }
+      if (st === 429) { run.trOff = "rate"; return; }
+      run.trFails++;
+      run.trUntil = performance.now() + Math.min(30000, 1000 * Math.pow(2, run.trFails));
+      if (run.trFails >= DUB_TR_FAILS) run.trOff = "net";
+    })
+    .finally(() => { clearTimeout(timer); for (const s of batch) s.trq = false; run.trBusy = false; });
+}
+
+// سطرٌ نهائيٌّ لم يُنطق يصير «المنتظر» — والأحدثُ يغلب ما لم يأتِ دوره (يُعدّ متخطّى). ⛔ ~~الجولة الثالثة: يُضمّ إليه~~ — **سُحب
+// بالقياس** (تصميمُ الجولة G1): الضمُّ أخّر الصوتَ عن الشاشة 7–9 ث (بدلَ 1.7) فصار ما يُسمع غيرَ ما يُقرأ — وهذا وضعُ الاحتياط حين
+// لا يُلتقط الملفّ، **والتزامنُ مع الشاشة أوّلاً** (ملاحظةُ المالك ١). ونافذةُ السرعة من إيقاع السطور نفسِها
 // ⭐ وسطرٌ نُطق صدرُه عند سكتةٍ ثمّ كبر: **الباقي وحدَه جديد** — وإن لم يُنطق صدرُه بعد فالسطرُ الكاملُ يحلّ محلّه (مراجعة 2 #3)
 function dubOffer(run, lines, now, fromLast) {
   const fresh = lines.filter((l) => l && !run.recent.includes(l));
@@ -5527,6 +6049,7 @@ function dubOffer(run, lines, now, fromLast) {
 // تُلحق الكلماتُ بالسطر الأخير، فنطقُه فورَ ظهوره يقول نصفَه ثمّ يعيده كاملاً: هو «الكلامُ المتقطّع». فإن رُئي سطرٌ يكبر
 // صار السطرُ نهائيّاً حين يعلوه غيرُه، أو يغيب، أو يسكن `DUB_STABLE_MS`؛ وما لم يُرَ نموٌّ يُنطق السطرُ فورَ ظهوره.
 function dubTickDisplay(run, p, v, now) {
+  if (run.opts.engine !== "azure" && !run.voice) run.hold = "no-voice";
   const btn = p.querySelector(".ytp-subtitles-button");
   if (btn && btn.getAttribute("aria-pressed") === "false") { run.hold = "cc-off"; return; }
   // 📖 يوتيوب يرسم الترجمةَ بـrequestAnimationFrame — وكرومُ يوقفه في التبويب المخفيّ ⇒ لا جديدَ يُقرأ: يُقال ولا يُسكت عنه
@@ -5553,66 +6076,242 @@ function dubTickDisplay(run, p, v, now) {
   if (!plan.speak) return;
   const unit = run.pending;
   run.pending = null;
-  dubUtter(run, unit, plan.rate);
+  dubUtter(run, unit, plan.rate, plan.real);
 }
 
-// ⭐ النبضة — بالترتيب المُقرّ (§٣): يتيم؟ · البوّابة؟ · مصغّرٌ أو تنقّل؟ (`dubWhy`) · إعلان؟ · متوقّفٌ أو
+// السرعةُ الفعليّة التي يُطلب بها صوتُ جملةٍ من Azure — على أنها تبدأ في موعدها (فبسقف التلقائيّة مضروباً في سرعة الفيديو)
+function dubAzReal(run, s, vr) {
+  return dubNext([s], 0, s.start / 1000, vr || 1, run.cpsAz, DUB_R_MAX, DUB_CURVE_MAC, run.opts.rate).real || 1;
+}
+
+// السرعةُ التي يُطلب بها الصوت: الثابتةُ التي اختارها المستخدمُ بنفسها — ⛔ ~~على منحنى «ليلى» (2× ⇐ 1.91)~~ — وإلا المحسوبة
+function dubAzAsk(run, real) {
+  return typeof run.opts.rate === "number" ? run.opts.rate : real;
+}
+
+// ⭐ فشلٌ عابرٌ (شبكة · 204 · 429 · 5xx) لصوت جملةٍ وبقيت محاولة، والمفتاحُ لم يُرفض — تعريفٌ واحدٌ للجلب المسبق والانتظار والموعد
+function dubAzRetryable(run, s) {
+  const r = s && s.clip && s.clip.res, st = r && !r.ok ? r.status : null;
+  return st != null && !run.azOff && (s.tries | 0) < DUB_AZ_TRIES && (st === 0 || st === 204 || st === 429 || st >= 500);
+}
+
+// أيُّ مترجمٍ ما زال يترجم؟ — مترجمُ Azure بمفتاحه ما لم يتوقّف، أو مترجمُ كروم (مراجعةُ الجولة #3)
+function dubCanTranslate(run) {
+  return (run.opts.source === "azure" && !!run.opts.az.trKey && !run.trOff) || !!run.tr;
+}
+
+// صوتُ جملةٍ يُطلب الآن ويُحفظ عليها (`clip`): النتيجةُ في `res` حين تصل — الجلبُ المسبق والانتظارُ يطلبان به وحدَه
+function dubAzClip(run, s, real) {
+  const clip = { p: null, res: null, voice: run.opts.az.voice };
+  s.tries = (s.tries | 0) + 1;
+  clip.p = dubAzFetch(run, s.ar, dubAzAsk(run, real)).then((r) => { clip.res = r; return r; });
+  s.clip = clip;
+}
+
+// ⭐ الانتظار — قرارُ المالك 2026-11-01 («يتوقّف الفيديو لحظة (موصى)»، ولحاقُ الصوت «نعم، مرّة كلّ 20 ث على الأكثر (موصى)»):
+// **يتوقّف الفيديو** حتى يجهز صوتُ الجملة (`voice`) أو ترجمتُها (`translate`) أو يفرغ صوتُنا من سابقتها (`behind`) — DUB_WAIT_MAX_MS
+// على الأكثر ثمّ يكمل وحده. ⛔ **لا في تبويبٍ مخفيّ، ولا وهو متوقّفٌ أصلاً، ومن شغّله أثناءه فالقرارُ له** (لا نوقفه ثانيةً لجملته).
+// ⛔ ~~ومن ضغط مفتاحاً أو زرّاً أثناءه صار الإيقافُ له~~ — **سُحب** (حَكَمُ الجولة، مقيس): نقرةٌ في أيّ مكانٍ في الصفحة أثناء ثلاث ثوانٍ
+// كانت تترك الفيديو موقوفاً بلا نهاية — ومستمعا المستند ذهبا معه. **وموضعُ الإيقاف يُحفظ:** قفزةٌ أثناءه تُرى بعده (`pauseCt`)
+function dubWaitStart(run, v, why) {
+  // وجملةٌ انتُظرت حتى المهلة لا تُنتظر ثانيةً: ⛔ ~~يكمل الفيديو لحظةً ثمّ يتوقّف من جديد~~ — تقطيعٌ للفيديو نفسِه (مراجعةُ الجولة)
+  if (run.wait || document.hidden || v.paused || run.waitGaveUp === run.idx) return;
+  try { v.pause(); } catch { return; }
+  run.pauseCt = v.currentTime - (run.off || 0);
+  run.wait = { at: performance.now(), why }; run.waits++;
+  run.hold = "wait-" + why;
+}
+
+function dubWaitEnd(run) {
+  if (run.wait) run.stallS += (performance.now() - run.wait.at) / 1000;
+  run.wait = null;
+}
+
+// يُكمل الفيديو الذي أوقفناه نحن — عند الإيقاف بيد المستخدم أو بإعادة البدء، لا عند التنقّل (الفيديو غيرُه)
+function dubWaitRelease(run) {
+  if (!run.wait) return;
+  dubWaitEnd(run);
+  const v = document.querySelector("#movie_player video");
+  if (v && v.paused) { try { const pr = v.play(); if (pr && typeof pr.catch === "function") pr.catch(() => {}); } catch { /* يبقى متوقّفاً */ } }
+}
+
+// نبضةٌ والفيديو موقوفٌ بنا: true ⇐ تقف النبضةُ هنا. شغّله غيرُنا أو لمس المستخدمُ المشغّل ⇐ ينتهي انتظارُنا وتمضي النبضةُ بحالها
+function dubWaitTick(run, v, now) {
+  const w = run.wait;
+  // شغّله المستخدمُ ⇐ القرارُ له **ولهذه الجملة كلِّها**: ⛔ ~~نوقفه ثانيةً بعد لحظة~~ — نعاند المستخدم (تصميمُ الجولة R2) — ⭐ **وساعتُه التي
+  // لم تتحرّك بعدُ ليست تجمّداً** (📖 ساعةُ وسائط كروم تبدأ بعد play() بقليل): ⛔ ~~«متجمّد» ⇐ مزامنة ⇐ نوقفه ثانيةً~~ (مراجعةُ الجولة #1)
+  if (!v.paused) { run.waitGaveUp = run.idx; dubWaitEnd(run); run.movedAt = now; return false; }
+  // ⭐ قفزٌ أثناء انتظارنا ⇐ ينتهي الانتظار، ويسكت ما يتكلّم، ويُستأنف من الموضع الجديد — ⛔ ~~يكمل مقطعٌ قديمٌ في الموضع الجديد حتى
+  // المهلة~~ (مراجعةُ الجولة #6)
+  const ct = v.currentTime - (run.off || 0);
+  if (run.pauseCt != null && Math.abs(ct - run.pauseCt) > DUB_SEEK_S) {
+    dubWaitEnd(run); dubSilence(run);
+    run.sync = true; run.seeked = true; run.pauseCt = null; run.recent = []; run.pending = null;
+    dubClock(run);
+    try { const pr = v.play(); if (pr && typeof pr.catch === "function") pr.catch(() => {}); } catch { /* يبقى متوقّفاً: «متوقّف» يقوله */ }
+    run.movedAt = now;
+    return true;
+  }
+  const s = run.sents && run.sents[run.idx];
+  // فشلٌ عابرٌ لصوتها وبقيت محاولة ⇐ يُطلب ثانيةً **في الانتظار نفسِه** — ⛔ ~~«جاهزٌ» فيكمل الفيديو ثمّ يتوقّف للمحاولة~~ (#4)
+  if (s && dubAzRetryable(run, s)) s.clip = null;
+  // ترجمتُها وصلت ومحرّكُها Azure ⇐ **الانتظارُ نفسُه يصير انتظارَ صوتها** بمهلته الأولى — ⛔ ~~يكمل الفيديو ثمّ يتوقّف ثانيةً لصوتها~~ (#2)
+  if (w.why === "translate" && s && s.ar && run.opts.wait && dubAzOn(run) && !(s.clip && s.clip.res)) w.why = "voice";
+  // والترجمةُ التي ننتظرها تُطلب — ⛔ ~~لا يُطلب شيءٌ والنبضةُ واقفةٌ عند الانتظار~~ فلا ينتهي إلا بمهلته (#10)
+  if (w.why === "translate" && s && s.ar == null) dubTranslateAhead(run);
+  const ready = !run.opts.wait || (w.why === "behind" ? !run.cur : w.why === "translate" ? !s || s.ar != null :
+    !s || !s.ar || !dubAzOn(run) || !!(s.clip && s.clip.res));
+  if (!ready && w.why === "voice" && s && !s.clip && dubAzCan(now)) dubAzClip(run, s, dubAzReal(run, s, v.playbackRate));
+  if (!ready && now - w.at < DUB_WAIT_MAX_MS) { run.hold = "wait-" + w.why; return true; }
+  if (!ready) run.waitGaveUp = run.idx;                          // المهلةُ انقضت: يكمل الفيديو ولا يُنتظر لهذه الجملة ثانيةً
+  dubWaitEnd(run);
+  try { const pr = v.play(); if (pr && typeof pr.catch === "function") pr.catch(() => {}); } catch { /* يبقى متوقّفاً: «متوقّف» يقوله */ }
+  run.movedAt = now;                                             // لا يُعدّ «متجمّداً» لحظةَ عاد
+  return true;
+}
+
+// متوقّفٌ أو متجمّد: ⭐ **صوتُ Azure الجاري يتوقّف مع الفيديو ويكمل معه** (الجولة الثالثة — بقيّةُ الجملة لا تضيع بإيقافٍ قصير)؛
+// وصوتُ الجهاز يُقطع كما كان (⛔ لا `pause()` لطابور النطق أبداً — 📐 علّق المتصفّحَ كلَّه)
+function dubPauseHold(run, why) {
+  const c = run.cur;
+  if (c && c.az && c.audio && c.started && !c.ended) {
+    if (!c.held) { c.held = true; clearTimeout(c.endT); try { c.audio.pause(); } catch { /* انتهى */ } }
+    run.hold = why;
+    return;
+  }
+  // صوتُ الجهاز يُقطع: جملتُه تُذكر فتُعاد بعد الاستئناف إن بقي نصفُ نافذتها (مراجعةُ الجولة #5)
+  if (c && !c.az && c.started && !c.ended && c.i >= 0 && run.cutIdx == null) run.cutIdx = c.i;
+  return dubHold(run, why);
+}
+
+// ⭐ النبضة — بالترتيب المُقرّ (§٣): يتيم؟ · البوّابة؟ · مصغّرٌ أو تنقّل؟ (`dubWhy`) · **انتظارُنا؟** · إعلان؟ · متوقّفٌ أو
 // متجمّد؟ · السرعةُ فوق R_max؟ · قفزة؟ ⇐ ثمّ الجملةُ المستحقّة. **تقرأ الحال ولا تستمع لأحداث الوسائط** (خ16).
 function dubTick(run) {
   if (dub !== run || run.state !== "running") return;
+  // ⭐ انتهى كلامُ مقطع Azure وما بقي فيه صمتُ آخره ⇐ يُنهى الآن: لا تنتظر الجملةُ التالية صمتاً (الجولة الثالثة) — و`fin` تُعيد النبضة
+  const cc = run.cur;
+  if (cc && cc.az && cc.fin && cc.started && !cc.held && !cc.ended && cc.audio && !cc.audio.paused && cc.speech > 0 &&
+      cc.speech < cc.dur - 0.1 && cc.audio.currentTime >= cc.speech + 0.05) {
+    try { cc.audio.pause(); } catch { /* انتهى */ }
+    return cc.fin(true);
+  }
   const why = dubWhy(run);
   if (why) return dubStop(why);
   const p = document.querySelector("#movie_player"), v = p && p.querySelector("video");
   if (!p || !v) return dubHold(run, "no-video");
   const now = performance.now(), rate = v.playbackRate || 1, ct = v.currentTime - (run.off || 0);
-  // جملتُنا لم تبدأ بعد ثلاث ثوانٍ: صوتٌ آخر يسبقنا — تُعلَّم قديمةً (تُقطع إن بدأت) **وتبقى حاجزاً** حتى
-  // يصل حدثُها، ثلاثين ثانيةً على الأكثر: جملةٌ واحدةٌ منّا في الطابور أبداً (مراجعة #8)
+  // جملةُ الجهاز لم تبدأ بعد ثلاث ثوانٍ: صوتٌ آخر يسبقنا — تُعلَّم قديمةً (تُقطع إن بدأت) **وتبقى حاجزاً** حتى
+  // يصل حدثُها، ثلاثين ثانيةً على الأكثر: جملةٌ واحدةٌ منّا في الطابور أبداً (مراجعة #8). **وصوتُ Azure لا يُقاس بها:**
+  // ثوانيه جلبٌ له مهلتُه — ⛔ ~~كانت تُسقطه قديماً فيضيع صامتاً ويُلام «صوتٌ آخر»~~ (مراجعة 168ح #4)
   if (run.cur && !run.cur.started) {
-    if (now - run.cur.at > 3000) run.cur.stale = true;
-    if (now - run.cur.at > 30000) { run.cur = null; run.lost++; }
+    if (!run.cur.az && now - run.cur.at > 3000) run.cur.stale = true;
+    if (now - run.cur.at > 30000) { run.cur.stale = true; run.cur = null; run.lost++; }
   }
   const prevCt = run.lastCt, prevAt = run.lastAt;
   if (ct !== prevCt) run.movedAt = now;
   run.lastCt = ct; run.lastAt = now;
+  if (run.wait && dubWaitTick(run, v, now)) return;
   if (p.classList.contains("ad-showing") || p.classList.contains("ad-interrupting")) { run.wasAd = true; return dubHold(run, "ad"); }
   if (run.wasAd) { run.wasAd = false; dubClock(run); }
-  if (v.paused) return dubHold(run, "paused");
-  if (now - run.movedAt >= DUB_FREEZE_MS) return dubHold(run, "frozen");
+  // ⭐ موضعُ التوقّف يُحفظ: قفزةٌ والفيديو متوقّف (سحبُ الشريط) لا يراها مقارنُ النبضات — كلُّ نبضةٍ تتبع الموضع — ⛔ ~~فكان المقطعُ
+  // الموقوفُ يكمل في الموضع الجديد~~ (تصميمُ الجولة R1) ⇒ أوّلُ نبضةٍ تجري تقارن بموضع التوقّف نفسِه
+  if (v.paused) { if (run.pauseCt == null) run.pauseCt = ct; return dubPauseHold(run, "paused"); }
+  if (now - run.movedAt >= DUB_FREEZE_MS) return dubPauseHold(run, "frozen");
   if (rate > DUB_R_MAX) return dubHold(run, "speed");
-  if (prevCt >= 0 && Math.abs(ct - (prevCt + (now - prevAt) / 1000 * rate)) > DUB_SEEK_S) {
-    dubSilence(run); run.sync = true; dubClock(run);
+  const jumpedPaused = run.pauseCt != null && Math.abs(ct - run.pauseCt) > DUB_SEEK_S;
+  run.pauseCt = null;
+  if (jumpedPaused || (prevCt >= 0 && Math.abs(ct - (prevCt + (now - prevAt) / 1000 * rate)) > DUB_SEEK_S)) {
+    dubSilence(run); run.sync = true; run.seeked = true; dubClock(run);
     run.recent = []; run.pending = null;                          // بعد القفز: ما يظهر يُقرأ ولو قيل قبلُ
   } else if (now - (run.offAt || 0) > 5000) dubClock(run);
+  if (run.cur && run.cur.held) {                                 // صوتٌ أوقفناه مع الفيديو يكمل من حيث وقف
+    run.cur.held = false;
+    try { const pr = run.cur.audio.play(); if (pr && typeof pr.catch === "function") pr.catch(() => {}); } catch { /* حدثُه يحكم */ }
+  }
+  // ⭐ سرعةُ الفيديو تبدّلت وسطَ مقطع Azure ⇐ تتبعها سرعتُه من موضعه (تصميمُ الجولة R3) — ⛔ ~~يبقى بسرعته فيتجاوز نافذتَه~~
+  const ca = run.cur;
+  if (ca && ca.az && ca.audio && ca.started && !ca.held && !ca.ended && ca.unit && Math.abs(rate - (ca.vr || 1)) > 0.02 * (ca.vr || 1)) {
+    dubAzSetRate(ca, dubAzRateNow(run, ca.unit, ca, true));
+    ca.arm();
+  }
   if (run.mode === "display") { run.hold = ""; return dubTickDisplay(run, p, v, now); }
-  if (run.sync) { run.idx = dubFirstAt(run.sents, ct); run.sync = false; }
-  run.hold = run.cur && !run.cur.started && now - run.cur.at > 3000 ? "queue" : "";
+  // ⭐ قفزٌ ⇐ من الموضع الجديد، والانتظارُ مسموحٌ من جديد (حَكَمُ الجولة S6) · **وإيقافٌ أو تجمّدٌ أو إعلان ⇐ لا رجوعَ إلى ما قيل ولا
+  // يُرفع «انتُظرت مرّةً»** — ⛔ ~~إيقافٌ عابرٌ يُعيد الجملةَ أو يجيز إيقافَ الفيديو ثانيةً لها~~ (مراجعةُ الجولة #1 · #5 · #7)
+  if (run.sync) {
+    const i = dubResyncAt(run.sents, ct);
+    if (run.seeked) { run.idx = i; run.waitGaveUp = -1; } else run.idx = dubResumeAt(run.sents, ct, i, run.idx, run.cutIdx);
+    run.sync = false; run.seeked = false; run.cutIdx = null;
+  }
+  run.hold = run.cur && !run.cur.az && !run.cur.started && now - run.cur.at > 3000 ? "queue" : "";
+  // أصواتُ الجهاز مختارةٌ ولا صوتَ عربيّ فيه ⇐ يُقال لماذا تضيع الجمل — ⛔ ~~«يُدبلج» وكلُّ جملةٍ تضيع صامتة~~ (مراجعةُ الجولة #6)
+  if (run.opts.engine !== "azure" && !run.voice) run.hold = "no-voice";
   dubTranslateAhead(run);
-  // جملةٌ واحدةٌ منّا في الطابور · ولا بدءَ والمشغّلُ يقفز: يتجمّد فيقطعها التجمّدُ ثمّ تُعاد (مراجعة #7)
-  if (run.cur || v.seeking) return;
-  const plan = dubNext(run.sents, run.idx, ct, rate, run.cps, DUB_AUTO_MAX, DUB_CURVE_MAC, run.opts.rate);
+  // `cap` السقفُ المطلق (R_max) — والتلقائيّةُ ولحاقُها داخل `dubNext` بحسب التأخّر. `az` يُطلب منه الآن · و`azEng` محرّكُه Azure
+  const az = dubAzOn(run), azEng = dubAzEngine(run), cap = azEng ? Math.min(DUB_R_MAX, DUB_CATCH_CEIL_AZ * Math.max(1, rate)) : DUB_R_MAX;
+  if (az) dubAzPrefetch(run, rate, cap);
+  // ولا بدءَ والمشغّلُ يقفز: يتجمّد فيقطعها التجمّدُ ثمّ تُعاد (مراجعة #7)
+  if (v.seeking) return;
+  // جملةٌ واحدةٌ منّا تتكلّم أبداً — **ومع الانتظار**: التاليةُ مستحقّةٌ منذ DUB_WAIT_BEHIND_S ⇐ يتوقّف الفيديو حتى تفرغ هذه
+  if (run.cur) {
+    const nx = run.sents[run.idx];
+    // وإيقافُ اللحاق مرّةً كلَّ عشرين ثانيةً على الأكثر (تصميمُ الجولة G5): صوتٌ لا يلحق كثافةَ الكلام لا يُقطّع الفيديو كلَّ جملة
+    if (run.opts.wait && run.cur.started && nx && ct - nx.start / 1000 > DUB_WAIT_BEHIND_S && now - run.behindAt >= DUB_WAIT_BUDGET_MS) {
+      run.behindAt = now;
+      dubWaitStart(run, v, "behind");
+    }
+    return;
+  }
+  const plan = dubNext(run.sents, run.idx, ct, rate, azEng ? run.cpsAz : run.cps, cap, DUB_CURVE_MAC, run.opts.rate);
   run.skipped += plan.skipped; run.idx = plan.i;
   if (document.hidden && plan.skipped) run.bgSkipped += plan.skipped;
   if (plan.done) { run.hold = "done"; return; }
-  if (plan.speak) dubSpeak(run, plan);
+  // الترجمةُ لم تصل والجملةُ حلّت ⇐ مع الانتظار يتوقّف الفيديو حتى تصل
+  // ⛔ ~~ولا مترجمَ يبقى~~: كلُّ جملةٍ كانت توقف الفيديو ثلاثَ ثوانٍ بلا نهاية (مراجعةُ الجولة #3) — «tr-off» يقول لماذا لا كلام
+  if (plan.wait === "translate") { if (run.opts.wait && plan.behind > 0 && dubCanTranslate(run)) dubWaitStart(run, v, "translate"); return; }
+  if (!plan.speak) return;
+  // ⭐ صوتُ Azure لم يجهز والجملةُ حلّت ⇐ مع الانتظار يتوقّف الفيديو حتى يجهز (ويُطلب الآن إن لم يُطلب). وبلا انتظارٍ يمضي
+  // الفيديو وينتظر المقطعُ صوتَه، فيبدأ متأخّراً أسرع
+  if (az && run.opts.wait) {
+    const s = run.sents[plan.i];
+    if (dubAzRetryable(run, s)) s.clip = null;
+    if (!(s.clip && s.clip.res)) {
+      if (!s.clip && dubAzCan(now)) dubAzClip(run, s, plan.real);
+      if (ct >= s.start / 1000) dubWaitStart(run, v, "voice");
+      return;
+    }
+  }
+  dubSpeak(run, plan);
 }
 
-// خياراتُ المستخدم من البوب-أب — تصل مع «دبلِج» ومع كلّ تغيير، وتُطبَّق من الجملة التالية؛ والمصدرُ من الضغطة التالية
+// خياراتُ المستخدم من البوب-أب — تصل مع «دبلِج» ومع كلّ تغيير، وتُطبَّق من الجملة التالية؛ **والمصدرُ بإعادة البدء** (البوب-أب
+// يُرسل «دبلِج» من جديد حين يتبدّل — الجولة الثالثة). `wait`: «أوقف الفيديو حتى يجهز الصوت»، مفعّلٌ ما لم يُطفأ صراحةً
 function dubOpts(o) {
   const x = o || {};
   const vol = Number(x.volume);
   const rate = x.rate === "auto" || x.rate == null ? "auto" : Number(x.rate);
-  return { source: x.source === "device" ? "device" : "yt",
+  return { source: x.source === "device" ? "device" : x.source === "azure" ? "azure" : "yt",
+    engine: x.engine === "azure" ? "azure" : "system", az: dubAzOpts(x.az),
     volume: Number.isFinite(vol) ? Math.min(1, Math.max(0, vol)) : 1,
     rate: rate === "auto" || !(rate >= 1 && rate <= DUB_RATE_CAP) ? "auto" : rate,
-    voice: typeof x.voice === "string" ? x.voice.slice(0, 200) : "" };
+    voice: typeof x.voice === "string" ? x.voice.slice(0, 200) : "", wait: x.wait !== false };
 }
 
 function dubSetOptions(o) {
   const run = dub;
   if (!run) return dubStatus();
   const next = dubOpts(Object.assign({}, run.opts, o || {}));
-  const voiceChanged = next.voice !== run.opts.voice;
-  run.opts = Object.assign(next, { source: run.opts.source });   // المصدرُ لا يتبدّل وسطَ التشغيل
+  const voiceChanged = next.voice !== run.opts.voice, a0 = run.opts.az, a1 = next.az;
+  if (a1.voice !== a0.voice) run.azN = 0;                        // صوتُ Azure آخر ⇐ سرعتُه تُتعلَّم سريعاً من جديد
+  // مفتاحٌ أو منطقةٌ صُحّحا أثناء التشغيل يُجرَّبان الآن — ⛔ ~~«مرفوض» يبقى على ما صُحّح بقيّةَ التشغيلة~~ (مراجعة 168ح #16)
+  if (a1.key !== a0.key || a1.region !== a0.region) { run.azOff = ""; run.azWarn = ""; }
+  if (a1.trKey !== a0.trKey || a1.trRegion !== a0.trRegion) {
+    run.trOff = !a1.trKey && run.opts.source === "azure" ? "nokey" : ""; run.trFails = 0; run.trUntil = 0;
+  }
+  // وما جُلب مسبقاً بصوتٍ أو مفتاحٍ أو سرعةٍ أخرى يسقط: «من الجملة التالية» وعدٌ لا يُخلفه مقطعٌ قديم (مراجعة 168ح #6)
+  if (a1.voice !== a0.voice || a1.key !== a0.key || a1.region !== a0.region || next.rate !== run.opts.rate) {
+    for (const x of run.sents || []) if (x.clip) dubClipDrop(run, x);
+  }
+  run.opts = Object.assign(next, { source: run.opts.source });   // المصدرُ لا يتبدّل وسطَ التشغيل — البوب-أب يُعيد البدءَ به
   if (voiceChanged && run.voice) dubVoiceGet(next.voice).then((v) => { if (v && dub === run) run.voice = v; });
   return dubStatus();
 }
@@ -5628,7 +6327,10 @@ function dubStart(o) {
     kind: "", spokenLang: "", sents: null, idx: 0, spoken: 0, skipped: 0, lost: 0, bgSkipped: 0, drops: 0, inflight: 0,
     cur: null, timer: 0, cps: DUB_CPS, lastCt: -1, lastAt: 0, movedAt: performance.now(), sync: true, lags: [], dl: null,
     warm: true, off: 0, offAt: 0, clockBusy: false, wasAd: false, mode: "", shown: false,
-    lastLine: "", lineAt: 0, grow: false, base: "", said: "", offerAt: 0, capWin: 3000, recent: [], pending: null, seen: 0, trackLang: "" };
+    lastLine: "", lineAt: 0, grow: false, base: "", said: "", offerAt: 0, capWin: 3000, recent: [], pending: null, seen: 0, trackLang: "",
+    azOff: "", azWarn: "", azTts: 0, azTr: 0, cpsAz: DUB_CPS_AZ, azN: 0,
+    trOff: "", trBusy: false, trFails: 0, trUntil: 0, blobs: new Set(), warmA: null, wait: null, waits: 0, waitGaveUp: -1, pauseCt: null, ytWhy: "",
+    behindAt: -Infinity, tails: [], leads: [], speeds: [], stallS: 0, seeked: false, cutIdx: null };
   dubPrepare(run).catch((e) => dubRefuse(run, "threw", e?.message || e));
   return dubStatus();
 }
@@ -5640,10 +6342,30 @@ function dubStatus() {
   if (r.state === "refused" && r.reason !== "breaker" && r.reason !== "nav" &&
       (location.pathname !== "/watch" || dubVideoId() !== r.vid)) return { ok: true, state: "idle" };
   const lags = r.lags.slice().sort((a, b) => a - b);
+  // ⭐ أرقامُ القياس (الجولة الثالثة — لا نصَّ ولا مفتاح): ما يجيب عنه تشغيلُ المالك القادم بلا طلبٍ زائد — سرعةُ الصوت المتعلَّمة · صمتا
+  // طرفي المقطع (null: الفكُّ غيرُ متاح) · السرعةُ المستعملة · ما تحتاجه الجملُ القادمة · كم انتظر الفيديو
+  const q = (a, f) => { const x = a.slice().sort((m, n) => m - n); return x.length ? x[Math.min(x.length - 1, Math.floor(f * x.length))] : null; };
+  const v = document.querySelector("#movie_player video"), vr = (v && v.playbackRate) || 1, azE = dubAzEngine(r);
+  const cps = azE ? r.cpsAz : r.cps, need = [];
+  // والعربيّةُ وحدَها تُعدّ — ⛔ ~~النصُّ الإنجليزيّ لجملةٍ لم تُترجم بعد~~: حروفُه غيرُ حروف ما سيُنطق
+  if (r.sents) for (let i = r.idx; i < Math.min(r.sents.length, r.idx + 20); i++) { const u = r.sents[i]; if (u.ar) need.push(u.ar.length / cps / Math.max(0.5, u.win / 1000) * vr); }
+  const btn = document.querySelector("#movie_player .ytp-subtitles-button");
+  const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100);
   return { ok: true, state: r.state, step: r.step, reason: r.reason, detail: r.detail, hold: r.hold, kind: r.kind,
     spokenLang: r.spokenLang, total: r.sents ? r.sents.length : 0, idx: r.idx, spoken: r.spoken, skipped: r.skipped,
     lost: r.lost, bgSkipped: r.bgSkipped, warm: r.warm, dl: r.dl, voice: r.voice ? r.voice.name : "",
-    source: r.opts.source, seen: r.seen, off: r.off, lagP50: lags.length ? lags[Math.floor(lags.length / 2)] : null };
+    source: r.opts.source, seen: r.seen, off: r.off, lagP50: lags.length ? lags[Math.floor(lags.length / 2)] : null,
+    // ⛔ المفتاحان لا يُعادان في الحال أبداً — المحرّكُ وتحذيراتُه وعدُّ الحروف وحدَها. ⭐ **وما يتكلّم الآن يُقرأ حيّاً** (`azOn`)
+    // لا ما طُلب: ⛔ ~~«بصوت Azure» وصوتُ الجهاز يتكلّم~~ — والحدُّ يُقال ما دامت مهلتُه، ويُمحى بعدها (مراجعة 168ح #5 · #14)
+    engine: r.opts.engine, azOn: r.opts.engine === "azure" && dubAzOn(r), azOff: r.azOff,
+    azWarn: r.opts.engine === "azure" && !r.opts.az.key ? "nokey" : r.opts.engine === "azure" && dubAzGate.until > performance.now() ? "rate" : r.azWarn,
+    trOff: r.trOff, trLocal: !!r.tr, azTts: r.azTts, azTr: r.azTr, wait: r.opts.wait, waits: r.waits, ytWhy: r.ytWhy || "",
+    cps: Math.round(cps * 10) / 10, tailMs: r.tails.length ? Math.round(q(r.tails, 0.5) * 1000) : null,
+    leadMs: r.leads.length ? Math.round(q(r.leads, 0.5) * 1000) : null, spd: [r2(q(r.speeds, 0.5)), r2(r.speeds.length ? Math.max(...r.speeds) : null)],
+    need: [r2(q(need, 0.5)), r2(q(need, 0.9))], stallS: Math.round(r.stallS * 10) / 10, lagP90: lags.length ? r2(q(lags, 0.9)) : null,
+    // ⭐ يوتيوب يعرض ترجمتَه العربيّة (اللاصقةُ عند المالك عربيّة) وأنا أقرأ ترجمةً أخرى — هو ملاحظةُ المالك ١ في مصدرَي الترجمة
+    // ⛔ ~~ولو كان ما نقرؤه اليدويّةَ العربيّة نفسَها~~ («speak»: نقرأ ما يُعرض حرفاً — مراجعةُ الجولة #5)
+    shownDiffers: r.opts.source !== "yt" && r.kind !== "speak" && dubPrim(r.trackLang) === "ar" && !!btn && btn.getAttribute("aria-pressed") === "true" };
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

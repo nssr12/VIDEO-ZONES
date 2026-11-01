@@ -89,9 +89,14 @@
     .dubRow{display:flex;align-items:center;justify-content:space-between;gap:8px}
     .dubNote{margin-top:8px;font-size:11.5px;line-height:1.55;color:var(--muted)}
     .dubNote.bad{color:#991b1b;font-weight:700}
+    .dubDiag{margin-top:4px;font-size:10.5px}
+    .dubDiag[hidden]{display:none}
     .dubOpts{display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-top:8px;font-size:12px}
     .dubOpts select,.dubOpts input[type=range]{width:100%;min-width:0}
     .dubVol{display:flex;align-items:center;gap:6px}
+    .dubAz{margin-top:8px}
+    .dubAz summary{cursor:pointer;font-size:12px;font-weight:600}
+    .dubAz .btn{margin-top:8px;width:100%}
   </style>
 </head>
 <body>
@@ -117,17 +122,24 @@
       <button class="btn" id="dubBtn" type="button">دبلِج هذا الفيديو</button>
     </div>
     <div class="dubNote" id="dubNote"></div>
+    <div class="dubNote dubDiag" id="dubDiag" hidden></div>
     <div class="dubOpts">
       <label for="dubSource">النص العربي</label>
       <select id="dubSource">
         <option value="yt">ترجمة يوتيوب العربية (كما تظهر على الفيديو)</option>
         <option value="device">مترجم كروم على الجهاز (من النص الإنجليزي)</option>
+        <option value="azure">مترجم Azure (من النص الإنجليزي)</option>
+      </select>
+      <label for="dubEngine">محرّك الصوت</label>
+      <select id="dubEngine">
+        <option value="system">أصوات الجهاز</option>
+        <option value="azure">Azure (أصوات مايكروسوفت)</option>
       </select>
       <label for="dubVoice">الصوت</label>
       <select id="dubVoice"><option value="">تلقائي</option></select>
       <label for="dubRate">السرعة</label>
       <select id="dubRate">
-        <option value="auto">تلقائية (تلحق الفيديو حتى 1.4×)</option>
+        <option value="auto">تلقائية (حتى 1.4×، وأسرع حين يتأخّر الصوت)</option>
         <option value="1">1×</option>
         <option value="1.25">1.25×</option>
         <option value="1.5">1.5×</option>
@@ -136,7 +148,26 @@
       </select>
       <label for="dubVolume">الحجم</label>
       <div class="dubVol"><input id="dubVolume" type="range" min="0" max="100" step="5" value="100" /><span id="dubVolumeValue">100%</span></div>
+      <!-- الجولة الثالثة — قرارُ المالك 2026-11-01: «يتوقّف الفيديو لحظة (موصى)» — مفعّلٌ افتراضيّاً، يُطفأ من هنا -->
+      <label for="dubWait">الانتظار</label>
+      <label class="dubVol"><input id="dubWait" type="checkbox" checked /><span>أوقف الفيديو لحظةً حتى يجهز الصوت</span></label>
     </div>
+    <!-- 168ح — مفتاحا Azure: تُدخلهما أنت ويُحفظان مع الإعدادات المتزامنة (قرارُ المالك 2026-11-01) -->
+    <details class="dubAz" id="dubAzBox">
+      <summary>إعدادات Azure</summary>
+      <div class="dubOpts">
+        <label for="dubAzKey">مفتاح الكلام</label>
+        <input id="dubAzKey" type="password" autocomplete="off" spellcheck="false" />
+        <label for="dubAzRegion">منطقته</label>
+        <input id="dubAzRegion" type="text" value="uaenorth" autocomplete="off" spellcheck="false" />
+        <label for="dubAzTrKey">مفتاح المترجم</label>
+        <input id="dubAzTrKey" type="password" autocomplete="off" spellcheck="false" />
+        <label for="dubAzTrRegion">منطقته</label>
+        <input id="dubAzTrRegion" type="text" value="uaenorth" autocomplete="off" spellcheck="false" />
+      </div>
+      <button class="btn" id="dubAzTest" type="button">احفظ واختبر</button>
+      <div class="dubNote" id="dubAzNote"></div>
+    </details>
   </div>
 
   <!-- Top quick toggles -->

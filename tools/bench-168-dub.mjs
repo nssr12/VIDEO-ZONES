@@ -30,6 +30,14 @@ const WAV = wav(90, 8000);
 const EVENTS = [];
 for (let i = 0; i < 28; i++) EVENTS.push({ tStartMs: 2000 + i * 3000, dDurationMs: 2800, segs: [{ utf8: "This is sentence number " + (i + 1) + "." }] });
 const JSON3 = JSON.stringify({ wireMagic: "pb3", events: [{ tStartMs: 0, dDurationMs: 90000, id: 1, wpWinPosId: 1 }].concat(EVENTS) });
+// الجولة الثالثة — ملفُّ العربيّة بشكله المقيس (📐 كروم المالك 2026-11-01): سطرٌ لكلّ حدث، وبعده حدثُ «\n» للتمرير — والسطورُ نفسُها
+// التي ترسمها الصفحةُ المزيّفة («سطرٌ عربيٌّ رقم N.» كلَّ 3 ث). و`VID2` ملفٌّ فارغ: يُقرأ ما يظهر بدلَه
+const AR_EV = [];
+for (let i = 0; i < 28; i++) {
+  AR_EV.push({ tStartMs: 2000 + i * 3000, dDurationMs: 2800, wWinId: 1, segs: [{ utf8: "سطرٌ عربيٌّ رقم " + (i + 1) + ".", acAsrConf: 0 }] });
+  AR_EV.push({ tStartMs: 2000 + i * 3000 + 2790, dDurationMs: 10, wWinId: 1, aAppend: 1, segs: [{ utf8: "\n" }] });
+}
+const AR_JSON3 = JSON.stringify({ wireMagic: "pb3", events: AR_EV });
 
 const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>fake watch</title></head><body>
 <div id="movie_player" class="html5-video-player" style="width:640px;height:360px;position:relative">
@@ -58,8 +66,11 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>fake watch
     if (!track.languageCode) return;
     localStorage.setItem("yt-player-caption-sticky-language", JSON.stringify({ data: track.languageCode, expiration: Date.now() + 2592000000, creation: Date.now() }));
     sessionStorage.setItem("yt-player-caption-language-preferences", JSON.stringify({ data: JSON.stringify([track.languageCode]), creation: Date.now() }));
-    fetch(BASE + "&caps=asr" + (track.translationLanguage ? "&tlang=" + track.translationLanguage.languageCode : "") +
-      "&pot=POTTOKEN&potc=1&c=WEB&fmt=srv3&xorb=2").then((r) => r.text());
+    // 📐 كما يطلبها المشغّلُ الحقيقيّ (كروم المالك 2026-11-01): **XHR بـjson3** — ⛔ ~~fetch بـsrv3~~ (لا مصدرَ لذلك في أيّ قياس)
+    const x = new XMLHttpRequest();
+    x.open("GET", BASE.replace("v=VID", "v=" + new URLSearchParams(location.search).get("v")) + "&caps=asr" +
+      (track.translationLanguage ? "&tlang=" + track.translationLanguage.languageCode : "") + "&pot=POTTOKEN&potc=1&c=WEB&fmt=json3&xorb=2&xobt=3&xovt=3", true);
+    x.send();
   };
   // ⭐ الترجمةُ العربيّة المعروضة كما يرسمها يوتيوب: \`.caption-visual-line\` > \`.ytp-caption-segment\` — متى اختيرت
   // ونافذةُ اسم المسار (lang="en") ثانيتين بعد كلّ اختيار — كما يبنيها يوتيوب — لا تُقرأ (📖 captions.js)
@@ -74,7 +85,7 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>fake watch
     }
     const on = !!(track.translationLanguage && track.translationLanguage.languageCode === "ar");
     const t = document.querySelector("video").currentTime, k = Math.floor((t - 2) / 3);
-    const txt = on && t >= 2 && (t - 2) % 3 < 2.8 ? "سطرٌ عربيٌّ رقم " + (k + 1) : "";
+    const txt = on && t >= 2 && (t - 2) % 3 < 2.8 ? "سطرٌ عربيٌّ رقم " + (k + 1) + "." : "";
     if (win.dataset.txt === txt) return;
     win.dataset.txt = txt; win.textContent = "";
     if (!txt) return;
@@ -111,7 +122,8 @@ const FAKES = `(() => {
   };
   Object.defineProperty(window, "speechSynthesis", { value: fake, configurable: true });
   window.SpeechSynthesisUtterance = function (text) { this.text = text; this.rate = 1; this.volume = 1; this.voice = null; this.lang = ""; };
-  globalThis.Translator = { availability: async () => "available", create: async () => ({ translate: async (t) => "ترجمة " + t.replace(/[^0-9]/g, "") + " جملة قصيرة" }) };
+  // الأرقامُ بفواصلها: مقطعٌ يضمّ جملتين («5 6») يُعرف أوّلُهما — ومنه موعدُه
+  globalThis.Translator = { availability: async () => "available", create: async () => ({ translate: async (t) => "ترجمة " + t.replace(/[^0-9 ]/g, "").replace(/\s+/g, " ").trim() + " جملة قصيرة" }) };
   return "fakes-ok";
 })()`;
 
@@ -128,7 +140,9 @@ try {
     const m = JSON.parse(e.data);
     if (m.method !== "Fetch.requestPaused") return;
     const id = m.params.requestId, url = m.params.request.url || "";
-    const ok = (type, body) => c.send("Fetch.fulfillRequest", { requestId: id, responseCode: 200, responseHeaders: [{ name: "content-type", value: type }], body: Buffer.from(body).toString("base64") });
+    // ⛔ بلا تخزينٍ مؤقّت: طلبُنا الوحيد ورابطُ المشغّل متطابقان (json3 كلاهما) — ردٌّ مخزَّنٌ يُخدم لنا بلا طلبٍ يُعدّ
+    const ok = (type, body) => c.send("Fetch.fulfillRequest", { requestId: id, responseCode: 200, responseHeaders: [{ name: "content-type", value: type },
+      { name: "cache-control", value: "no-store" }], body: Buffer.from(body).toString("base64") });
     if (m.params.resourceType === "Document") ok("text/html; charset=utf-8", PAGE);
     else if (/\/tone\.wav/.test(url)) {
       const h = m.params.request.headers || {}, rg = /bytes=(\d+)-(\d*)/.exec(h.Range || h.range || "");
@@ -137,8 +151,14 @@ try {
         { name: "content-type", value: "audio/wav" }, { name: "accept-ranges", value: "bytes" }, { name: "content-length", value: String(part.length) }]
         .concat(rg ? [{ name: "content-range", value: "bytes " + a0 + "-" + a1 + "/" + WAV.length }] : []) });
     }
-    else if (/\/api\/timedtext/.test(url) && /fmt=json3/.test(url)) { ours++; ok("application/json", JSON3); }
-    else if (/\/api\/timedtext/.test(url)) { player++; ok("text/xml", "<timedtext format=\"3\"><body><p t=\"0\">x</p></body></timedtext>"); }
+    // ⭐ مَن طلب؟ 📐 كرومُ يُبلغ عن fetch من عالم الصفحة بـ«XHR» أيضاً ⇒ **بترتيب الرابط**: المشغّلُ (📖 g.WX.qx) يضع fmt=json3 قبل
+    // xorb، وطلبُنا يرفعه إلى آخره (`captureRun`) — فـ«fmt=json3» في آخر الرابط طلبُنا الوحيد
+    else if (/\/api\/timedtext/.test(url) && /[?&]fmt=json3$/.test(url)) { ours++; ok("application/json", JSON3); }
+    else if (/\/api\/timedtext/.test(url)) {
+      player++;
+      // العربيّةُ لـVID وحدَه · وVID2 بلا كلام (يُقرأ ما يظهر) · والمصدرُ الإنجليزيُّ نصُّه نفسُه كما يردّه يوتيوب للمشغّل ولنا
+      ok("application/json", !/[?&]tlang=/.test(url) ? JSON3 : /[?&]v=VID&/.test(url) ? AR_JSON3 : JSON.stringify({ wireMagic: "pb3", events: [] }));
+    }
     else ok("text/plain", "");
   });
   await c.send("Page.navigate", { url: "https://www.youtube.com/watch?v=VID" });
@@ -176,7 +196,8 @@ try {
   let st = null;
   for (let i = 0; i < 40; i++) { await sleep(300); st = await status(); if (st && st.state !== "preparing") break; }
   check("صار يعمل", st && st.state === "running", st);
-  check("الجمل = أحداثُ الفيديو (28)", st && st.total === 28, st);
+  // ⛔ ~~«الجمل = أحداثُ الفيديو (28)»~~ — الجولة الثالثة: المقطعُ جملةٌ كاملة، والجملةُ الأقصرُ من 3.5 ث تُضمّ إلى تاليتها ⇒ 14 مقطعاً
+  check("المقاطع = أحداثُ الفيديو جملتين جملتين (14)", st && st.total === 14, st);
   check("⭐ طلبٌ واحدٌ منّا (fmt=json3)", ours === 1, ours);
   check("وطلبٌ واحدٌ أُجبر عليه المشغّل", player === 1, player);
   check("⭐ اللاصقةُ أُعيدت بحروفها (خ20)", (await page("localStorage.getItem('yt-player-caption-sticky-language') === window.__stickyBefore")) === true,
@@ -186,14 +207,20 @@ try {
     (await page("window.__calls[window.__calls.length - 1]")) === "unload", await page("window.__calls"));
 
   console.log("\n[ب] النطقُ في موعده");
-  await sleep(9000);
+  await sleep(14000);
   let log = await evalIn(c, "window.__vzSpeechLog", world.id);
   const starts = log.filter((x) => x.ev === "start" && /^ترجمة/.test(x.text));
   check("جملةُ الإحماء نُطقت أوّلاً", log.length && /بدأتِ الدبلجة/.test((log.find((x) => x.ev === "start") || {}).text || ""), log.slice(0, 3));
-  check("نُطقت جملٌ مترجمة (≥2 في 9 ث)", starts.length >= 2, starts);
-  const lagOf = (x) => { const n = Number(x.text.replace(/[^0-9]/g, "")); return +(x.vt - (2 + (n - 1) * 3)).toFixed(2); };
+  check("نُطقت جملٌ مترجمة (≥2 في 14 ث)", starts.length >= 2, starts);
+  const lagOf = (x) => { const n = Number((x.text.match(/\d+/) || [0])[0]); return +(x.vt - (2 + (n - 1) * 3)).toFixed(2); };
   const lags = starts.map(lagOf);
-  check("الكمونُ عن موعد الجملة ≤ 0.4 ث في كلّها", lags.every((l) => l >= -0.15 && l <= 0.4), lags);
+  // ما يُفسّر تأخّرَ الأولى إن تأخّرت: متى انتهت جملةُ الإحماء (آخرُ التجهيز) — فلا يُحكم على الرقم بلا سببه
+  const hello = log.find((x) => x.ev === "end" && /بدأتِ الدبلجة/.test(x.text || ""));
+  console.log("   الإحماءُ انتهى عند", hello ? hello.vt : "؟", "· والأولى بدأت عند", starts[0] ? starts[0].vt : "؟", "· والتأخّرات", JSON.stringify(lags));
+  // الأولى قد تحلّ والتجهيزُ لم ينتهِ (التقاطٌ ومترجمٌ وجملةُ إحماء) ⇒ تُنطق متأخّرةً بقاعدة `dubResyncAt` (حتى 1.5 ث) لا تُترك —
+  // وما بعدها في موعده. ⛔ ~~«≤ 0.4 في كلّها»~~ نجح حين سبق التجهيزُ موعدَها وحده (📐 0.61 في تشغيلٍ أبطأ، 2026-11-01)
+  check("الكمونُ عن موعد الجملة ≤ 0.4 ث فيما بعد الأولى، والأولى ≤ 1.5 (قاعدة الاستئناف)", lags.length >= 2 && lags[0] >= -0.15 && lags[0] <= 1.5 &&
+    lags.slice(1).every((l) => l >= -0.15 && l <= 0.4), lags);
   check("بسرعة 1 (الجملةُ تتّسع لنافذتها)", starts.every((x) => x.rate === 1), starts.map((x) => x.rate));
 
   console.log("\n[ج] الإيقاف المؤقّت ثمّ القفز");
@@ -209,7 +236,7 @@ try {
   await sleep(4000);
   log = await evalIn(c, "window.__vzSpeechLog", world.id);
   const after = log.filter((x) => x.ev === "start" && /^ترجمة/.test(x.text) && x.vt >= 49);
-  check("بعد القفز إلى 50 ث يُنطق من الموضع (الجملة 17 أو بعدها)", after.length >= 1 && Number(after[0].text.replace(/[^0-9]/g, "")) >= 17, after.slice(0, 2));
+  check("بعد القفز إلى 50 ث يُنطق من الموضع (الجملة 17 أو بعدها)", after.length >= 1 && Number((after[0].text.match(/\d+/) || [0])[0]) >= 17, after.slice(0, 2));
   check("وبكمونٍ ≤ 0.4 ث", after.every((x) => lagOf(x) <= 0.4 && lagOf(x) >= -0.15), after.map(lagOf));
   check("⛔ لا pause()/resume() للنطق أبداً", !log.some((x) => /PAUSE!|RESUME!/.test(x.ev)));
 
@@ -238,24 +265,37 @@ try {
   await sleep(500);
   st = await status();
   check("إلى الصفحة الرئيسية ⇐ nav", st.state === "stopped" && st.reason === "nav", st);
-  console.log("\n[ز] «ترجمة يوتيوب كما تظهر» — يُقرأ ما يُعرض، بصفر طلبٍ منّا، ويُعاد ما غيّرناه");
+  console.log("\n[ز] «ترجمة يوتيوب» — الجولة الثالثة: ملفُّ العربيّة من XHR المشغّل نفسِه في كروم حقيقيّ ⇐ قراءةٌ مسبقة، بصفر طلبٍ منّا");
   await page("history.pushState({}, '', '/watch?v=VID')");
   const ours0 = ours, player0 = player;
   await start("yt");
   for (let i = 0; i < 40; i++) { await sleep(300); st = await status(); if (st && st.state !== "preparing") break; }
-  check("يعمل بوضع العرض", st && st.state === "running" && st.kind === "display", st);
-  check("⭐ صفرُ طلبٍ منّا — والمشغّلُ طلب العربيّةَ بنفسه", ours === ours0 && player === player0 + 1, { ours, player });
-  await sleep(7000);
+  check("⭐ يعمل بالقراءة المسبقة «ytar» — مراقبةُ XHR في عالم الصفحة الحقيقيّ رأت ردَّ المشغّل", st && st.state === "running" && st.kind === "ytar" && st.total > 3, st);
+  check("⭐ صفرُ طلبٍ منّا — والمشغّلُ طلب العربيّةَ بنفسه (XHR)", ours === ours0 && player === player0 + 1, { ours, player });
+  check("⭐ والمراقبةُ أُزيلت: دالّتا XHR الأصليّتان عادتا", (await page("String(XMLHttpRequest.prototype.open).includes('[native code]') && String(XMLHttpRequest.prototype.send).includes('[native code]')")) === true);
+  await sleep(10000);
   log = await evalIn(c, "window.__vzSpeechLog", world.id);
-  const lines = log.filter((x) => x.ev === "start" && /^سطرٌ عربيٌّ رقم/.test(x.text)).map((x) => x.text);
-  check("⭐ نُطقت السطورُ المعروضة بنصّها وبترتيبها", lines.length >= 2 && lines.every((t, i) => i === 0 || Number(t.replace(/[^0-9]/g, "")) === Number(lines[i - 1].replace(/[^0-9]/g, "")) + 1), lines);
-  check("ولا سطرَ قيل مرّتين", new Set(lines).size === lines.length, lines);
+  const said = log.filter((x) => x.ev === "start" && /^سطرٌ عربيٌّ رقم/.test(x.text)).map((x) => x.text);
+  const nums = said.map((t) => t.match(/\d+/g).map(Number)).flat();
+  check("⭐ نُطق ما يُعرض بنصّه جملاً كاملة، بترتيبها بلا تكرار", said.length >= 2 && said.every((t) => /^(سطرٌ عربيٌّ رقم \d+\.)( سطرٌ عربيٌّ رقم \d+\.)*$/.test(t)) &&
+    nums.every((n, i) => i === 0 || n === nums[i - 1] + 1), said);
+  const lines = said;
   check("⛔ ونافذةُ اسم المسار («… >> Arabic · ⚙») لم تُنطق", !log.some((x) => x.ev === "speak" && /English|Arabic|⚙/.test(x.text)));
   st = await stop();
   await sleep(800);
   check("⭐ وعند الإيقاف: الترجمةُ تُطفأ كما كانت", (await page("document.querySelector('.ytp-subtitles-button').getAttribute('aria-pressed')")) === "false" &&
     (await page("window.__calls[window.__calls.length - 1]")) === "unload", await page("window.__calls.slice(-3)"));
   check("⭐ واللاصقةُ بحروفها", (await page("localStorage.getItem('yt-player-caption-sticky-language') === window.__stickyBefore")) === true);
+  void lines;
+  console.log("\n[ح] ملفٌّ لا كلامَ فيه (VID2) ⇐ يُقرأ ما يظهر سطراً سطراً (وضعُ العرض) — ويُقال لماذا");
+  await page("history.pushState({}, '', '/watch?v=VID2')");
+  await start("yt");
+  for (let i = 0; i < 40; i++) { await sleep(300); st = await status(); if (st && st.state !== "preparing") break; }
+  check("يعمل بوضع العرض، وسببُه مكتوب", st && st.state === "running" && st.kind === "display" && !!st.ytWhy, st);
+  await sleep(4000);
+  log = await evalIn(c, "window.__vzSpeechLog", world.id);
+  check("ويقرأ السطورَ المعروضة", log.filter((x) => x.ev === "start" && /^سطرٌ عربيٌّ رقم/.test(x.text)).length >= 1);
+  await stop();
   console.log("\nسجلّ النطق (آخر 12):", JSON.stringify(log.slice(-12)));
 } catch (e) {
   fail++; console.log("  ❌ الرِكازُ رمى: " + (e && e.stack || e));
