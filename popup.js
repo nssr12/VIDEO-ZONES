@@ -325,7 +325,7 @@ async function getMasterEnabled() {
 async function renderPopupFromStorage() {
   await Promise.allSettled([
     loadGlobalData(), loadSiteProfile(), loadBlockedSiteUI(),
-    loadSubtitlesToggle(), loadFullscreenOnlyToggle(), loadOverlayUI(),
+    loadSubtitlesToggle(), loadFullscreenOnlyToggle(), loadOverlayUI(), fillDubPrefsUI(),
     (async () => { syncMasterUi(await getMasterEnabled()); })()
   ]);
 }
@@ -680,6 +680,465 @@ async function sendBoost(pct, isFinal = false) {
   }
 }
 
+// ── #168 — الدبلجة العربية (تجريبيّة · فرع 168-dub-mac) ─────────────────────────
+// **المحرّكُ في الصفحة لا هنا**: إغلاقُ البوب-أب لا يوقفه، والبوب-أب يقول ما يجري أو لماذا لا (168ب).
+// كلُّ رسالةٍ إلى الإطار الأعلى وحدَه (`frameId: 0`) — لا إرسالَ بلا إطار (#24).
+// ⭐ **وخياراتُ المالك الأربع (2026-11-01: «حجم صوت الترجمه · اختيار سرعه الترجمه او تركه تلقائي ·
+// تغيير المترجم او صوت المترجم» ومصدرُ النصّ العربيّ)** تُحفظ في `settings.dub` بـ`safeSyncSet` (قرار 1:
+// `sync` وحدَه)، **والصوتُ لكلّ نظامٍ وحدَه** (§٣: أصواتُ الماك غيرُ أصوات الويندوز) — وتصل المحرّكَ مع
+// «دبلِج» ومع كلّ تغيير (`GVZ_DUB_SET`)، فلا يقرأ المحرّكُ التخزينَ ولا يُنسى منها شيء.
+const DUB_REASON_TEXT = {
+  gate: "الإضافة مطفأة أو هذا الموقع محظور",
+  "no-video": "لا فيديو في هذه الصفحة",
+  "main-missing": "تعذّر الوصول إلى مشغّل يوتيوب — أعد تحميل الصفحة ثمّ جرّب",
+  "no-player": "مشغّل يوتيوب لم يجهز بعد — انتظر بدء الفيديو ثمّ جرّب",
+  "stale-player": "المشغّل ما زال يحمل الفيديو السابق — انتظر بدء الفيديو أو أعد تحميل الصفحة",
+  unplayable: "يوتيوب لا يشغّل هذا الفيديو هنا",
+  ad: "إعلانٌ يُعرض — اضغط «دبلِج» بعد انتهائه",
+  nav: "تغيّر الفيديو أثناء التجهيز — اضغط «دبلِج» ثانيةً",
+  live: "بثٌّ مباشر — لا دبلجة للبثّ الآن",
+  arNow: "يوتيوب يُسمعك هذا الفيديو بالعربية سلفاً",
+  arOffer: "لهذا الفيديو صوتٌ عربيٌّ من يوتيوب: اختره من ⚙ في المشغّل ⇐ «المسار الصوتي»",
+  arVid: "الفيديو عربيّ الكلام أصلاً",
+  none: "لا ترجمةَ نصّيّة لهذا الفيديو — والدبلجة تقرأ منها",
+  other: "لا ترجمةَ تلقائيّة تكشف لغةَ الكلام، فلا أعرف من أيّ لغةٍ أدبلج",
+  lang: "لغةُ الكلام ليست الإنجليزية — الدبلجة من الإنجليزية وحدها الآن",
+  breaker: "رفض يوتيوب طلبَ الترجمة النصّيّة — توقّفتُ ولن أطلب ثانيةً في هذه الصفحة. لا تُعِد المحاولة اليوم من هذا الاتصال",
+  already: "طلبتُ نصَّ هذا الفيديو في هذه الصفحة ولم يصل — لن أطلبه ثانيةً هنا",
+  "no-capture": "لم يطلب المشغّل الترجمة — أطفئ الترجمة (CC) وأعد تحميل الصفحة ثمّ اضغط «دبلِج»",
+  "no-observer": "المتصفّح لا يتيح مراقبة الطلبات هنا",
+  busy: "التقاطٌ آخر يجري — انتظر ثمّ جرّب",
+  "bad-url": "رابط الترجمة الملتقط غير مفهوم",
+  "not-json3": "ردّ الترجمة النصّيّة بشكلٍ غير متوقّع",
+  empty: "الترجمة النصّيّة فارغة",
+  facts: "تعذّرت قراءة مسارات الفيديو",
+  "no-translator": "مترجم كروم المدمج غير متاح في هذا المتصفّح",
+  "tr-unavailable": "مترجم كروم لا يدعم الإنجليزية ⇐ العربية على هذا الجهاز",
+  "tr-create": "تعذّر تجهيز مترجم كروم",
+  "no-voice": "لا صوتَ عربيّ في النظام — أضف صوتاً عربياً من إعدادات النظام ثمّ أعد تشغيل كروم",
+  inject: "تعذّر حقن جزء الدبلجة في الصفحة — أعد تحميلها",
+  "az-nokey": "اخترتَ صوت Azure بلا مفتاح — ضع مفتاح الكلام في «إعدادات Azure» ثمّ اضغط «احفظ واختبر»",
+  "az-region": "منطقة Azure المكتوبة لا تصلح — اكتبها كما تظهر في بوّابة Azure، مثل uaenorth",
+  "az-trnokey": "اخترتَ «مترجم Azure» بلا مفتاح مترجم، ومترجمُ كروم غيرُ متاح هنا — ضع مفتاح المترجم في «إعدادات Azure» ثمّ «احفظ واختبر»",
+  "main-old": "في هذه الصفحة نسخةٌ أقدم من الإضافة (حُدّثت بعد فتحها) — أعد تحميل صفحة يوتيوب ثمّ اضغط «دبلِج»",
+  late: "تأخّر المشغّل في عرض الترجمة (أهو تبويبٌ مخفيّ؟) — اضغط «دبلِج» ثانيةً والتبويبُ ظاهر",
+  gone: "رفض يوتيوب إعادةَ تحميل ترجمته العربيّة فاختفت من الفيديو — لن أطلب ثانيةً في هذه الصفحة. أعد تحميلها لاحقاً، ولا تُعِد اليوم إن تكرّر",
+  threw: "عطبٌ داخليّ في الدبلجة"
+};
+const DUB_STEP_TEXT = {
+  facts: "يقرأ مسارات الفيديو…", capture: "يلتقط نصّ الفيديو من المشغّل…", show: "يشغّل ترجمة يوتيوب العربية على الفيديو…",
+  translator: "يجهّز مترجم كروم…", voice: "يجهّز الصوت العربي…", warmup: "يوقظ محرّك النطق…"
+};
+const DUB_HOLD_TEXT = {
+  paused: "الفيديو متوقّف — تستأنف حين تشغّله", frozen: "الفيديو يتحمّل…", ad: "إعلان — تستأنف بعده",
+  speed: "سرعة الفيديو أعلى مما يلحقه الصوت (حتى 1.91×) — صامتة", "no-video": "لا أجد الفيديو",
+  queue: "صوتٌ آخر في المتصفّح يسبقنا — أنتظره", done: "انتهت جمل الفيديو",
+  hidden: "التبويب مخفيّ — ترجمة يوتيوب لا تتحدّث فيه؛ أعده ظاهراً",
+  "cc-lang": "الترجمة المعروضة ليست عربية — اخترتَ لغةً أخرى؟ أعد العربية أو اضغط «أوقف» ثمّ «دبلِج»",
+  "cc-off": "الترجمة على الفيديو مطفأة — شغّلها (CC) لأقرأها",
+  // الجولة الثالثة — «يتوقّف الفيديو لحظةً حتى يجهز الصوت» (قرارُ المالك 2026-11-01): يُقال لماذا توقّف الفيديو، لا يُترك لغزاً
+  "wait-voice": "أوقفتُ الفيديو لحظةً حتى يجهز صوتُ الجملة", "wait-translate": "أوقفتُ الفيديو لحظةً حتى تصل ترجمةُ الجملة",
+  "wait-behind": "أوقفتُ الفيديو لحظةً حتى يُتمّ الصوتُ جملتَه فيبقى معه",
+  "no-voice": "لا صوتَ عربيّ في هذا الجهاز — اختر «Azure (أصوات مايكروسوفت)» في «محرّك الصوت»",
+  "no-lines": "لا سطرَ عربيّاً على الفيديو منذ عشرين ثانية — حين يظهر أقرؤه (وإن اختفت الترجمةُ فأعد اختيار العربيّة من ⚙)",
+  "tr-off": "مترجم Azure متوقّف ولا مترجمَ بديل على هذا الجهاز — تحقّق من مفتاح المترجم ثمّ أعد «دبلِج»"
+};
+const DUB_STOP_TEXT = {
+  user: "أوقفتَها", nav: "انتقلتَ إلى فيديو آخر — توقّفت", mini: "المشغّل المصغّر — توقّفت",
+  gate: "أُطفئت الإضافة أو حُظر الموقع — توقّفت", "other-tab": "بدأت الدبلجة في تبويبٍ آخر — توقّفت هنا",
+  restart: "أُعيد التشغيل", orphan: "أُعيد تحميل الإضافة — أعد تحميل الصفحة"
+};
+const DUB_KIND_TEXT = {
+  speak: "تنطق الترجمة العربية اليدويّة كما هي", manual: "تترجم الترجمة الإنجليزية اليدويّة",
+  asr: "تترجم الترجمة التلقائيّة",
+  // الجولة الثالثة: ملفُّ ترجمة يوتيوب العربيّة يُقرأ مسبقاً من طلب المشغّل نفسِه — وما لم يُلتقط يُقرأ كما يظهر
+  ytar: "تقرأ ترجمة يوتيوب العربية مسبقاً جملةً جملة", display: "تقرأ ترجمة يوتيوب العربية كما تظهر سطراً سطراً"
+};
+// `wait`: «أوقف الفيديو لحظةً حتى يجهز الصوت» — مفعّلٌ افتراضيّاً (قرارُ المالك 2026-11-01)
+const DUB_PREF_DEFAULT = { source: "yt", engine: "system", volume: 100, rate: "auto", voice: {}, wait: true,
+  azure: { key: "", region: "uaenorth", voice: "ar-SA-HamedNeural", trKey: "", trRegion: "uaenorth" } };
+// 168ح — احتياطٌ إن لم تُجلب قائمةُ أصوات Azure (بلا مفتاحٍ بعد، أو تعذّر الجلب): صوتا السعوديّة اللذان أعجبا المالك
+const DUB_AZ_FALLBACK = [{ ShortName: "ar-SA-HamedNeural", LocalName: "حامد", Gender: "Male", LocaleName: "العربية (السعودية)" },
+  { ShortName: "ar-SA-ZariyahNeural", LocalName: "زارية", Gender: "Female", LocaleName: "العربية (السعودية)" }];
+// ⛔ ~~«أبطأتُ الطلبات…» (`rate-local`)~~ — حدُّ الصفحة يؤخّر طلباً ولا يُعدّ عطباً يُقال (مراجعة 168ح #5)
+const DUB_AZ_WARN = {
+  key: "مفتاح Azure مرفوض — بصوت الجهاز", rate: "Azure مشغولٌ لحظات (429) — ما جُلب يُنطق به، والباقي بصوت الجهاز",
+  net: "تعذّر الوصول إلى Azure لمقطع", nokey: "لا مفتاحَ كلامٍ صالح — بصوت الجهاز",
+  quota: "نفدت حصّة Azure المجانيّة لهذا الشهر — بصوت الجهاز حتى الشهر التالي"
+};
+// لماذا لم يُقرأ ملفُّ ترجمة يوتيوب مسبقاً (فيُقرأ كما يظهر) — يُقال لا يُترك لغزاً
+const DUB_YT_WHY = {
+  locked: "إضافةٌ أخرى قفلت مراقبةَ الطلبات", "no-request": "لم يطلب المشغّلُ ملفَّ الترجمة", parse: "ردُّ الترجمة بشكلٍ غير متوقّع",
+  empty: "ملفُّ الترجمة بلا كلام",
+  // ⛔ ~~«unhooked:fetch» بحروفها في السطر العربيّ~~ (مراجعةُ الجولة #8): لكلّ سببٍ كلماتُه، والرقمُ بين قوسين
+  unreadable: "ردُّ الترجمة بغير نصٍّ يُقرأ", unhooked: "طلبُ الترجمة لم يمرّ بمراقبتنا", status: "طلبُ المشغّل للترجمة لم ينجح",
+  slow: "ردُّ الترجمة أبطأ من المهلة", refused: "رفض يوتيوب طلبَ المشغّل للترجمة — فلا طلبَ بعده في هذه الصفحة",
+  breaker: "رُفض طلبٌ سابقٌ في هذه الصفحة — فلا طلبَ بعده"
+};
+function dubYtWhyText(w) {
+  const x = String(w || ""), [k, n] = x.split(":");
+  return DUB_YT_WHY[x] || (DUB_YT_WHY[k] ? DUB_YT_WHY[k] + (/^-?\d+$/.test(n || "") ? ` (${n})` : "") : x);
+}
+let dubAzVoices = null, dubAzVoicesFor = "";
+// المصدرُ الذي اختير ليُعاد البدءُ به ولم يبدأ بعد — **وحدَه يجيز «يُعاد البدءُ…»** (مراجعةُ الجولة #1)
+let dubRestartTo = "";
+let dubTabId = null, dubHost = "", dubPoll = 0, dubLast = null, dubPin = null, dubBlocked = false;
+
+function isYouTubeWatchUrl(url) {
+  if (!isYouTubeUrl(url)) return false;
+  try { const u = new URL(url); return u.pathname === "/watch" && !!u.searchParams.get("v"); } catch { return false; }
+}
+
+// الصوتُ يُحفظ لكلّ نظام: «ليلى» على الماك ليست على الويندوز
+function dubPlatform() {
+  const p = navigator.userAgentData?.platform || "";
+  if (p) return p;
+  return /Windows/.test(navigator.userAgent) ? "Windows" : /Mac/.test(navigator.userAgent) ? "macOS" : "other";
+}
+
+async function dubPrefs() {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const d = (data.settings || {}).dub || {};
+  return { ...DUB_PREF_DEFAULT, ...d, voice: { ...(d.voice || {}) }, azure: { ...DUB_PREF_DEFAULT.azure, ...(d.azure || {}) } };
+}
+
+// ما يصل المحرّك: الحجمُ 0..1 · السرعةُ «auto» أو رقم · الصوتُ لهذا النظام
+function dubOptsFrom(pr) {
+  return { source: pr.source, engine: pr.engine, volume: (Number(pr.volume) || 0) / 100, rate: pr.rate,
+    voice: pr.voice[dubPlatform()] || "", az: { ...pr.azure }, wait: pr.wait !== false };
+}
+
+function dubSend(message) {
+  return chrome.tabs.sendMessage(dubTabId, message, { frameId: 0 }).catch(() => null);
+}
+
+function renderDub(st) {
+  const btn = $("dubBtn"), note = $("dubNote");
+  if (!btn || !note) return;
+  // رفضُ الضغطة الأخيرة يبقى حتى الضغطة التالية — لا يمحوه سؤالُ الحال وقد قيل «لا شيء يجري» (مراجعة #14)
+  if (dubPin && (!st || st.state === "idle")) st = dubPin;
+  const s = st && st.ok !== false ? st.state : "refused";
+  btn.textContent = s === "preparing" || s === "running" ? "أوقف الدبلجة" : "دبلِج هذا الفيديو";
+  btn.disabled = s === "master-off" || s === "blocked";
+  note.classList.remove("bad");
+  let text;
+  if (!st) text = "الإضافة غير محقونة في هذه الصفحة — أعد تحميلها ثمّ جرّب";
+  else if (s === "master-off") text = "الإضافة مطفأة من المفتاح الرئيسي";
+  else if (s === "blocked") text = "الإضافة محظورة على هذا الموقع — أزل الحظر من زرّ 🚫 أعلاه";
+  else if (st.ok === false && st.reason === "not-started") text = "الإضافة لم تبدأ في هذه الصفحة — أعد تحميلها";
+  else if (s === "idle") text = "تقرأ الترجمة العربية بصوتٍ متزامن مع الفيديو — اختر مصدرها وصوتها وسرعتها أدناه.";
+  else if (s === "preparing") text = (DUB_STEP_TEXT[st.step] || "يجهّز…") + (st.step === "translator" && st.dl != null ? ` (تنزيل ${st.dl}٪)` : "");
+  else if (s === "running") {
+    // ⭐ «بصوت Azure» حين يتكلّم Azure فعلاً (`azOn`) — ⛔ ~~حين طُلب~~ وصوتُ الجهاز هو الذي يتكلّم (مراجعة 168ح #14)
+    const az = st.engine !== "azure" ? "" : st.azOn ? " · بصوت Azure" + (st.azWarn === "net" ? ` · ⚠️ ${DUB_AZ_WARN.net}` : "")
+      : ` · ⚠️ ${DUB_AZ_WARN[st.azOff || st.azWarn] || "Azure متوقّف — بصوت الجهاز"}` + (st.voice ? "" : " — ولا صوتَ عربيّ في الجهاز يخلفه");
+    text = (st.hold ? DUB_HOLD_TEXT[st.hold] || st.hold : "يُدبلج") + (st.kind === "display" ? "" : ` · الجملة ${Math.min(st.idx, st.total)} من ${st.total}`) +
+      ` · نُطقت ${st.spoken} · تُخطّيت ${st.skipped}` + (st.lost ? ` · ضاعت ${st.lost}` : "") +
+      (DUB_KIND_TEXT[st.kind] ? ` · ${DUB_KIND_TEXT[st.kind]}` : "") +
+      (st.kind === "display" && st.ytWhy ? ` (تعذّرت القراءةُ المسبقة: ${dubYtWhyText(st.ytWhy)})` : "") +
+      // ⛔ ~~«الانتظار» و«أسرع حين يتأخّر» يعدان في القراءة كما تظهر~~ ولا يعملان فيها (مراجعةُ الجولة #9) — يُقال
+      // ⛔ ~~«ولا تسريعٍ فوق 1.4×» والسرعةُ ثابتةٌ اختارها المستخدم~~ (تحقّقُ الجولة) — يُقال ما يصحّ لكلٍّ
+      (st.kind !== "display" ? "" : typeof st.rate === "number" ? ` · بلا إيقافٍ للفيديو في هذه القراءة، وبالسرعة التي اخترتها (${st.rate}×)`
+        : " · بلا إيقافٍ للفيديو ولا تسريعٍ فوق 1.4× في هذه القراءة") +
+      (st.bgSkipped ? ` · ⚠️ تُخطّيت ${st.bgSkipped} والتبويبُ مخفيّ — أبقِه ظاهراً أو صوتَ يوتيوب مسموعاً` : "") +
+      (st.warm ? "" : " · ⚠️ لم أسمع جملةَ البدء — أهو تبويبٌ مكتوم؟") + az +
+      // ⛔ ~~«بمترجم كروم» ولا مترجمَ كروم~~ (مراجعةُ الجولة #4): ما تُرجم سلفاً يُقرأ ثمّ تقف عند أوّل جملةٍ لم تُترجم — يُقال قبلها
+      (st.hold === "tr-off" || !st.trOff ? "" : st.trLocal === false ? " · ⚠️ مترجم Azure غير متاح ولا مترجمَ بديل في هذا المتصفّح — ستقف عند أوّل جملةٍ لم تُترجم"
+        : st.trOff === "nokey" ? " · بمترجم كروم (لا مفتاحَ مترجم)" : " · ⚠️ مترجم Azure غير متاح — بمترجم كروم") +
+      (st.waits ? ` · انتظر الفيديو صوتَه ${st.waits} مرّة` : "") +
+      // ملاحظةُ المالك ١ (الجولة الثالثة): «ما اقراه جمله وما اسمعه جمله اخرى» — يوتيوب يعرض ترجمتَه وأنا أقرأ غيرَها، فيُقال ويُدَلّ على العلاج
+      (st.shownDiffers ? " · ⚠️ يوتيوب يعرض ترجمتَه العربيّة وأنا أقرأ ترجمةً أخرى — اختر «ترجمة يوتيوب العربية» ليتطابق ما تسمعه مع ما تقرؤه" : "") +
+      // حرفان لا حرفٌ واحد: حصّةُ الكلام غيرُ حصّة المترجم، والمدفوعُ وحدَه يُعدّ (مراجعة 168ح #12)
+      (st.azTts || st.azTr ? ` · حروفُ Azure في هذه الجلسة: الكلام ${st.azTts || 0} · المترجم ${st.azTr || 0}` : "");
+  } else if (s === "stopped") text = DUB_STOP_TEXT[st.reason] || "توقّفت الدبلجة";
+  else {
+    text = "⛔ " + (DUB_REASON_TEXT[st.reason] || `تعذّرت الدبلجة: ${st.reason}`) +
+      (st.reason === "lang" && st.detail ? ` (${st.detail})` : "");
+    note.classList.add("bad");
+  }
+  // ⛔ ~~«المصدرُ الجديد من الضغطة التالية على «دبلِج»»~~ — الجولة الثالثة: تبديلُ المصدر يُعيد البدءَ فوراً (ملاحظةُ المالك ١:
+  // «يستمر يترجم النص الانجليزي») ⇒ فرقٌ بين المختار والجاري لحظةُ إعادةٍ تُقال
+  // ⛔ ~~وكلُّ فرقٍ بين المختار والجاري «إعادةٌ»~~ (مراجعةُ الجولة #1): فرقٌ لم يُرسَل له «دبلِج» — اختيارٌ في تبويبٍ آخر أو جهازٍ آخر، أو
+  // حفظٌ رُفض — **يُقال كما هو** ولا يُوعد بإعادةٍ لن تأتي
+  if (st && st.source && st.source === dubRestartTo) dubRestartTo = "";
+  if ((s === "running" || s === "preparing") && st.source && $("dubSource") && $("dubSource").value !== st.source) {
+    text += dubRestartTo && dubRestartTo === $("dubSource").value ? " · يُعاد البدءُ بالمصدر المختار…"
+      : " · ⚠️ تعمل بمصدرٍ غير المختار — اضغط «أوقف الدبلجة» ثمّ «دبلِج» لتبدأ به";
+  }
+  note.textContent = text;
+  const diag = $("dubDiag");
+  if (diag) { const d = s === "running" ? dubDiagText(st) : ""; diag.textContent = d; diag.hidden = !d; }
+}
+
+// ⭐ أرقامُ القياس (الجولة الثالثة) — سطرٌ يقرؤه المالك ويرسله كما هو، فيُجيب تشغيلُه عمّا لا يقيسه غيرُه: سرعةُ الصوت المتعلَّمة ·
+// صمتا طرفي مقطع Azure · السرعةُ المستعملة · ما تحتاجه الجملُ القادمة · تأخّرُ البدء · كم انتظر الفيديو. لا نصَّ فيه ولا مفتاح
+function dubDiagText(st) {
+  const p = [];
+  if (st.cps) p.push(`الصوت ${st.cps} حرف/ث`);
+  if (st.leadMs != null || st.tailMs != null) p.push(`صمتُ المقطع: أوّله ${st.leadMs ?? "؟"} م.ث وآخرُه ${st.tailMs ?? "؟"} م.ث`);
+  if (st.spd && st.spd[0] != null) p.push(`السرعة ${st.spd[0]}× وأقصاها ${st.spd[1]}×`);
+  if (st.need && st.need[0] != null) p.push(`تحتاج الجملُ القادمة ${st.need[0]}× (وعُشرُها الأصعب ${st.need[1]}×)`);
+  if (st.lagP90 != null) p.push(`تأخّرُ البدء ${st.lagP90} ث لتسعة أعشار الجمل`);
+  if (st.stallS) p.push(`وقف الفيديو ${st.stallS} ث`);
+  return p.length ? "📏 " + p.join(" · ") : "";
+}
+
+// المفتاحُ الرئيسيّ والحظرُ يُقرآن في كلّ سؤال — مفتاحٌ قُلب في البوب-أب نفسِه يظهر أثرُه فوراً (مراجعة #13)
+async function refreshDub() {
+  if (!(await getMasterEnabled())) { dubLast = { ok: true, state: "master-off" }; renderDub(dubLast); return; }
+  // والحظرُ كذلك — زرُّ 🚫 في البوب-أب نفسِه يرفعه، والبطاقةُ تتبعه (مراجعة 2 #5 · #9 · #14)
+  dubBlocked = !!(await readHostGates(dubHost)).blocked;
+  if (dubBlocked) { dubLast = { ok: true, state: "blocked" }; renderDub(dubLast); return; }
+  dubLast = await dubSend({ type: "GVZ_DUB_STATUS" });
+  renderDub(dubLast);
+}
+
+// الأصواتُ العربيّة بوسم اللغة، كما يراها المحرّك — والأوّلُ «تلقائيّ» (يختار «ليلى (محسّن)» إن وُجدت)
+function fillDubVoices(selected) {
+  const sel = $("dubVoice");
+  if (!sel) return;
+  const voices = (globalThis.speechSynthesis?.getVoices() || [])
+    .filter((v) => String(v.lang || "").toLowerCase().split(/[-_]/)[0] === "ar");
+  sel.textContent = "";
+  sel.dataset.engine = "system";                                 // القائمةُ تقول لأيّ محرّكٍ هي — والحفظُ يكتب في خانته وحدَها
+  const auto = document.createElement("option");
+  auto.value = ""; auto.textContent = "تلقائي";
+  sel.appendChild(auto);
+  for (const v of voices) {
+    const o = document.createElement("option");
+    o.value = v.voiceURI; o.textContent = v.name + (v.localService ? "" : " (عبر الشبكة)");
+    sel.appendChild(o);
+  }
+  sel.value = voices.some((v) => v.voiceURI === selected) ? selected : "";
+  sel.dataset.loaded = voices.length ? "1" : "";                 // 📖 أوّلُ getVoices() في وثيقةٍ جديدة فارغ — فلا يُقرأ منها «تلقائي»
+}
+
+// الضوابطُ من التخزين — وتُعاد منه بعد حفظٍ فشل (#69): الضابطُ لا يقول قيمةً لم تُحفظ (مراجعة 2 #15)
+// 168ح — أصواتُ Azure العربيّة من Azure نفسِه (طلبٌ واحدٌ لكلّ مفتاحٍ ومنطقة في فتحة البوب-أب)، وإلا الاحتياط
+async function dubAzVoiceList(az) {
+  const tag = az.region + "|" + (az.key ? az.key.slice(-4) : "");
+  if (dubAzVoices && dubAzVoicesFor === tag) return dubAzVoices;
+  let list = null;
+  if (az.key && /^[a-z0-9]{2,32}$/.test(az.region)) {
+    const ac = new AbortController(), to = setTimeout(() => ac.abort(), 6000);
+    try {
+      const r = await fetch(`https://${az.region}.tts.speech.microsoft.com/cognitiveservices/voices/list`,
+        { headers: { "Ocp-Apim-Subscription-Key": az.key }, credentials: "omit", cache: "no-store", signal: ac.signal });
+      if (r.ok) list = (await r.json()).filter((v) => /^ar-/.test(String(v.Locale || "")));
+    } catch { list = null; } finally { clearTimeout(to); }
+  }
+  dubAzVoices = list && list.length ? list : null; dubAzVoicesFor = tag;
+  return dubAzVoices || DUB_AZ_FALLBACK;
+}
+
+// ⛔ **بعد الانتظار يُسأل المحرّكُ ثانيةً** (مراجعة 168ح #17): قائمةُ Azure تصل متأخّرةً وقد عاد المستخدمُ إلى أصوات الجهاز —
+// فكانت تحلّ محلّ قائمته ويُحفظ اسمُ صوت Azure صوتاً للماك. **والصوتُ المحفوظُ يبقى ولو غاب عن القائمة** (لا يُستبدل بأوّلها)
+// ⭐ **ولا تنتظر النافذةُ الشبكة** (مراجعةُ الجولة #2): ⛔ ~~كلُّ مستمعٍ في النافذة بعد طلب قائمة الأصوات~~ — شبكةٌ بطيئة جعلت المفتاحَ الرئيسيّ
+// يُضغط ولا يُحفظ ⇒ القائمةُ المحفوظة أو الاحتياطُ فوراً بالصوت المحفوظ، ثمّ قائمةُ Azure حين تصل **بما اختاره المستخدمُ بينهما**
+function fillDubAzOptions(list, voice) {
+  const sel = $("dubVoice");
+  if (!sel) return;
+  sel.textContent = "";
+  sel.dataset.engine = "azure";
+  const all = list.some((v) => v.ShortName === voice) ? list : [{ ShortName: voice, LocalName: voice, Gender: "", LocaleName: "" }].concat(list);
+  for (const v of all) {
+    const o = document.createElement("option");
+    o.value = v.ShortName;
+    o.textContent = `${v.LocalName || v.ShortName}` + (v.Gender ? ` · ${v.Gender === "Female" ? "أنثى" : "ذكر"}` : "") + (v.LocaleName || v.Locale ? ` · ${v.LocaleName || v.Locale}` : "");
+    sel.appendChild(o);
+  }
+  sel.value = voice;
+}
+// `keepShown`: «احفظ واختبر» وحدَه — ⛔ ~~إبقاءُ المعروض في كلّ ملء~~ (تحقّقُ الجولة الثاني): مسارُ الفتح وإرجاعُ #69 بعد حفظٍ فشل
+// يُعيدان المحفوظ، فلا يقول الضابطُ صوتاً لم يُحفظ
+async function fillDubAzVoiceSelect(az, keepShown) {
+  const sel = $("dubVoice");
+  if (!sel) return;
+  const tag = az.region + "|" + (az.key ? az.key.slice(-4) : "");
+  // ⛔ ~~بالصوت المحفوظ دائماً~~ (تحقّقُ الجولة): «احفظ واختبر» يستدعيها بما حفظه قبل طلبَيه — فكان يُعيد صوتاً غيّره المستخدمُ أثناءهما، ثمّ يُحفظ
+  // القديمُ مع أوّل تغيير ⇒ قائمةُ Azure المعروضةُ يبقى مختارُها
+  fillDubAzOptions(dubAzVoices && dubAzVoicesFor === tag ? dubAzVoices : DUB_AZ_FALLBACK, keepShown && sel.dataset.engine === "azure" && sel.value ? sel.value : az.voice);
+  const list = await dubAzVoiceList(az);
+  if ($("dubEngine")?.value !== "azure" || sel.dataset.engine !== "azure") return;
+  fillDubAzOptions(list, sel.value || az.voice);
+}
+
+async function fillDubPrefsUI() {
+  if (!$("dubCard")) return;
+  const pr = await dubPrefs();
+  if ($("dubSource")) $("dubSource").value = pr.source;
+  if ($("dubEngine")) $("dubEngine").value = pr.engine;
+  if ($("dubRate")) $("dubRate").value = String(pr.rate);
+  if ($("dubVolume")) $("dubVolume").value = String(pr.volume);
+  if ($("dubVolumeValue")) $("dubVolumeValue").textContent = `${pr.volume}%`;
+  if ($("dubWait")) $("dubWait").checked = pr.wait !== false;
+  if ($("dubAzKey")) $("dubAzKey").value = pr.azure.key;
+  if ($("dubAzRegion")) $("dubAzRegion").value = pr.azure.region;
+  if ($("dubAzTrKey")) $("dubAzTrKey").value = pr.azure.trKey;
+  if ($("dubAzTrRegion")) $("dubAzTrRegion").value = pr.azure.trRegion;
+  if (pr.engine === "azure") fillDubAzVoiceSelect(pr.azure).catch(() => {});
+  else fillDubVoices(pr.voice[dubPlatform()] || "");
+}
+
+// ⛔ ~~الصوتُ المحفوظ من القائمة المعروضة~~ (مراجعةُ الجولة #3): أوّلُ قائمةٍ فارغة فيُقرأ منها «تلقائي» ثمّ يُحفظ فوق «ماجد» عند أوّل تغيير
+// ⇒ **من التخزين** ما لم تُحمَّل القائمة، وما اختاره المستخدمُ من قائمةٍ محمّلة يبقى
+async function loadDubPrefsUI() {
+  await fillDubPrefsUI();
+  globalThis.speechSynthesis?.addEventListener("voiceschanged", async () => {
+    if ($("dubEngine")?.value === "azure") return;
+    const sel = $("dubVoice");
+    const keep = sel && sel.dataset.loaded === "1" ? sel.value : (await dubPrefs()).voice[dubPlatform()] || "";
+    if ($("dubEngine")?.value !== "azure") fillDubVoices(keep);
+  });
+}
+
+// ⭐ منطقةُ Azure ومفتاحاه يُتحقَّق منها **قبل الحفظ وقبل أيّ طلب** (مراجعة 168ح #15): ⛔ ~~«attacker.example/x#» كانت تُرسل
+// مفتاحَ الكلام إلى مضيفٍ يكتبه الحقل~~ — والمنطقةُ كما تُكتب في البوّابة («West Europe») تُطبَّع («westeurope»)
+const DUB_AZ_REGION = /^[a-z0-9]{2,32}$/, DUB_AZ_KEY = /^[A-Za-z0-9]{16,128}$/;
+let dubSaveErr = "";                                            // سببُ آخر رفضٍ للحفظ — يقوله «احفظ واختبر» تحت زرّه
+function dubAzRegionOf(x) { return String(x || "").replace(/\s+/g, "").toLowerCase(); }
+
+// `keepVoice`: تبديلُ المحرّك لا يقرأ قائمةَ الأصوات المعروضة — هي قائمةُ المحرّك السابق. **والصوتُ المعروضُ يُكتب في خانة
+// المحرّك الذي عُرض له وحدَها** (`dataset.engine` — مراجعة 168ح #17)
+// `azFields`: حقولُ Azure تُقرأ وتُتحقَّق حين يحفظها حقلٌ منها أو «احفظ واختبر» وحدَهما — ⛔ ~~في كلّ حفظ~~: حقلٌ كُتب خطأً كان يمنع كلَّ
+// ضابطٍ آخر من الحفظ والإرسال صامتاً (الانتظارُ يبقى يوقف الفيديو وعلامتُه مُزالة — مراجعةُ الجولة #7)
+async function saveDubPrefs(keepVoice, azFields) {
+  const data = await chrome.storage.sync.get({ settings: {} });
+  const settings = data.settings || {};
+  const pr = { ...DUB_PREF_DEFAULT, ...(settings.dub || {}) };
+  const prevAz = { ...DUB_PREF_DEFAULT.azure, ...(pr.azure || {}) };
+  const engine = $("dubEngine")?.value === "azure" ? "azure" : "system";
+  const shown = $("dubVoice")?.value || "", shownFor = $("dubVoice")?.dataset?.engine || "";
+  const voice = { ...(pr.voice || {}) };
+  if (!keepVoice && engine === "system" && shownFor === "system" && $("dubVoice")?.dataset?.loaded === "1") voice[dubPlatform()] = shown;
+  const clean = (x) => String(x || "").trim();
+  const region = azFields ? dubAzRegionOf($("dubAzRegion")?.value) || "uaenorth" : prevAz.region;
+  const trRegion = azFields ? dubAzRegionOf($("dubAzTrRegion")?.value) || "uaenorth" : prevAz.trRegion;
+  const key = azFields ? clean($("dubAzKey")?.value) : prevAz.key, trKey = azFields ? clean($("dubAzTrKey")?.value) : prevAz.trKey;
+  dubSaveErr = !azFields ? "" : !DUB_AZ_REGION.test(region) || !DUB_AZ_REGION.test(trRegion) ? "منطقة Azure لا تصلح — اكتبها كما تظهر في بوّابة Azure، مثل uaenorth"
+    : (key && !DUB_AZ_KEY.test(key)) || (trKey && !DUB_AZ_KEY.test(trKey)) ? "مفتاح Azure بشكلٍ غير متوقّع — انسخه من «Keys and Endpoint» كما هو" : "";
+  if (dubSaveErr) { setStatus("bad", dubSaveErr); return null; }
+  const azure = { key, region, trKey, trRegion,
+    voice: !keepVoice && engine === "azure" && shownFor === "azure" && /^[a-z]{2}-[A-Z]{2}-[A-Za-z]+Neural$/.test(shown) ? shown : prevAz.voice };
+  const src = $("dubSource")?.value;
+  settings.dub = { source: src === "device" || src === "azure" ? src : "yt", engine,
+    volume: Math.max(0, Math.min(100, Number($("dubVolume")?.value) || 0)), rate: $("dubRate")?.value || "auto", voice, azure,
+    wait: $("dubWait") ? !!$("dubWait").checked : pr.wait !== false };
+  const res = await safeSyncSet({ settings });
+  if (!res.ok) { setStatus("bad", `تعذّر الحفظ: ${res.message}`); return null; }
+  return { ...settings.dub, voice: { ...voice }, azure: { ...azure } };
+}
+
+// تغييرٌ والدبلجةُ تعمل يصلها من الجملة التالية — ⭐ **والمصدرُ يُعيد البدءَ فوراً** (الجولة الثالثة، ملاحظةُ المالك ١ بنصّها:
+// «عند اختيار اقرا من ترجمه اليوتيب العربي لا يقرا يستمر يترجم النص الانجليزي») — ⛔ ~~«من الضغطة التالية»~~. وما يُرسل يُقرأ
+// من التخزين بعد كلّ انتظار، لا ممّا حُفظ قبله (مراجعة 168ح #17)
+// ⭐ **تغييرٌ واحدٌ في كلّ مرّة** (مراجعةُ الجولة #1): ⛔ ~~تغييران سريعان يقارن ثانيهما بحالٍ قديمة~~ فيُرسل «SET» بعد «دبلِج» المصدرِ
+// الأوّل وتبقى الدبلجةُ عليه والمختارُ غيرُه — والثاني ينتظر الأوّلَ حتى يصله ردُّه
+let dubPrefChain = Promise.resolve();
+function onDubPrefChange(e) {
+  // نيّةُ الإعادة تُعرف لحظةَ التغيير — ⛔ ~~حين يحين دورُه في السلسلة~~ فكان ينتظر فيُقال «تعمل بمصدرٍ غير المختار» (تحقّقُ الجولة)
+  if (e && e.target && e.target.id === "dubSource") dubRestartTo = $("dubSource")?.value || "";
+  const run = dubPrefChain.then(() => onDubPrefChangeRun(e));
+  dubPrefChain = run.catch(() => {});
+  return run;
+}
+async function onDubPrefChangeRun(e) {
+  const id = e && e.target ? e.target.id : "";
+  const engineChanged = id === "dubEngine";
+  const saved = await saveDubPrefs(engineChanged, /^dubAz/.test(id));
+  if (!saved) { dubRestartTo = ""; return; }
+  // ⛔ ~~وينتظر قائمةَ أصوات Azure~~ (تحقّقُ الجولة): كلُّ تغييرٍ بعده في السلسلة كان ينتظرها حتى ست ثوانٍ ويضيع إن أُغلقت النافذة
+  if (engineChanged) {
+    if (saved.engine === "azure") fillDubAzVoiceSelect(saved.azure).catch(() => {}); else fillDubVoices(saved.voice[dubPlatform()] || "");
+  }
+  if (dubTabId == null) { dubRestartTo = ""; return; }
+  if (dubLast && (dubLast.state === "preparing" || dubLast.state === "running")) {
+    const opts = dubOptsFrom(await dubPrefs());
+    const restart = !!dubLast.source && opts.source !== dubLast.source;
+    if (!restart) dubRestartTo = "";
+    const st = await dubSend(restart ? { type: "GVZ_DUB_START", opts } : { type: "GVZ_DUB_SET", opts });
+    if (st) { dubLast = st; if (st.ok === false) dubPin = st; renderDub(st); }
+  } else dubRestartTo = "";
+}
+
+// «احفظ واختبر»: طلبٌ لقائمة الأصوات بمفتاح الكلام، وجملةٌ واحدةٌ بمفتاح المترجم — والنتيجةُ بسببها، والمفتاحُ لا يُعرض
+async function testDubAzure() {
+  const note = $("dubAzNote");
+  const saved = await saveDubPrefs(false, true);
+  if (!note) return;
+  if (!saved) { note.textContent = "⛔ " + (dubSaveErr || "تعذّر الحفظ"); note.classList.add("bad"); return; }
+  const az = saved.azure, why = (st) => (st === 401 || st === 403 ? "المفتاح أو المنطقة غير صحيحين" : st === 429 ? "بلغتَ الحدّ — جرّب بعد دقيقة" : `ردّ ${st || "بلا اتصال"}`);
+  note.classList.remove("bad");
+  note.textContent = "أختبر…";
+  let speech = "", tr = "", bad = false;
+  if (!az.key) { speech = "⚪ الكلام: لا مفتاح"; }
+  else {
+    dubAzVoices = null;
+    try {
+      const r = await fetch(`https://${az.region}.tts.speech.microsoft.com/cognitiveservices/voices/list`,
+        { headers: { "Ocp-Apim-Subscription-Key": az.key }, credentials: "omit", cache: "no-store" });
+      if (r.ok) { const n = (await r.json()).filter((v) => /^ar-/.test(String(v.Locale || ""))).length; speech = `✅ الكلام: ${n} صوتاً عربياً`; }
+      else { speech = `⛔ الكلام: ${why(r.status)}`; bad = true; }
+    } catch { speech = "⛔ الكلام: تعذّر الاتصال"; bad = true; }
+  }
+  if (!az.trKey) { tr = "⚪ المترجم: لا مفتاح"; }
+  else {
+    try {
+      const r = await fetch("https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=en&to=ar", {
+        method: "POST", credentials: "omit", cache: "no-store",
+        headers: { "Ocp-Apim-Subscription-Key": az.trKey, "Ocp-Apim-Subscription-Region": az.trRegion, "Content-Type": "application/json" },
+        body: JSON.stringify([{ Text: "Hello" }]) });
+      if (r.ok) { const j = await r.json(); tr = `✅ المترجم: «Hello» ⇐ «${j?.[0]?.translations?.[0]?.text || "؟"}»`; }
+      else { tr = `⛔ المترجم: ${why(r.status)}`; bad = true; }
+    } catch { tr = "⛔ المترجم: تعذّر الاتصال"; bad = true; }
+  }
+  note.textContent = `${speech} · ${tr}`;
+  if (bad) note.classList.add("bad");
+  if ($("dubEngine")?.value === "azure") await fillDubAzVoiceSelect(az, true);
+}
+
+async function loadDubUI() {
+  const card = $("dubCard");
+  const tab = await getActiveTab();
+  if (!card || !tab || !isYouTubeWatchUrl(tab.url)) { if (card) card.hidden = true; return; }
+  card.hidden = false;
+  dubTabId = tab.id;
+  dubHost = hostFromUrl(tab.url);
+  await loadDubPrefsUI();
+  await refreshDub();
+  clearInterval(dubPoll);
+  dubPoll = setInterval(refreshDub, 700);
+}
+
+async function toggleDub() {
+  if (dubTabId == null) return;
+  dubPin = null;
+  if (dubLast && (dubLast.state === "preparing" || dubLast.state === "running")) {
+    dubLast = await dubSend({ type: "GVZ_DUB_STOP" });
+    renderDub(dubLast);
+    return;
+  }
+  if (!(await getMasterEnabled())) { renderDub({ ok: true, state: "master-off" }); return; }
+  if (dubBlocked) { renderDub({ ok: true, state: "blocked" }); return; }
+  $("dubBtn").disabled = true;
+  try {
+    // عالمُ الصفحة يُحقن الآن وحدَه — لا شيءَ منه في صفحةٍ لم يُضغط فيها «دبلِج»
+    await chrome.scripting.executeScript({ target: { tabId: dubTabId, frameIds: [0] }, files: ["yt_dub_main.js"], world: "MAIN" });
+  } catch {
+    dubPin = { ok: false, state: "refused", reason: "inject" };
+    renderDub(dubPin);
+    return;
+  }
+  // خ14: آخرُ ما ضُغط يفوز — قناةٌ **تُوقف ولا تُشغّل**: طابورُ النطق واحدٌ للمتصفّح كلِّه
+  const others = await chrome.tabs.query({ url: "*://*.youtube.com/*" }).catch(() => []);
+  for (const t of others) {
+    if (t.id !== dubTabId) chrome.tabs.sendMessage(t.id, { type: "GVZ_DUB_STOP", why: "other-tab" }, { frameId: 0 }).catch(() => {});
+  }
+  dubLast = await dubSend({ type: "GVZ_DUB_START", opts: dubOptsFrom(await dubPrefs()) });
+  if (dubLast && dubLast.ok === false) dubPin = dubLast;
+  renderDub(dubLast);
+}
+
 async function loadBlockedSiteUI() {
   const data = await chrome.storage.sync.get({ settings: {} });
   const settings = data.settings || {};
@@ -926,6 +1385,7 @@ document.addEventListener("mousedown", (e) => {
   await loadFullscreenOnlyToggle();
   await checkPageStatus();
   await loadBoostUI();
+  await loadDubUI();
 
   const od = $("overlayDuration");
   const odValue = $("overlayDurationValue");
@@ -944,6 +1404,7 @@ document.addEventListener("mousedown", (e) => {
     const ok = await saveMasterEnabled(on);
     if (!ok) { e.target.checked = !on; syncMasterUi(!on); return; }
     await checkPageStatus();
+    if (dubTabId != null) await refreshDub();
   });
   $("subtitlesEnabled")?.addEventListener("change", saveSubtitlesToggle);
   $("fullscreenOnly")?.addEventListener("change", saveFullscreenOnlyToggle);
@@ -979,6 +1440,10 @@ document.addEventListener("mousedown", (e) => {
     }
   });
   $("checkStatus").addEventListener("click", checkPageStatus);
+  $("dubBtn")?.addEventListener("click", toggleDub);
+  for (const id of ["dubSource", "dubEngine", "dubVoice", "dubRate", "dubVolume", "dubWait", "dubAzKey", "dubAzRegion", "dubAzTrKey", "dubAzTrRegion"]) $(id)?.addEventListener("change", onDubPrefChange);
+  $("dubAzTest")?.addEventListener("click", testDubAzure);
+  $("dubVolume")?.addEventListener("input", () => { if ($("dubVolumeValue")) $("dubVolumeValue").textContent = `${$("dubVolume").value}%`; });
 
   // ── #69: مسار فشل واحد للـ popup كذلك ────────────────────────────────────
   // كانت سبعةُ مواضع تُعلن الفشل و**واحدٌ يُرجِع الضابط** (المفتاح الرئيسي).

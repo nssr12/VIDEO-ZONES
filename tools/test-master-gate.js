@@ -54,7 +54,8 @@ const ENTRIES = [
   ["مفتاح Esc للوحة (#108)", "function filterEscKeydown(e)", false],
   ["محرّك السكون (#70 · #72)", "function idleEngineActive()", false],
   ["جودة يوتيوب — الإرسال", "function triggerYtQuality()", false],
-  ["جودة يوتيوب — التسجيل", "function startYtAutoQuality()", false]
+  ["جودة يوتيوب — التسجيل", "function startYtAutoQuality()", false],
+  ["الدبلجة (#168)", "function dubActive()", false]
 ];
 
 console.log("\n=== #64 — البوّابة الواحدة ===\n");
