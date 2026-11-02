@@ -310,6 +310,22 @@
       B0 = state(p); ccOn = B0.aria === "true";
       try { prevTrack = JSON.parse(B0.opt); } catch (e) { prevTrack = undefined; }
       B1 = { ls: B0.ls, ss: B0.ss };
+      // ⭐ «أوقف الدبلجة» أثناء الالتقاط (`hide` يجد `MEM.cap`) يأخذه الالتقاطُ نفسُه: إعادةُ لقطته (العربيّةُ الموروثةُ بتبديل المصدر) كانت
+      // تمحو إعادةَ الإيقاف بعدها — ⛔ ~~العربيّةُ باقيةٌ بعد الإيقاف ولاصقتُها «ar»~~ (مراجعةُ تبديل المصدر 2026-11-02) ⇒ **ما قبل الدبلجة هو
+      // الهدف**: المسارُ إليه بدل اللقطة، والمفاتيحُ إلى اللقطة (يُمحى ما كتبه الإجبار) ثمّ إلى ما قبل الدبلجة
+      var job = MEM.cap = { hide: null, restored: false, applied: false };
+      // والمعروضُ قبل الإجبار: أعربيّتُنا (فالإيقافُ يُعيد ما قبل الدبلجة) أم اختيارُ المستخدم أثناءها (فيبقى له) — ⛔ ~~إلى ما قبل الدبلجة أيّاً
+      // كان المعروض~~ (المراجعةُ الثانية لتبديل المصدر): من اختار الفرنسيّة أو أطفأ الترجمة كان يجد الإنجليزيّة بعد الإيقاف — وhide يحكم بـstillOurs
+      var ours0 = !!(MEM.show && MEM.show.set && stillOurs(p, MEM.show));
+      var back = function () {
+        var h = job.hide;
+        if (h) { job.applied = true; return ours0 ? restoreAct(p, h.B0, h.ccOn, h.prevTrack) + "|stopped" : restoreAct(p, B0, ccOn, prevTrack) + "|user-took-over"; }
+        return restoreAct(p, B0, ccOn, prevTrack);
+      };
+      var keys = function () {
+        var d = fixAll(B1, state(p), ccOn);
+        return job.hide ? d.concat(fixOurs(job.hide, p)) : d;
+      };
       var how = "", t0 = performance.now(), f0 = null, i;
       forced = true;                                                  // من هنا يُعاد ما غيّره الإجبار ولو رمى ما بعده (مراجعة #4)
       p.loadModule("captions");
@@ -339,9 +355,9 @@
       }
       var ref = first(seen, refused) || (cap && !(cap.status > 0) ? cap : null);
       if (ref) raise((qs(ref.name).get("lang") || "?") + " status=" + ref.status);
-      var act = restoreAct(p, B0, ccOn, prevTrack);                   // ⭐ فورَ الالتقاط: أقصرُ ظهورٍ مؤقّت
-      restored = true;
-      var fixed = fixAll(B1, state(p), ccOn);
+      var act = back();                                               // ⭐ فورَ الالتقاط: أقصرُ ظهورٍ مؤقّت
+      restored = true; job.restored = true;
+      var fixed = keys();
       if (ref) return { ok: false, reason: "breaker", why: MEM.stop.why, act: act };
       if (!cap) return { ok: false, reason: "no-capture", how: how, act: act, cc: ccOn };
       if (isAd(p) || vNow() !== v) return { ok: false, reason: isAd(p) ? "ad" : "nav" };
@@ -360,10 +376,15 @@
       var bad = !!res.err || res.status !== 200 || !res.body.trim();
       if (bad) raise(res.err ? "ours " + res.err : "ours status=" + res.status + (res.body.trim() ? "" : " empty"));
       var s2 = state(p);
-      if (s2.aria !== B0.aria || s2.opt !== B0.opt) act += "+" + restoreAct(p, B0, ccOn, prevTrack);
-      fixed = fixed.concat(fixAll(B1, state(p), ccOn));
+      if (job.hide) { if (!job.applied) act += "+" + back(); }       // أُوقفت أثناءه: ما قبل الدبلجة — لا لقطتُه
+      else if (s2.aria !== B0.aria || s2.opt !== B0.opt) act += "+" + restoreAct(p, B0, ccOn, prevTrack);
+      fixed = fixed.concat(keys());
       keepPo = true;                                                   // المراقبُ يبقى ثانيتين: رفضٌ يكتمل بعد الردّ يُرى
-      setTimeout(function () { fixAll(B1, state(p), ccOn); lateCheck(); try { po.disconnect(); } catch (e) { /* مُنفصلٌ سلفاً */ } }, 2000);
+      setTimeout(function () {
+        if (job.hide && !job.applied) back();
+        keys(); lateCheck(); try { po.disconnect(); } catch (e) { /* مُنفصلٌ سلفاً */ }
+        if (MEM.cap === job) MEM.cap = null;
+      }, 2000);
       if (bad) return { ok: false, reason: "breaker", why: MEM.stop.why, act: act };
       var out = res.body.trim()[0] === "{" ? toEvents(res.body) : null;
       if (!out) return { ok: false, reason: "not-json3" };
@@ -374,11 +395,12 @@
     } finally {
       // ⛔ رميةٌ بعد الإجبار لا تترك لغةَ الترجمة مكتوبةً ولا الوحدةَ محمَّلة (مراجعة #4)
       if (forced && !restored) {
-        restoreAct(p, B0, ccOn, prevTrack);
-        fixAll(B1, state(p), ccOn);
-        setTimeout(function () { fixAll(B1, state(p), ccOn); }, 2000);
+        back(); job.restored = true;
+        keys();
+        setTimeout(function () { keys(); if (MEM.cap === job) MEM.cap = null; }, 2000);
       }
       if (!keepPo) { try { po.disconnect(); } catch (e) { /* مُنفصلٌ سلفاً */ } }
+      if (!keepPo && !(forced && !restored) && job && MEM.cap === job) MEM.cap = null;
     }
   }
 
@@ -393,6 +415,9 @@
     MEM.showing = true;
     try { return await showRun(a || {}); } finally { MEM.showing = false; }
   }
+  // ⭐ عربيّةٌ «معروضةٌ سلفاً» **أظهرناها نحن** لتشغيلٍ سبق على الفيديو نفسِه (تبديلُ «النص العربي») ⇐ يبقى سجلُّها: ما كان قبل الدبلجة —
+  // ⛔ ~~يُكتب فوقه «لا شيءَ يُعاد»~~ فلم يكن «أوقف الدبلجة» بعد التبديل يُعيد ترجمتَك كما كانت (أذنُ المالك 2026-11-02)
+  function showAlready(v) { return MEM.show && MEM.show.v === v && MEM.show.set ? MEM.show : { v: v, set: false }; }
   async function showRun(a) {
     var p = player(), tIn = performance.now();
     if (!p || typeof p.setOption !== "function" || typeof p.getOption !== "function" || typeof p.loadModule !== "function") return { ok: false, reason: "no-player" };
@@ -410,7 +435,7 @@
     // المسارُ الذي يُلتقط ملفُّه: المعروضُ سلفاً إن كانت العربيّةُ معروضة (ما يراه المستخدم هو ما يُنطق)، وإلا مصدرُنا
     var ql = already ? str(cur && cur.languageCode) : str(a.ql || a.code), qk = already ? (cur && cur.kind === "asr" ? "asr" : "") : (a.qk != null ? str(a.qk) : a.asr ? "asr" : "");
     var mkey = a.v + "|" + ql + "|" + qk, match = arMatch(a.v, ql, qk), hit = MEM.ar[mkey] || null;
-    if (already && hit) { MEM.show = { v: a.v, set: false }; return { ok: true, how: "already", events: hit.events, via: "cached" }; }
+    if (already && hit) { MEM.show = showAlready(a.v); return { ok: true, how: "already", events: hit.events, via: "cached" }; }
     // ⛔ القاطعُ لا يُجبر بعده أحداً — ⭐ **إلا أنّ العربيّة المعروضة سلفاً تُقرأ كما تظهر بلا طلب** (⛔ ~~«رفض يوتيوب» وهي على الشاشة~~) —
     // **ما لم يكن القاطعُ إعادةَ ضبطٍ منّا رُفضت** (`gone`): المشغّلُ أفرغ الشاشةَ قبل أن يطلب، فلا ما يُقرأ (تحقّقُ الجولة الثالثة)
     if (MEM.stop) {
@@ -430,7 +455,7 @@
         while (performance.now() - tw < 2500) { await delay(150); if (lastOutcome(match, since) === true) { last = true; break; } }
       }
       if (last === false || (last == null && mineGone)) return { ok: false, reason: "gone", why: MEM.stop.why };
-      MEM.show = { v: a.v, set: false };
+      MEM.show = showAlready(a.v);
       return { ok: true, how: "already", events: null, via: "", why: "breaker" };
     }
     var ccOn = B0.aria === "true", prevTrack;
@@ -446,7 +471,9 @@
       try { po.observe({ type: "resource" }); } catch (e) { po = null; }
     }
     var B1 = { ls: B0.ls, ss: B0.ss };
-    MEM.show = already ? { v: a.v, set: false } : { v: a.v, set: true, B0: B0, B1: B1, ccOn: ccOn, prevTrack: prevTrack };
+    // سجلٌّ موروثٌ للفيديو نفسِه (تبديلُ المصدر) والعربيّةُ غيرُ معروضة: المعروضُ الآن اختيارُ المستخدم (B0) — ومفاتيحُ ما قبل الدبلجة من سجلّه (keysBefore)
+    var prior = !already && MEM.show && MEM.show.v === a.v && MEM.show.set ? MEM.show : null;
+    MEM.show = already ? showAlready(a.v) : { v: a.v, set: true, B0: B0, B1: prior ? keysBefore(prior, p) : B1, ccOn: ccOn, prevTrack: prevTrack };
     var tap = null, how = "already", target = null, A1 = null, refused = 0;
     try {
       if (already) target = trackBack(p, cur);
@@ -596,19 +623,32 @@
     var lang = t ? String((t.translationLanguage && t.translationLanguage.languageCode) || (s.ar && !t.translationLanguage ? t.languageCode : "") || "") : "";
     return !!btn && btn.getAttribute("aria-pressed") === "true" && lang.split("-")[0] === "ar";
   }
-  function fixOurs(s, p) {
-    if (!s.A) return fixAll(s.B1, state(p), s.ccOn);
-    var cur = state(p), keep = { ls: {}, ss: {} };
-    ["ls", "ss"].forEach(function (f) { changed(s.A[f] || {}, cur[f] || {}).forEach(function (k) { keep[f][k] = 1; }); });
-    // ما تغيّر عن لقطة ما بعد الإجبار (A) غيّره غيرُنا ⇒ يُستثنى: اللقطةُ «الحاليّة» نفسُها تُعطى له فلا يرى fixAll فرقاً
+  // مفاتيحُ ما قبل الدبلجة كما تُعاد: سجلُّها (B1) وفوقها ما غيّره غيرُنا بعد كتابتنا — ما تغيّر عن لقطة ما بعد الإجبار (A) يُستثنى: اللقطةُ
+  // «الحاليّة» نفسُها تُعطى له فلا يرى fixAll فرقاً · ⭐ **ويبدأ منها سجلُّ تشغيلٍ ورث العرضَ ولم يجد العربيّةَ معروضة** (المراجعةُ الخامسة
+  // لتبديل المصدر) — ⛔ ~~من المفاتيح الحاليّة~~: فيها ما كتبناه نحن (اللغةُ «ar») فكان الإيقافُ يُبقيها بدل ما كان قبل الدبلجة
+  function keysBefore(s, p) {
     var B1 = { ls: Object.assign({}, s.B1.ls), ss: Object.assign({}, s.B1.ss) };
-    ["ls", "ss"].forEach(function (f) { Object.keys(keep[f]).forEach(function (k) { if ((cur[f] || {})[k] == null) delete B1[f][k]; else B1[f][k] = cur[f][k]; }); });
-    return fixAll(B1, cur, s.ccOn);
+    if (!s.A) return B1;
+    var cur = state(p);
+    ["ls", "ss"].forEach(function (f) { changed(s.A[f] || {}, cur[f] || {}).forEach(function (k) { if ((cur[f] || {})[k] == null) delete B1[f][k]; else B1[f][k] = cur[f][k]; }); });
+    return B1;
+  }
+  function fixOurs(s, p) {
+    return fixAll(keysBefore(s, p), state(p), s.ccOn);
   }
   function hide() {
     var s = MEM.show, p = player();
     MEM.show = null;
     if (!s || !s.set || !p) return { ok: true, how: "none" };
+    // ⭐ التقاطٌ في الطريق يأخذ الإعادةَ (`MEM.cap` في captureRun): قبل أن يُعيد لقطتَه فالمعروضُ إجبارُه لا اختيارُ المستخدم، وإعادتُنا
+    // الآن تمحوها إعادتُه بعدنا ⇒ يُعيد هو إلى ما قبل الدبلجة · وبعد أن أعادها ⇒ الآن، ولا يُعيد هو لقطتَه بعدها
+    if (MEM.cap) {
+      MEM.cap.hide = s;
+      if (!MEM.cap.restored) return { ok: true, how: "after-capture" };
+      MEM.cap.applied = true;
+      var act0 = stillOurs(p, s) ? restoreAct(p, s.B0, s.ccOn, s.prevTrack) : "user-took-over";
+      return { ok: true, how: act0 + "|capture", restored: fixOurs(s, p) };
+    }
     var act = stillOurs(p, s) ? restoreAct(p, s.B0, s.ccOn, s.prevTrack) : "user-took-over";
     var fixed = fixOurs(s, p);
     setTimeout(function () { fixOurs(s, p); }, 2000);

@@ -5512,6 +5512,18 @@ function dubStop(why) {
   dubAzFree(run);
 }
 
+// ⭐ ما أظهره تشغيلٌ من عربيّةٍ يرثه تشغيلٌ حلّ محلَّه للفيديو نفسِه (تبديلُ «النص العربي») — ⛔ ~~إيقافُ السلف يُعيد ما كان قبل
+// الدبلجة~~ (أذنُ المالك 2026-11-02 بنصّه: «عند تغيير النص العربي تتغير لغه الترجمه وتصبح انجليزيه المفترض ماتتغير تضل دائما عربي او
+// علي نفس اختياري») ⇒ **يُعاد عند الإيقاف وحدَه**، وعالمُ الصفحة يحفظ ما كان قبل الدبلجة حتى ذلك الحين · ⛔ ~~ومن أيِّ سلفٍ للفيديو نفسِه~~
+// (المراجعةُ الثالثة): **ممّن أزاحه تبديلُ المصدر وحدَه** — تشغيلٌ أوقفه المستخدمُ وعرضُه في الطريق ثمّ بدأ غيرَه كان يُورِثه عربيّتَه · ⛔ ~~بسبب
+// إيقافه وحدَه (`restart`)~~ (الرابعة): **بسلسلةٍ لم يقطعها إيقاف** — تبديلٌ ثمّ «أوقف الدبلجة» ثمّ بدءٌ جديد كان يرث عربيّةَ الأوّل. `heirOf`:
+// أرقامُ التشغيلات التي أزاحها هذا التشغيلُ وسلفُه وهي تعمل؛ فإيقافُ المستخدم أو الرفضُ بينهما يبدأ سلسلةً فارغة
+function dubHandOver(from, to) {
+  if (!from || !to || from === to || !from.shown || !to.heirOf || !to.heirOf.has(from.token) || from.vid !== to.vid || (to.state !== "preparing" && to.state !== "running")) return false;
+  from.shown = false; to.shown = true;
+  return true;
+}
+
 // ما أظهرناه من ترجمةٍ عربيّة يُعاد عند الإيقاف أو الرفض (عالمُ الصفحة يعرف ما غيّره وحدَه)
 function dubUnshow(run) {
   if (!run.shown) return;
@@ -5593,7 +5605,7 @@ async function dubPrepare(run) {
         run.step = "show";
         const sh = await dubMainCall("show", { v: run.vid, code: src.code, asr: src.asr, ql: src.ql, qk: src.qk, dl: 19000 }, 20000);
         if (sh.ok && sh.how !== "already") run.shown = true;      // قبل live(): إيقافٌ أثناء الانتظار يُعيدها
-        if (!live()) { dubUnshow(run); return; }
+        if (!live()) { if (!dubHandOver(run, dub)) dubUnshow(run); return; }      // تبديلُ مصدرٍ أثناء العرض: يرثه التالي
         if (!sh.ok) return dubRefuse(run, sh.reason || "show", sh.why || "");
         // ⭐ الجولة الثالثة: **ملفُّ العربيّة كاملاً من ردّ طلب المشغّل نفسِه** (📐 XHR · json3 — صفرُ طلبٍ منّا) ⇒ وضعُ الجمل بقراءةٍ
         // مسبقة: يُنطق ما يُعرض نفسُه في موعده جملةً كاملة — وما لم يُلتقط يُقرأ كما يظهر سطراً سطراً (وضعُ العرض) كما كان
@@ -6368,15 +6380,19 @@ function dubStart(o) {
   if (!vid) return { ok: false, state: "refused", reason: "no-video" };
   const opts = dubOpts(o);
   if (dub && dub.vid === vid && dub.opts.source === opts.source && (dub.state === "preparing" || dub.state === "running")) return dubSetOptions(opts);
+  // يرث التشغيلُ الجديد ما أظهره سلفُه للفيديو نفسِه (`dubHandOver`) — يُؤخذ قبل إيقاف السلف فلا يُعيد هو ما كان قبل الدبلجة
+  const prev = dub, pred = prev && prev.vid === vid && (prev.state === "preparing" || prev.state === "running") ? prev : null;
+  const inherit = !!(pred && pred.shown), heirOf = pred ? new Set([...(pred.heirOf || []), pred.token]) : new Set();
+  if (inherit) pred.shown = false;
   dubStop("restart");
   const run = dub = { token: ++dubToken, vid, opts, state: "preparing", step: "facts", reason: "", detail: "", hold: "",
     kind: "", spokenLang: "", sents: null, idx: 0, spoken: 0, skipped: 0, lost: 0, bgSkipped: 0, drops: 0, inflight: 0,
     cur: null, timer: 0, cps: DUB_CPS, lastCt: -1, lastAt: 0, movedAt: performance.now(), sync: true, lags: [], dl: null,
-    warm: true, off: 0, offAt: 0, clockBusy: false, wasAd: false, mode: "", shown: false,
+    warm: true, off: 0, offAt: 0, clockBusy: false, wasAd: false, mode: "", shown: inherit,
     lastLine: "", lineAt: 0, grow: false, base: "", said: "", offerAt: 0, capWin: 3000, recent: [], pending: null, seen: 0, trackLang: "",
     azOff: "", azWarn: "", azTts: 0, azTr: 0, cpsAz: DUB_CPS_AZ, azN: 0,
     trOff: "", trBusy: false, trFails: 0, trUntil: 0, blobs: new Set(), warmA: null, wait: null, waits: 0, waitGaveUp: -1, pauseCt: null, ytWhy: "",
-    behindAt: -Infinity, tails: [], leads: [], speeds: [], stallS: 0, seeked: false, cutIdx: null };
+    behindAt: -Infinity, tails: [], leads: [], speeds: [], stallS: 0, seeked: false, cutIdx: null, heirOf };
   dubPrepare(run).catch((e) => dubRefuse(run, "threw", e?.message || e));
   return dubStatus();
 }

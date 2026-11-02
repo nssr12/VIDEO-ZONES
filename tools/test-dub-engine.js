@@ -1791,6 +1791,140 @@ const isPrefixOf = (said, cues) => {
     check("⭐ قفزٌ إلى الوراء يعبر إعلاناً مُدمَجاً أطولَ من الموضع ⇐ جملتُه في موعدها ولا إيقافَ للحاق — والفيديو يجري أو يُسحب موقوفاً",
       res.every((r) => r.at != null && Math.abs(r.at - r.unit) <= 1 && r.pauses === 0), res);
   }
+  {
+    // أذنُ المالك 2026-11-02 GG1 — بنصّه: «عند تغيير النص العربي تتغير لغه الترجمه وتصبح انجليزيه المفترض ماتتغير تضل دائما عربي او علي
+    // نفس اختياري». الترجمةُ قبل الدبلجة إنجليزيّةٌ أو مطفأة ⇐ «ترجمة يوتيوب» تُظهر العربيّة ⇐ تبديلُ «النص العربي» إلى «جهازك» ⇐ **تبقى
+    // العربيّةُ معروضة** — ⛔ ~~إيقافُ السلف يُعيد ما كان قبل الدبلجة~~ — ثمّ العودةُ إلى «ترجمة يوتيوب» ثمّ «أوقف الدبلجة» ⇐ **تعود الترجمةُ
+    // كما كانت قبل الدبلجة** ولاصقتُها بحروفها
+    const arShown = (e) => { const t = e.p.getOption("captions", "track") || {}; return !!(t.translationLanguage && t.translationLanguage.languageCode === "ar"); };
+    const res = [];
+    for (const before of ["en", "off"]) {
+      const e = makeEnv(before === "en" ? { arTrack: arTrack(40, 2, 2), ccOn: { languageCode: "en", kind: "asr" } } : { arTrack: arTrack(40, 2, 2) });
+      // الإنجليزيّةُ معروضةٌ ولاصقتُها «en» — كما يكتبها يوتيوب لمن اختارها (البيتُ يبدأ بـ«ar» لغيره)
+      if (before === "en") e.local.setItem(e.STICKY, JSON.stringify({ data: "en", expiration: 1, creation: 1 }));
+      const st0 = dataOf(e.local.getItem(e.STICKY));
+      const s1 = await startRun(e, { source: "yt" });
+      const a1 = arShown(e);
+      const s2 = await startRun(e, { source: "device" });
+      await sleep(1500);
+      const a2 = arShown(e);
+      const s3 = await startRun(e, { source: "yt" });
+      const a3 = arShown(e);
+      e.api.dubStop("user");
+      await sleep(800);
+      const t = e.p.getOption("captions", "track") || {};
+      const back = before === "en" ? t.languageCode === "en" && !t.translationLanguage : e.calls[e.calls.length - 1] === "unload:captions" || !t.languageCode;
+      res.push({ before, states: [s1.state, s2.state, s3.state], a1, a2, a3, back, sticky: dataOf(e.local.getItem(e.STICKY)) === st0 });
+    }
+    check("⭐ تبديلُ «النص العربي» لا يغيّر لغةَ الترجمة المعروضة — و«أوقف الدبلجة» يُعيد ما كان قبل الدبلجة",
+      res.every((r) => r.states.every((x) => x === "running") && r.a1 && r.a2 && r.a3 && r.back && r.sticky), res);
+  }
+  {
+    // مراجعةُ تبديل المصدر (2026-11-02) GG2 — بعد التبديل إلى «جهازك» يُوقف المستخدمُ الدبلجةَ **أثناء التقاط المصدر الجديد**: قبل أن يُعيد
+    // الالتقاطُ لقطتَه (والمعروضُ إجبارُه) أو أثناء طلبنا بعدها ⇐ تعود الترجمةُ كما كانت قبل الدبلجة ولاصقتُها بحروفها — ⛔ ~~يُعيدها الإيقاف ثمّ
+    // يُعيد الالتقاطُ لقطتَه (العربيّةَ الموروثة) ومفاتيحَها: العربيّةُ باقيةٌ بعد الإيقاف ولاصقتُها «ar»~~
+    const res = [];
+    for (const before of ["en", "off"]) for (const when of ["forcing", "fetch"]) {
+      const e = makeEnv(Object.assign({ arTrack: arTrack(40, 2, 2), ourDelay: 3000 }, before === "en" ? { ccOn: { languageCode: "en", kind: "asr" } } : {}));
+      if (before === "en") e.local.setItem(e.STICKY, JSON.stringify({ data: "en", expiration: 1, creation: 1 }));
+      const st0 = dataOf(e.local.getItem(e.STICKY));
+      await startRun(e, { source: "yt" });
+      e.api.dubStart({ source: "device" });
+      if (when === "forcing") await until(() => e.api.dubStatus().step === "capture", 10000);
+      else await until(() => e.fetched.length > 0, 20000);
+      e.api.dubStop("user");
+      await sleep(when === "forcing" ? 9000 : 6000);                       // حتى يفرغ الالتقاطُ ويمضي مؤقّتُه (ثانيتان)
+      const t = e.p.getOption("captions", "track") || {};
+      res.push({ before, when, back: before === "en" ? t.languageCode === "en" && !t.translationLanguage : !t.languageCode,
+        sticky: dataOf(e.local.getItem(e.STICKY)) === st0, track: t.languageCode ? t.languageCode + (t.translationLanguage ? ">" + t.translationLanguage.languageCode : "") : "off" });
+    }
+    check("⭐ «أوقف الدبلجة» أثناء التقاط المصدر الجديد ⇐ تعود الترجمةُ كما كانت قبل الدبلجة ولاصقتُها بحروفها", res.every((r) => r.back && r.sticky), res);
+  }
+  {
+    // المراجعةُ الثانية لتبديل المصدر (2026-11-02) GG3 — الإنجليزيّةُ قبل الدبلجة · «ترجمة يوتيوب» تُظهر العربيّة · **المستخدمُ يختار الفرنسيّة أو
+    // يُطفئ الترجمةَ بيده** · ثمّ «جهازك» ثمّ «أوقف الدبلجة» أثناء الالتقاط ⇐ **يبقى اختيارُه** — ⛔ ~~يعود إلى الإنجليزيّة التي كانت قبل الدبلجة~~
+    const res = [];
+    for (const pick of ["fr", "off"]) {
+      const e = makeEnv({ arTrack: arTrack(40, 2, 2), ourDelay: 3000, ccOn: { languageCode: "en", kind: "asr" } });
+      await startRun(e, { source: "yt" });
+      e.p.setOption("captions", "track", pick === "fr" ? { languageCode: "fr", kind: "" } : {});      // اختيارُه بيده أثناء الدبلجة
+      await sleep(500);
+      e.api.dubStart({ source: "device" });
+      await until(() => e.api.dubStatus().step === "capture", 10000);
+      e.api.dubStop("user");
+      await sleep(9000);
+      const t = e.p.getOption("captions", "track") || {};
+      res.push({ pick, track: t.languageCode ? t.languageCode + (t.translationLanguage ? ">" + t.translationLanguage.languageCode : "") : "off" });
+    }
+    check("⭐ اختيارُ المستخدم أثناء الدبلجة يبقى له بعد «أوقف الدبلجة» أثناء الالتقاط — لا يعود ما قبل الدبلجة", res.every((r) => r.track === r.pick), res);
+  }
+  {
+    // المراجعةُ الثالثة لتبديل المصدر (2026-11-02) GG4 — «أوقف الدبلجة» و«ترجمة يوتيوب» تُظهر العربيّةَ أوّلَ مرّة (ردُّ المشغّل بطيء)، ثمّ «جهازك»
+    // قبل أن يعود الإظهار ⇐ **لا يرث الجديدُ عربيّةَ تشغيلٍ أوقفه المستخدم**: تعود الإنجليزيّةُ ولاصقتُها — ⛔ ~~تبقى العربيّةُ ولاصقتُها «ar» طوالَ
+    // دبلجة الجهاز~~
+    const SRC = "https://www.youtube.com/api/timedtext?v=VID&lang=en&kind=asr&pot=POT&c=WEB&xorb=2&fmt=json3";
+    const e = makeEnv({ arTrack: arTrack(40, 2, 2), ccOn: { languageCode: "en", kind: "asr" },
+      playerReq: (t) => (t.translationLanguage ? { url: SRC.replace("&pot=", "&tlang=ar&pot="), status: 200, size: 900, delay: 3000 } : { url: SRC, status: 200, size: 900 }) });
+    e.local.setItem(e.STICKY, JSON.stringify({ data: "en", expiration: 1, creation: 1 }));
+    const st0 = dataOf(e.local.getItem(e.STICKY));
+    e.api.dubStart({ source: "yt" });
+    await until(() => e.api.dubStatus().step === "show", 10000);
+    await sleep(300);
+    e.api.dubStop("user");
+    e.api.dubStart({ source: "device" });
+    await until(() => e.api.dubStatus().state === "running", 40000);
+    await sleep(3000);
+    const t = e.p.getOption("captions", "track") || {};
+    const got = { state: e.api.dubStatus().state, track: t.languageCode ? t.languageCode + (t.translationLanguage ? ">" + t.translationLanguage.languageCode : "") : "off",
+      sticky: dataOf(e.local.getItem(e.STICKY)) === st0 };
+    check("⭐ تشغيلٌ أوقفه المستخدمُ وإظهارُه في الطريق لا يُورِث عربيّتَه لما بعده ⇐ تعود الإنجليزيّةُ ولاصقتُها", got.state === "running" && got.track === "en" && got.sticky, got);
+    e.api.dubStop("user");
+  }
+  {
+    // المراجعةُ الرابعة لتبديل المصدر (2026-11-02) GG5 — «ترجمة يوتيوب» تُظهر العربيّةَ أوّلَ مرّة (ردُّ المشغّل بطيء) ثمّ «جهازك» قبل أن يعود
+    // الإظهار: **(أ) بلا إيقاف** ⇐ يرثها «جهازك» فتبقى العربيّة، ثمّ «أوقف الدبلجة» يُعيد الإنجليزيّة · **(ب) ثمّ «أوقف الدبلجة» ثمّ «جهازك» ثانيةً**
+    // ⇐ لا يرثها أحد: تعود الإنجليزيّةُ ولاصقتُها — ⛔ ~~إيقافٌ بين التبديلين لا يقطع الإرث فتبقى العربيّةُ طوالَ دبلجة الجهاز~~
+    const SRC = "https://www.youtube.com/api/timedtext?v=VID&lang=en&kind=asr&pot=POT&c=WEB&xorb=2&fmt=json3";
+    const trk = (e) => { const t = e.p.getOption("captions", "track") || {}; return t.languageCode ? t.languageCode + (t.translationLanguage ? ">" + t.translationLanguage.languageCode : "") : "off"; };
+    const res = [];
+    for (const leg of ["switch", "user-stop"]) {
+      const e = makeEnv({ arTrack: arTrack(40, 2, 2), ccOn: { languageCode: "en", kind: "asr" },
+        playerReq: (t) => (t.translationLanguage ? { url: SRC.replace("&pot=", "&tlang=ar&pot="), status: 200, size: 900, delay: 3000 } : { url: SRC, status: 200, size: 900 }) });
+      e.local.setItem(e.STICKY, JSON.stringify({ data: "en", expiration: 1, creation: 1 }));
+      const st0 = dataOf(e.local.getItem(e.STICKY));
+      e.api.dubStart({ source: "yt" });
+      await until(() => e.api.dubStatus().step === "show", 10000);
+      await sleep(300);
+      e.api.dubStart({ source: "device" });
+      if (leg === "user-stop") { await sleep(200); e.api.dubStop("user"); e.api.dubStart({ source: "device" }); }
+      await until(() => e.api.dubStatus().state === "running", 40000);
+      await sleep(3000);
+      const during = trk(e);
+      e.api.dubStop("user");
+      await sleep(3000);
+      res.push({ leg, during, after: trk(e), sticky: dataOf(e.local.getItem(e.STICKY)) === st0 });
+    }
+    check("⭐ الإرثُ بسلسلة تبديلٍ لم يقطعها إيقاف — بلا إيقافٍ تبقى العربيّة، وبعد إيقافٍ بين التبديلين لا يرثها أحد",
+      res[0].during === "en>ar" && res[0].after === "en" && res[0].sticky && res[1].during === "en" && res[1].after === "en" && res[1].sticky, res);
+  }
+  {
+    // المراجعةُ الخامسة لتبديل المصدر (2026-11-02) GG6 — الإنجليزيّةُ ولاصقتُها «en» قبل الدبلجة · «ترجمة يوتيوب» · **المستخدمُ يُطفئ الترجمةَ بيده** ·
+    // «جهازك» · «ترجمة يوتيوب» ثانيةً (العربيّةُ غيرُ معروضة فتُظهرها) · «أوقف الدبلجة» ⇐ **تبقى مطفأةً كما اختار، ولغتُه اللاصقةُ «en» كما كانت**
+    // — ⛔ ~~«ar»: بدأ السجلُّ الثاني من المفاتيح الحاليّة وفيها ما كتبناه~~
+    const e = makeEnv({ arTrack: arTrack(40, 2, 2), ccOn: { languageCode: "en", kind: "asr" } });
+    e.local.setItem(e.STICKY, JSON.stringify({ data: "en", expiration: 1, creation: 1 }));
+    const st0 = dataOf(e.local.getItem(e.STICKY));
+    const s1 = await startRun(e, { source: "yt" });
+    e.p.setOption("captions", "track", {});                                   // يُطفئها بيده
+    await sleep(500);
+    const s2 = await startRun(e, { source: "device" });
+    const s3 = await startRun(e, { source: "yt" });
+    e.api.dubStop("user");
+    await sleep(3000);
+    const t = e.p.getOption("captions", "track") || {};
+    const got = { states: [s1.state, s2.state, s3.state], after: t.languageCode ? t.languageCode : "off", sticky: dataOf(e.local.getItem(e.STICKY)), st0 };
+    check("⭐ تبديلٌ ذهاباً وإياباً بعد إطفاء الترجمة باليد ⇐ تبقى مطفأةً واللغةُ اللاصقةُ كما كانت قبل الدبلجة", got.states.every((x) => x === "running") && got.after === "off" && got.sticky === st0, got);
+  }
 
   console.log("\n[٢١] مراجعةُ الجولة الثالثة — توقيتُ المحرّك: تشغيلُ المستخدم يُحترم · إيقافٌ واحدٌ للجملة · لا انتظارَ بلا مترجم · قفزٌ أثناء الانتظار · استئنافٌ صادق");
   // جملةٌ بعيدةٌ لم يُجلب صوتُها، يُقفز إليها فتحلّ الآن — `slowOf(text)` يبطّئ طلبَ صوتها وحدَه
