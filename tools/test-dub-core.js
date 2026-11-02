@@ -227,6 +227,8 @@ vm.runInContext(CONSTS.map((n) => `var ${n} = ${constOf(n)};`).join("\n") + "\n"
     check("[٤] ⭐ قيلت كلُّها ثمّ إيقافٌ في نافذتها ⇐ لا تُعاد — ⛔ ~~«dubResyncAt» يعيدها~~", ctx.dubResyncAt(RU, 11.3) === 0 && ctx.dubResumeAt(RU, 11.3, ctx.dubResyncAt(RU, 11.3), 1, null) === 1);
     check("[٤] ⭐ قُطعت وسطَها والموضعُ في نصفها الأوّل ⇐ تُعاد من أوّلها (12 ث، قُطعت عند 4) — ⛔ ~~صمتٌ ثماني ثوانٍ~~", ctx.dubResumeAt(RU, 19, ctx.dubResyncAt(RU, 19), 2, 1) === 1);
     check("[٤] وبعد نصفها ⇐ التالية (لا تُعاد جملةٌ لا تلحق)", ctx.dubResumeAt(RU, 22, ctx.dubResyncAt(RU, 22), 2, 1) === 2);
+    // ⭐ تحقّقُ الجولة V1: قُطعت قبل نافذتها (بدأت تتمّةً قبل موعدها بـ0.8 ث أو بسبق العُشر) ⇐ تُعاد — ⛔ ~~تُسقط صامتةً لا تُعدّ~~
+    check("[٤] ⭐ قُطعت قبل نافذتها ⇐ تُعاد", ctx.dubResumeAt(RU, 9.4, ctx.dubResyncAt(RU, 9.4), 1, 0) === 0, ctx.dubResumeAt(RU, 9.4, ctx.dubResyncAt(RU, 9.4), 1, 0));
   }
 
   // ---------------------------------------------------------------- [٥] الصوت والجسر
@@ -571,6 +573,9 @@ vm.runInContext(CONSTS.map((n) => `var ${n} = ${constOf(n)};`).join("\n") + "\n"
     // ⭐ مراجعةُ الجولة #9: والقراءةُ كما تظهر لا انتظارَ فيها ولا لحاق — يُقال
     r = R(run({ kind: "display", ytWhy: "unhooked:fetch" }));
     check("[٩] ⭐ القراءةُ كما تظهر ⇐ يُقال «بلا إيقافٍ للفيديو ولا تسريعٍ فوق 1.4×»", /بلا إيقافٍ للفيديو ولا تسريعٍ فوق 1\.4×/.test(r.note), r.note);
+    // ⭐ تحقّقُ الجولة V7: وبسرعةٍ ثابتةٍ اختارها المستخدم ⇐ ⛔ ~~«ولا تسريعٍ فوق 1.4×» وكلُّ سطرٍ بـ2×~~
+    const rF = R(run({ kind: "display", rate: 2 }));
+    check("[٩] ⭐ القراءةُ كما تظهر بسرعةٍ ثابتة ⇐ «وبالسرعة التي اخترتها (2×)» لا «فوق 1.4×»", /بالسرعة التي اخترتها \(2×\)/.test(rF.note) && !/فوق 1\.4×/.test(rF.note), rF.note);
     // ⭐ مراجعةُ الجولة #8: لكلّ سببٍ كلماتُه — ⛔ ~~«unhooked:fetch» بحروفها~~ · والرقمُ بين قوسين
     check("[٩] ⭐ سببُ تعذّر القراءة المسبقة بالعربيّة لا برمزه", /لم يمرّ بمراقبتنا/.test(r.note) && !/unhooked/.test(r.note), r.note);
     r = R(run({ kind: "display", ytWhy: "status:403" }));
@@ -587,6 +592,8 @@ vm.runInContext(CONSTS.map((n) => `var ${n} = ${constOf(n)};`).join("\n") + "\n"
     check("[٩] ⭐ ورفضٌ بلا مفتاح مترجم · ونسخةٌ قديمةٌ في الصفحة · وتأخّرُ المشغّل ⇐ لكلٍّ كلماتُه",
       /بلا مفتاح مترجم/.test(RF("az-trnokey")) && /نسخةٌ أقدم/.test(RF("main-old")) && /تأخّر المشغّل/.test(RF("late")) &&
       !/تعذّرت الدبلجة: /.test(RF("az-trnokey") + RF("main-old") + RF("late")), [RF("az-trnokey"), RF("main-old"), RF("late")]);
+    // ⭐ تحقّقُ الجولة V4: إعادةُ ضبط العربيّة المعروضة رُفضت فاختفت ⇐ يُقال بعينه
+    check("[٩] ⭐ «gone» ⇐ «اختفت من الفيديو» ولا يُعاد اليوم", /اختفت من الفيديو/.test(RF("gone")) && !/تعذّرت الدبلجة: /.test(RF("gone")), RF("gone"));
 
     // ⭐ الجولة الثالثة — دوالُّ البوب-أب الحقيقيّة على تخزينٍ مزيّف: تبديلُ المصدر يُعيد البدء (ملاحظةُ المالك ١) · المنطقةُ تُتحقَّق
     // قبل الحفظ (168ح #15) · والصوتُ يُكتب في خانة محرّكه وحدَها (168ح #17)
@@ -690,6 +697,29 @@ vm.runInContext(CONSTS.map((n) => `var ${n} = ${constOf(n)};`).join("\n") + "\n"
     const raced = await Promise.race([qctx.fillDubPrefsUI().then(() => "done"), new Promise((r) => setTimeout(() => r("waiting"), 800))]);
     check("[٩] ⭐ شبكةُ Azure مسدودة ⇐ تجهزُ النافذةُ فوراً بالصوت المحفوظ — ⛔ ~~تنتظر فلا يُستمع لأيّ ضابط~~", raced === "done" &&
       q$("dubVoice").value === "ar-SA-ZariyahNeural" && q$("dubVoice").dataset.engine === "azure", { raced, voice: q$("dubVoice").value });
+    // ⭐ تحقّقُ الجولة V5: اختار المستخدمُ «حامد» من قائمة Azure المعروضة ثمّ أعادت «احفظ واختبر» ملءَها بما حفظته قبلُ ⇐ ⛔ ~~«زارية» ثانيةً~~
+    q$("dubVoice").value = "ar-SA-HamedNeural";
+    await Promise.race([qctx.fillDubAzVoiceSelect({ key: "abcDEF0123456789abcdef0123456789", region: "uaenorth", voice: "ar-SA-ZariyahNeural" }, true), new Promise((r) => setTimeout(r, 300))]);
+    check("[٩] ⭐ ملءُ قائمة Azure ثانيةً يُبقي ما اختاره المستخدم", q$("dubVoice").value === "ar-SA-HamedNeural", q$("dubVoice").value);
+    // ⭐ تحقّقُ الجولة الثاني W2 — وإرجاعُ #69 بعد حفظٍ فشل (`fillDubPrefsUI`) يُعيد المحفوظ — ⛔ ~~يُبقي صوتاً لم يُحفظ والمحرّكُ يتكلّم بغيره~~
+    q$("dubVoice").value = "ar-SA-HamedNeural";
+    await Promise.race([qctx.fillDubPrefsUI(), new Promise((r) => setTimeout(r, 300))]);
+    check("[٩] ⭐ إرجاعُ الضوابط من التخزين ⇐ قائمةُ Azure على الصوت المحفوظ", q$("dubVoice").value === "ar-SA-ZariyahNeural", q$("dubVoice").value);
+    // ⭐ تحقّقُ الجولة V6: تبديلُ المحرّك إلى Azure والشبكةُ مسدودة، ثمّ تغييرُ الحجم ⇐ يُرسل فوراً — ⛔ ~~ينتظر قائمةَ الأصوات ست ثوانٍ في السلسلة~~
+    qctx.dubLast = { ok: true, state: "running", source: store.settings.dub.source };
+    q$("dubEngine").value = "azure";
+    qctx.onDubPrefChange({ target: { id: "dubEngine" } });
+    q$("dubVolume").value = "40";
+    const nV = sent.length;
+    const vRace = await Promise.race([qctx.onDubPrefChange({ target: { id: "dubVolume" } }).then(() => "sent"), new Promise((r) => setTimeout(() => r("waiting"), 800))]);
+    check("[٩] ⭐ تغييرٌ بعد تبديل المحرّك والشبكةُ مسدودة ⇐ يُحفظ ويُرسل فوراً", vRace === "sent" && sent.length > nV && sent[sent.length - 1].opts.volume === 0.4,
+      { vRace, last: sent[sent.length - 1] && sent[sent.length - 1].opts.volume });
+    // ⭐ ونيّةُ إعادة البدء تُعرف لحظةَ التغيير لا حين يحين دورُه في السلسلة
+    q$("dubSource").value = store.settings.dub.source === "yt" ? "device" : "yt";
+    const pS = qctx.onDubPrefChange({ target: { id: "dubSource" } });
+    const intent = vm.runInContext("dubRestartTo", qctx);
+    await pS;
+    check("[٩] ⭐ تبديلُ المصدر ⇐ «يُعاد البدءُ» معروفٌ في اللحظة نفسِها", intent === q$("dubSource").value, { intent, chosen: q$("dubSource").value });
   }
 
   console.log(`\n${fail ? "❌" : "✅"} نجح ${pass} / فشل ${fail}\n`);

@@ -4960,6 +4960,7 @@ const DUB_SEG_CAP_M = 25;           // 🎯 وسقفُها بالكلمات
 const DUB_SEG_END_PAD = 500;        // 🎯 نافذةُ الجملة الأخيرة: نهايتُها + نصف ثانية
 const DUB_BRIDGE_MAX = 20000000;    // 🎯 حدُّ طول الردّ من عالم الصفحة (حرفاً)
 const DUB_STABLE_MS = 700;          // 🎯 سطرٌ يكبر (roll-up) يُعدّ مكتملاً إن سكن هذا القدر
+const DUB_NOLINES_MS = 20000;       // 🎯 القراءةُ كما تظهر بلا سطرٍ عربيٍّ هذا القدر ⇐ يُقال (لعلّ الترجمةَ اختفت) — لا «يُدبلج» صامتاً
 const DUB_HELLO = "بدأتِ الدبلجة";
 // ── 168ح — أصواتُ Azure العصبيّة بمفتاح المالك (طلبُه 2026-11-01: «ممتاز طيب الان نبدا ب Azure») ──────────
 const DUB_AZ_FORMAT = "audio-24khz-48kbitrate-mono-mp3";   // 📄 مخرجٌ صغير: نحو 24KB لأربع ثوانٍ
@@ -5183,9 +5184,12 @@ function dubResyncAt(sents, ct) {
 // ⭐ الاستئنافُ بعد إيقافٍ أو تجمّد — **لا بعد قفز** (مراجعةُ الجولة #5 · #7) — خالص: ⛔ ~~يُعاد نطقُ جملةٍ قيلت كلُّها~~ ⇒ لا رجوعَ إلى ما قبل
 // الموضع (`idx`) · **إلا جملةً قطعناها وسطَها** (`cut` — صوتُ الجهاز لا يتوقّف ويكمل): ⛔ ~~صمتٌ حتى التي بعدها~~ وقد تطول المقاطعُ حتى
 // 15 ث ⇒ تُعاد من أوّلها ما دام الموضعُ في نصف نافذتها الأوّل وقبل حدّ التخطّي — فتُلحق بسرعة اللحاق
+// ⛔ ~~والموضعُ في نافذتها~~ (تحقّقُ الجولة): التتمّةُ تبدأ قبل نافذتها بـ0.8 ث، والسبقُ عُشرٌ لكلّ جملة — إيقافٌ هناك كان يُسقطها صامتةً ⇒
+// **منذ أبكر ما قد تبدأ** — ⛔ ~~بلا حدٍّ أدنى~~ (تحقّقُ الجولة الثاني): جملةٌ أبعدُ من ذلك أمام الموضع كانت تُقفز إليها فيصمت ما بينهما
 function dubResumeAt(sents, ct, i, idx, cut) {
   const c = cut != null ? sents[cut] : null;
-  if (c && ct >= c.start / 1000 && ct - c.start / 1000 <= Math.min(0.5 * c.win / 1000, DUB_BEHIND_MAX_S)) return cut;
+  const d = c ? ct - c.start / 1000 : 0;
+  if (c && d >= -(DUB_GLUE_S + DUB_LEAD_S) && d <= Math.min(0.5 * c.win / 1000, DUB_BEHIND_MAX_S)) return cut;
   return Math.max(i, idx);
 }
 
@@ -5472,7 +5476,10 @@ function dubSilence(run) {
   if (c.az) {
     clearTimeout(c.endT);
     if (c.audio) { try { c.audio.pause(); } catch { /* انتهى سلفاً */ } }
-    if (c.url) dubBlobFree(run, c.url);
+    // ⭐ مقطعٌ لم يُسمع بعدُ (يُجلب أو لم يبدأ) يُعاد إلى جملته — ⛔ ~~يُرمى ردُّه المدفوع ويُطلب ثانيةً عند كلّ تجمّد~~ (تحقّقُ الجولة الثاني:
+    // 📐 خمسةُ طلباتٍ لجملةٍ واحدة في أربع دوراتِ تجمّد) ⇒ يُعاد نطقُها بالردّ نفسِه بلا طلب
+    if (!c.started && c.clip && c.s && !c.s.clip && run.sents && run.sents[c.i] === c.s) { c.s.clip = c.clip; c.back = true; }
+    else if (c.url) dubBlobFree(run, c.url);
     run.cur = null;
     return;
   }
@@ -5480,8 +5487,13 @@ function dubSilence(run) {
   run.cur = c.started ? null : c;
 }
 
+// ⭐ ما أسكتناه قبل أن يُتمّ يُذكر فيُعاد بعد الاستئناف إن بقي نصفُ نافذته (مراجعةُ الجولة #5) — ⛔ ~~صوتُ الجهاز الذي بدأ وحدَه~~ (تحقّقُ الجولة):
+// ومقطعُ Azure يُجلب أو لم يُسمع بعد، ونطقُ الجهاز في الطابور، وما أسكتته سرعةٌ أو إعلان — كلُّها كانت تضيع صامتةً لا تُعدّ
 function dubHold(run, why) {
   run.hold = why;
+  const c = run.cur;
+  // ⛔ ~~وحاجزٌ أسكته قفزٌ قبلُ~~ (`stale` — تحقّقُ الجولة الثاني): جملةُ ما قبل القفز ليست ما يُقال الآن، فلا تُعاد بعده
+  if (c && !c.ended && !c.stale && c.i >= 0 && run.cutIdx == null) run.cutIdx = c.i;
   dubSilence(run);
   run.sync = true;
 }
@@ -5519,7 +5531,7 @@ function dubWhy(run) {
 
 // ⭐ ساعةُ المحتوى: زمنُ العنصر ناقصاً ما يسبق به زمنَ المشغّل (إعلانٌ مُدمَجٌ في الخادم يُطيل العنصر
 // ولا يُطيل المحتوى — مراجعة #6). يُقاس عند البدء وبعد كلّ إعلانٍ وقفزة وكلَّ خمس ثوانٍ، ونصفُ ثانيةٍ لا يُعدّ
-function dubClock(run) {
+function dubClock(run, shift) {
   if (run.clockBusy) return Promise.resolve();
   run.clockBusy = true;
   return dubMainCall("time", null, 400).then((t) => {
@@ -5527,8 +5539,12 @@ function dubClock(run) {
     if (!t || !t.ok) return;
     run.trackLang = typeof t.tr === "string" ? t.tr : "";
     if (t.ad) return;
-    const off = t.vt - t.pt;
-    run.off = Math.abs(off) > 0.5 ? off : 0;
+    // ⭐ وفي قياس نبضةِ ما بعد الإعلان (`shift`) يُنقل آخرُ موضعٍ قُرئ (`lastCt`) إلى الفارق الجديد — ⛔ ~~تراه النبضةُ التالية قفزةً إلى الوراء بطول
+    // الإعلان~~ (تحقّقُ الجولة الحادي عشر) فتُسكت وتبدأ من جديد · ⛔ ~~في كلّ قياس~~ (الثاني عشر): نبضةُ القفز تعمل بالفارق القديم، فتغيّرُه بعدها قفزةٌ
+    // هي ما يُصحّحها — قفزٌ يعبر إعلاناً مُدمَجاً كان يبقى بطوله بعيداً (صمتٌ أو جملةٌ قديمة) · ⛔ **ولا `readCt`**: ذاك موضعُ ما قبل الإعلان بفارقه
+    const off = t.vt - t.pt, nOff = Math.abs(off) > 0.5 ? off : 0;
+    if (shift && run.lastCt >= 0) run.lastCt -= nOff - (run.off || 0);
+    run.off = nOff;
   });
 }
 
@@ -5572,7 +5588,7 @@ async function dubPrepare(run) {
         // ⭐ «ترجمة يوتيوب كما تظهر»: المشغّلُ يعرض العربيّة ويطلبها بنفسه — **صفرُ طلبٍ منّا**، فلا نصَّ يُلتقط
         const src = dubYtSource(d, caps);
         if (!src) return dubRefuse(run, d.k, d.spoken || "");
-        if (f.stop) return dubRefuse(run, "breaker", f.stop);
+        // ⛔ ~~القاطعُ يُرفض هنا قبل `show`~~ (تحقّقُ الجولة): عالمُ الصفحة يعرف وحدَه أهي العربيّةُ على الشاشة فتُقرأ بصفر طلب — فيقرّر هو
         run.step = "show";
         const sh = await dubMainCall("show", { v: run.vid, code: src.code, asr: src.asr, ql: src.ql, qk: src.qk, dl: 19000 }, 20000);
         if (sh.ok && sh.how !== "already") run.shown = true;      // قبل live(): إيقافٌ أثناء الانتظار يُعيدها
@@ -5864,7 +5880,9 @@ function dubUtterAz(run, unit, rate, real, s) {
     if (c.ended) return;
     c.ended = true;
     clearTimeout(c.endT);
-    if (c.url) dubBlobFree(run, c.url);
+    // ⛔ ~~ويُحرَّر رابطُه دائماً~~ (تحقّقُ الجولة الثالث): مقطعٌ أُعيد إلى جملته (`back`) رابطُه لها — 📖 `pause()` قبل «playing» يرفض وعدَ
+    // `play()` فيصل هنا بعد الإعادة، فكانت الجملةُ تُعاد برابطٍ ميّتٍ فتضيع
+    if (c.url && !c.back) dubBlobFree(run, c.url);
     if (run.cur === c) run.cur = null;
     if (c.stale) return;
     if (ended && c.started) {
@@ -5893,7 +5911,8 @@ function dubUtterAz(run, unit, rate, real, s) {
     }, Math.max(0, (c.speech - a.currentTime) / (a.playbackRate || 1) * 1000 + 15));
   };
   const play = (res) => {
-    if (c.stale || dub !== run || run.state !== "running") { if (res && res.ok) dubBlobFree(run, res.url); fin(false, true); return; }
+    // أُعيد مقطعُه إلى جملته (`back`) ⇐ الردُّ لها لا يُحرَّر هنا
+    if (c.stale || dub !== run || run.state !== "running") { if (res && res.ok && !c.back) dubBlobFree(run, res.url); fin(false, true); return; }
     if (!res || !res.ok) {
       // (صُنِّف الرفضُ حين وصل — `dubAzFetch`) · ⛔ حدُّ الصفحة ممتلئ: تُعاد الجملةُ **في نبضة المؤقّت التالية** — ⛔ ~~fin ثمّ dubTick هنا~~: وعدُ الرفض محلولٌ سلفاً فكانت
       // النبضةُ تُعاد في سلسلة وعودٍ لا تُعطي الصفحةَ نَفَساً حتى يتّسع الحدّ — **جمّدت يوتيوب حتى ثانيتين ونصفٍ مراراً**
@@ -5923,6 +5942,7 @@ function dubUtterAz(run, unit, rate, real, s) {
     // ⭐ ويبدأ من أوّل الكلام لا من صمت أوّله (تصميمُ الجولة G3: نحو عُشر ثانيةٍ عند كلّ حدّ جملة)
     if (c.lead > 0.03 && c.lead < c.speech - 0.1) { try { a.currentTime = c.lead - 0.02; } catch { /* يبدأ من أوّله */ } }
     a.onplaying = () => {
+      if (c.stale) { try { a.pause(); } catch { /* انتهى */ } return; }   // أُسكت قبل أن يبدأ: لا يُعدّ ولا يُسمع
       c.arm();                                                      // ومع كلّ تشغيلٍ بعد توقّف: يُسلَّح ثانيةً
       if (c.started) return;
       c.started = true; c.t0 = performance.now(); run.warm = true; run.azWarn = "";
@@ -5938,9 +5958,14 @@ function dubUtterAz(run, unit, rate, real, s) {
   // ما جُلب مسبقاً بصوتٍ آخر لا يُشغَّل — يُحرَّر ويُطلب بالصوت المختار (مراجعة 168ح #6)
   const clip = s ? s.clip : null;
   if (s) s.clip = null;
-  const use = clip && clip.voice === run.opts.az.voice ? clip : null;
+  // ⛔ ~~بالصوت وحدَه~~ (تحقّقُ الجولة الثالث): مقطعٌ أُعيد إلى جملته لا يراه إسقاطُ `dubSetOptions` — فكان يُنطق بسرعةٍ ثابتةٍ تبدّلت
+  const use = clip && clip.voice === run.opts.az.voice && clip.rate === run.opts.rate ? clip : null;
   if (clip && !use) clip.p.then((r) => { if (r && r.ok) dubBlobFree(run, r.url); });
-  (use ? use.p : dubAzFetch(run, unit.text, dubAzAsk(run, real))).then(play);
+  // والمقطعُ محفوظٌ على النطق (`clip` · `s`) — فإن أُسكت قبل أن يُسمع يعود إلى جملته بردّه (`dubSilence`)
+  const mine = use || { p: null, res: null, voice: run.opts.az.voice, rate: run.opts.rate };
+  if (!use) mine.p = dubAzFetch(run, unit.text, dubAzAsk(run, real)).then((r) => { mine.res = r; return r; });
+  c.clip = mine; c.s = s || null;
+  mine.p.then(play);
 }
 
 // جملةُ الإحماء بصوت Azure — وهي أوّلُ اختبارٍ للمفتاح: مرفوضٌ ⇐ صوتُ الجهاز من البداية
@@ -5972,6 +5997,8 @@ function dubAzPrefetch(run, rate, cap) {
     const s = run.sents[i];
     // ⭐ فشلٌ عابرٌ يُسقط مقطعَه فيُطلب ثانيةً عبر الحدّ نفسِه (مرّةً) — ⛔ ~~يُشغَّل فاشلاً فتضيع جملتُه~~
     if (dubAzRetryable(run, s)) s.clip = null;
+    // ومقطعٌ طُلب بصوتٍ أو سرعةٍ ثابتةٍ غيرِ الجارية (أُعيد إلى جملته بعد تبديلهما) يسقط فيُطلب من الآن — لا حين تحلّ جملتُه
+    if (s.clip && (s.clip.voice !== run.opts.az.voice || s.clip.rate !== run.opts.rate)) dubClipDrop(run, s);
     if (!s.ar || s.clip) continue;
     if (!dubAzCan(performance.now())) return;
     // ⭐ مكانان في الدقيقة للجملة المستحقّة: ما بعد التالية لا يُطلب والسجلُّ فوق 16 — فالتي حلّت تجد مكاناً دائماً (تصميمُ الجولة)
@@ -6057,6 +6084,21 @@ function dubTickDisplay(run, p, v, now) {
   // ومسارٌ معروضٌ بغير العربيّة (اختار المستخدمُ لغةً أخرى بيده): يُقال لا يُسكت عنه بـ«يُدبلج» (مراجعة 2 #2)
   if (run.trackLang && dubPrim(run.trackLang) !== "ar") { run.hold = "cc-lang"; return; }
   const lines = dubCaptionLines(p);
+  // ⭐ شبكةُ صدق (تحقّقُ الجولة السادس): لا سطرَ على الفيديو منذ عشرين ثانية ⇐ «no-lines» — ⛔ ~~«يُدبلج» ولا ما يُقرأ~~ حين تختفي الترجمةُ برفضٍ لا
+  // نراه (طلبٌ كان في الطريق) أو يطول صمتُ الفيديو؛ يُقال ولا يُوقف شيئاً
+  // ⛔ ~~ساعةٌ باقيةٌ من قبل إيقافٍ أو إعلانٍ أو تبويبٍ مخفيّ~~ (تحقّقُ الجولة السابع): ما لم تقرأ فيه النبضاتُ الشاشةَ (عادت قبل هنا) **لا يُعدّ** — فلا
+  // «منذ عشرين ثانية» لحظةَ الاستئناف · ⛔ ~~ويُعاد العدُّ من الصفر~~ (الثامن): تجمّداتُ تحميلٍ متكرّرة كانت تمنع التنبيهَ أبداً ⇒ **تتوقّف الساعةُ ما لم
+  // يتقدّم المحتوى في الفجوة** (إيقاف · تجمّد) **وتُصفَّر إن تقدّم** (سرعةٌ فوق الحدّ · تبويبٌ مخفيّ · قفز): ⛔ ~~تتوقّف دائماً~~ (التاسع) فكانت سطورٌ عُرضت
+  // فيها ولم نقرأها تُحسب فراغاً ⇒ «منذ عشرين ثانية» بعد ثوانٍ من آخر سطر
+  // ⛔ ~~ويُحكم بتقدّم المحتوى وفارقُ الساعتين يُعاد قياسُه~~ (تحقّقُ الجولة العاشر): بعد إعلانٍ مُدمَجٍ في الخادم يكبر الفارقُ بطوله ولم يُقس بعد
+  // (`clockBusy`) فيبدو المحتوى تقدّم بطول الإعلان ⇒ «يُدبلج» على شاشةٍ فارغة عشرين ثانيةً بعد كلّ إعلان ⇒ **يُحكم في النبضة التالية بالفارق الجديد**
+  // (`dubMainCall` يعود خلال 400ms على الأكثر)
+  const ctD = v.currentTime - (run.off || 0), gap = !!run.readAt && now - run.readAt > 1000, defer = gap && run.clockBusy && !lines.length;
+  if (lines.length || !run.seenAt) run.seenAt = now;
+  else if (defer) { /* نبضةٌ واحدة */ }
+  else if (gap) run.seenAt = Math.abs(ctD - (run.readCt || 0)) > DUB_SEEK_S ? now : run.seenAt + (now - run.readAt);
+  else if (now - run.seenAt > DUB_NOLINES_MS && !run.hold) run.hold = "no-lines";   // ولا يحجب سبباً أدقّ (لا صوتَ في الجهاز)
+  if (!defer) { run.readAt = now; run.readCt = ctD; }
   const last = lines.length ? lines[lines.length - 1] : "";
   const prev = run.lastLine, moved = last !== prev;
   if (moved && prev && last.length > prev.length && last.startsWith(prev)) run.grow = true;
@@ -6102,7 +6144,7 @@ function dubCanTranslate(run) {
 
 // صوتُ جملةٍ يُطلب الآن ويُحفظ عليها (`clip`): النتيجةُ في `res` حين تصل — الجلبُ المسبق والانتظارُ يطلبان به وحدَه
 function dubAzClip(run, s, real) {
-  const clip = { p: null, res: null, voice: run.opts.az.voice };
+  const clip = { p: null, res: null, voice: run.opts.az.voice, rate: run.opts.rate };
   s.tries = (s.tries | 0) + 1;
   clip.p = dubAzFetch(run, s.ar, dubAzAsk(run, real)).then((r) => { clip.res = r; return r; });
   s.clip = clip;
@@ -6179,9 +6221,7 @@ function dubPauseHold(run, why) {
     run.hold = why;
     return;
   }
-  // صوتُ الجهاز يُقطع: جملتُه تُذكر فتُعاد بعد الاستئناف إن بقي نصفُ نافذتها (مراجعةُ الجولة #5)
-  if (c && !c.az && c.started && !c.ended && c.i >= 0 && run.cutIdx == null) run.cutIdx = c.i;
-  return dubHold(run, why);
+  return dubHold(run, why);                                       // صوتُ الجهاز يُقطع — وجملتُه تُذكر هناك (`dubHold`)
 }
 
 // ⭐ النبضة — بالترتيب المُقرّ (§٣): يتيم؟ · البوّابة؟ · مصغّرٌ أو تنقّل؟ (`dubWhy`) · **انتظارُنا؟** · إعلان؟ · متوقّفٌ أو
@@ -6212,7 +6252,10 @@ function dubTick(run) {
   run.lastCt = ct; run.lastAt = now;
   if (run.wait && dubWaitTick(run, v, now)) return;
   if (p.classList.contains("ad-showing") || p.classList.contains("ad-interrupting")) { run.wasAd = true; return dubHold(run, "ad"); }
-  if (run.wasAd) { run.wasAd = false; dubClock(run); }
+  // ⭐ أوّلُ نبضةٍ بعد الإعلان تقيس فارقَ الساعتين ولا تعمل — ⛔ ~~تعمل بالفارق القديم~~ (تحقّقُ الجولة الحادي عشر): بعد إعلانٍ مُدمَجٍ في الخادم بدا
+  // الموضعُ أبعدَ بطول الإعلان، فتُنطق جملةٌ من بعده أو يُوقَف الفيديو لها أو يُطلب صوتُها · **وكانت الجملةُ التي قطعها الإعلانُ لا تُعاد** (الحدُّ
+  // المعلَن) ⇒ تُعاد كما بعد إيقاف — **ما دام يوتيوب يُعيد زمنَ المحتوى مع رفع وسم الإعلان** (بعده بنبضةٍ ⇒ قفزٌ كما كان؛ لم يُقس)
+  if (run.wasAd) { run.wasAd = false; dubClock(run, true); return dubHold(run, "ad"); }
   // ⭐ موضعُ التوقّف يُحفظ: قفزةٌ والفيديو متوقّف (سحبُ الشريط) لا يراها مقارنُ النبضات — كلُّ نبضةٍ تتبع الموضع — ⛔ ~~فكان المقطعُ
   // الموقوفُ يكمل في الموضع الجديد~~ (تصميمُ الجولة R1) ⇒ أوّلُ نبضةٍ تجري تقارن بموضع التوقّف نفسِه
   if (v.paused) { if (run.pauseCt == null) run.pauseCt = ct; return dubPauseHold(run, "paused"); }
@@ -6220,7 +6263,9 @@ function dubTick(run) {
   if (rate > DUB_R_MAX) return dubHold(run, "speed");
   const jumpedPaused = run.pauseCt != null && Math.abs(ct - run.pauseCt) > DUB_SEEK_S;
   run.pauseCt = null;
-  if (jumpedPaused || (prevCt >= 0 && Math.abs(ct - (prevCt + (now - prevAt) / 1000 * rate)) > DUB_SEEK_S)) {
+  // «قراءةٌ سابقة» بوجودها (`prevAt`) لا بإشارتها — ⛔ ~~`prevCt >= 0`~~ (تحقّقُ الجولة الثالث عشر): قفزٌ إلى الوراء يعبر إعلاناً مُدمَجاً أطولَ من الموضع
+  // الجديد يجعل قراءةَ نبضته بالفارق القديم سالبةً، فيُطفئ الكاشفَ في النبضة التالية — جملةٌ قديمةٌ وإيقافٌ للفيديو بدلَ التصحيح
+  if (jumpedPaused || (prevAt > 0 && Math.abs(ct - (prevCt + (now - prevAt) / 1000 * rate)) > DUB_SEEK_S)) {
     dubSilence(run); run.sync = true; run.seeked = true; dubClock(run);
     run.recent = []; run.pending = null;                          // بعد القفز: ما يظهر يُقرأ ولو قيل قبلُ
   } else if (now - (run.offAt || 0) > 5000) dubClock(run);
@@ -6359,7 +6404,7 @@ function dubStatus() {
     // لا ما طُلب: ⛔ ~~«بصوت Azure» وصوتُ الجهاز يتكلّم~~ — والحدُّ يُقال ما دامت مهلتُه، ويُمحى بعدها (مراجعة 168ح #5 · #14)
     engine: r.opts.engine, azOn: r.opts.engine === "azure" && dubAzOn(r), azOff: r.azOff,
     azWarn: r.opts.engine === "azure" && !r.opts.az.key ? "nokey" : r.opts.engine === "azure" && dubAzGate.until > performance.now() ? "rate" : r.azWarn,
-    trOff: r.trOff, trLocal: !!r.tr, azTts: r.azTts, azTr: r.azTr, wait: r.opts.wait, waits: r.waits, ytWhy: r.ytWhy || "",
+    trOff: r.trOff, trLocal: !!r.tr, rate: r.opts.rate, azTts: r.azTts, azTr: r.azTr, wait: r.opts.wait, waits: r.waits, ytWhy: r.ytWhy || "",
     cps: Math.round(cps * 10) / 10, tailMs: r.tails.length ? Math.round(q(r.tails, 0.5) * 1000) : null,
     leadMs: r.leads.length ? Math.round(q(r.leads, 0.5) * 1000) : null, spd: [r2(q(r.speeds, 0.5)), r2(r.speeds.length ? Math.max(...r.speeds) : null)],
     need: [r2(q(need, 0.5)), r2(q(need, 0.9))], stallS: Math.round(r.stallS * 10) / 10, lagP90: lags.length ? r2(q(lags, 0.9)) : null,

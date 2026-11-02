@@ -46,12 +46,16 @@ class FakeCustomEvent { constructor(type, init) { this.type = type; this.detail 
 // opts: tracklist · captionTracks · ccOn (الخيارُ الجاري) · playerReq(track) · setThrows · ourStatus · voices · drops
 function makeEnv(opts) {
   const o = opts || {};
-  const obs = [], fetched = [], calls = [], playerReqs = [], spoken = [];
+  const obs = [], fetched = [], calls = [], playerReqs = [], spoken = [], resources = [];
   const STICKY = "yt-player-caption-sticky-language", PREFS = "yt-player-caption-language-preferences";
   const stickyBefore = JSON.stringify({ data: "ar", expiration: 1, creation: 1 });
   const local = makeStore({ [STICKY]: stickyBefore }), session = makeStore({});
   let track = o.ccOn ? o.ccOn : {}, loaded = !!o.ccOn;
-  const emit = (name, status, size, st) => obs.slice().forEach((cb) => cb({ getEntries: () => [{ name, startTime: st, responseStatus: status, encodedBodySize: size, transferSize: size + 300 }] }));
+  const emit = (name, status, size, st) => {
+    const en = { name, startTime: st, responseStatus: status, encodedBodySize: size, transferSize: size + 300 };
+    resources.push(en);
+    obs.slice().forEach((cb) => cb({ getEntries: () => [en] }));
+  };
   // 📐 المشغّلُ يطلب الترجمةَ بـXHR وjson3 (كروم المالك 2026-11-01) — فطلبُه هنا يمرّ بـ`XMLHttpRequest` عالمِ الصفحة وقتَ النداء:
   // ما ركّبه `yt_dub_main.js` عليه يرى ردَّه كما يراه على يوتيوب. `arTrack`: سطورُ العربيّة [{t, d, line}] بالثواني (وإلا ملفٌّ فارغ)
   const plan = new Map();
@@ -70,7 +74,7 @@ function makeEnv(opts) {
     // إرسالٌ يرمي (`xhrThrows`) ⇐ طلبٌ لم يخرج: يبتلعه المشغّلُ ولا يراه مراقبُ الموارد
     let sent = true;
     if (!o.noXhr && mainCtx && mainCtx.XMLHttpRequest) { const x = new mainCtx.XMLHttpRequest(); x.open("GET", r.url); try { x.send(); } catch (e) { sent = false; } }
-    if (sent) setTimeout(() => emit(r.url, r.status, r.size, st), (r.delay || 50) / K);
+    if (sent) setTimeout(() => { emit(r.url, r.status, r.size, st); if (r.status === 200 && (r.size || 0) > 0) cuesOk = true; }, (r.delay || 50) / K);
   };
   const BASE = "https://www.youtube.com/api/timedtext?v=VID";
   // الفيديو: زمنُه يجري بالساعة ما لم يتوقّف — والقفزُ يُثبّته حتى ينتهي `seeking`
@@ -85,12 +89,16 @@ function makeEnv(opts) {
     play() { if (this.paused) { this._at = now() + (o.playLag || 0); this.paused = false; } this.plays = (this.plays | 0) + 1; } };
   // الترجمةُ المعروضة: سطورُ الإشارة الجارية متى كانت العربيّةُ معروضة (اختيرت أو عرضناها) — و`rollup` سطرٌ سابقٌ فوقها
   const arOn = () => !!o.alreadyArabic || !!(track && track.translationLanguage && track.translationLanguage.languageCode === "ar");
+  // 📖 مشغّلُ 11a45ffb (تحقّقُ الجولة): ضبطُ مسارٍ مترجَم يُفرغ الترجمةَ (`H5` ⇐ unload) ثمّ يطلبها، **ولا يُعيدها إلا ردٌّ ناجح** — وCC يبقى مضغوطاً
+  let cuesOk = true;
   const cues = o.cues || [];
   // `windows`: نوافذُ كما يبنيها يوتيوب بـ`lang` — ونافذةُ اسم المسار (lang=en) ثانيتين بعد كلّ اختيار · و`grow` سطرٌ تُلحق به الكلمات
   let labelUntil = -1;
+  // إعلانٌ يقوده الاختبار: `adOn` (الوسمُ ad-showing ولا ترجمة) · و**المُدمَجُ في الخادم** يُطيل العنصرَ لا المحتوى: `ssapOff` ما سبق به العنصرُ
+  // المحتوى، و`ssapFreeze` زمنُ المشغّل أثناءه
   const lineAt = () => {
-    if (!arOn()) return [];
-    const t = video.currentTime, k = cues.findIndex((c) => t >= c.t && t < c.t + c.d);
+    if (!arOn() || !cuesOk || o.adOn) return [];
+    const t = video.currentTime - (o.ssapOff || 0), k = cues.findIndex((c) => t >= c.t && t < c.t + c.d);
     if (k < 0) return [];
     let cur = cues[k].line;
     if (o.grow) {
@@ -113,11 +121,11 @@ function makeEnv(opts) {
       if (sel !== ".caption-visual-line" || o.windows) return [];
       return mkLines(lineAt());
     },
-    classList: { contains: () => false },
+    classList: { contains: (c) => c === "ad-showing" && !!o.adOn },
     querySelector: (s) => (s === ".ytp-subtitles-button" ? { getAttribute: () => (o.ccOffByHand ? "false" : track && track.languageCode || o.alreadyArabic ? "true" : "false") } : s === "video" ? video : null),
     getPlayerResponse: () => ({ videoDetails: { videoId: new URLSearchParams(location.search).get("v"), isLive: !!o.live, lengthSeconds: "60" }, playabilityStatus: { status: "OK" },
       captions: { playerCaptionsTracklistRenderer: { captionTracks: o.captionTracks || [{ baseUrl: "/api/timedtext?v=VID&lang=en&kind=asr", languageCode: "en", kind: "asr" }] } } }),
-    getCurrentTime: () => video.currentTime,
+    getCurrentTime: () => (o.adOn && o.ssapFreeze != null ? o.ssapFreeze : video.currentTime - (o.ssapOff || 0)),
     loadModule: (n) => { calls.push("load:" + n); loaded = true; },
     unloadModule: (n) => { calls.push("unload:" + n); loaded = false; track = {}; },
     getOptions: () => (loaded ? ["captions"] : []),
@@ -134,13 +142,18 @@ function makeEnv(opts) {
       if (o.setThrows) throw new Error("player threw");
       const rq = o.playerReq ? o.playerReq(track) : { url: BASE + "&lang=en&kind=asr" + (track.variant ? "&variant=" + track.variant : "") +
         (track.translationLanguage ? "&tlang=" + track.translationLanguage.languageCode : "") + "&pot=POT&c=WEB&xorb=2&fmt=json3", status: 200, size: 900 };
-      (Array.isArray(rq) ? rq : rq ? [rq] : []).forEach(request);
+      const rqs = Array.isArray(rq) ? rq : rq ? [rq] : [];
+      if (track.translationLanguage && rqs.length) cuesOk = false;
+      rqs.forEach(request);
     }
   };
   const win = makeWindow();
   win.CustomEvent = FakeCustomEvent;
   win.top = win;
-  class PO { constructor(cb) { this.cb = cb; } observe() { obs.push(this.cb); } disconnect() { const i = obs.indexOf(this.cb); if (i >= 0) obs.splice(i, 1); } }
+  // 📐 `buffered` (كروم): ما في السجلّ لحظةَ `observe` يُسلَّم في نداءٍ لاحق — لقطةٌ تبقى ولو أُفرغ السجلُّ بعدها
+  class PO { constructor(cb) { this.cb = cb; }
+    observe(op) { const cb = this.cb, snap = op && op.buffered ? resources.slice() : []; obs.push(cb); if (snap.length) setTimeout(() => { if (obs.includes(cb)) cb({ getEntries: () => snap }); }, 0); }
+    disconnect() { const i = obs.indexOf(this.cb); if (i >= 0) obs.splice(i, 1); } }
   PO.supportedEntryTypes = ["resource"];
   const EV = o.events || [];
   if (!o.events) for (let i = 0; i < 20; i++) EV.push({ tStartMs: 2000 + i * 3000, dDurationMs: 2800, segs: [{ utf8: "Sentence number " + (i + 1) + "." }] });
@@ -170,7 +183,8 @@ function makeEnv(opts) {
   }
   const mainCtx = Object.assign({
     window: win, document, location, URL, URLSearchParams, JSON, Date, Math, Number, String, Array, Object, Promise, WeakMap, XMLHttpRequest: FakeXHR,
-    localStorage: local, sessionStorage: session, PerformanceObserver: PO, AbortController, CustomEvent: FakeCustomEvent, performance: { now },
+    localStorage: local, sessionStorage: session, PerformanceObserver: PO, AbortController, CustomEvent: FakeCustomEvent,
+    performance: { now, getEntriesByType: (t) => (t === "resource" ? resources.slice() : []) },
     fetch: async (url) => {
       fetched.push(url);
       const st = now();
@@ -274,21 +288,31 @@ function makeEnv(opts) {
         if (this.onended) this.onended();
       }, Math.max(0, (this.duration || 0.6) - this._pos) / this._rate * 1000 / K);
     }
+    // 📖 كما في كروم (تحقّقُ الجولة الثالث): رابطٌ أُبطل ⇐ خطأ · و`audioLag`: وعدُ play() معلّقٌ حتى «playing» ويُرفض AbortError إن سبقه pause()
     play() {
+      if (revoked.has(this.src)) {
+        const err = new Error("revoked blob");
+        setTimeout(() => { spoken.push({ ev: "az-error", text: this.text, src: this.src, t: now() }); if (this.onerror) this.onerror(err); }, 5 / K);
+        return Promise.reject(err);
+      }
       if (!this.paused) return Promise.resolve();
       this.paused = false;
-      setTimeout(() => {
+      const go = (done) => setTimeout(() => {
         if (this.paused) return;
+        this._rej = null;
         spoken.push(this._began ? { ev: "az-resume", text: this.text, t: now() }
           : { ev: "az-start", text: this.text, voice: this.voice, volume: this.volume, rate: this._rate, pitch: this.preservesPitch, seek: this._pos, speed: this.real * this._rate, vt: video.currentTime, t: now() });
         this._began = true;
         if (this.onplaying) this.onplaying();
         this._t0 = now();
         this._arm();
-      }, 5 / K);
-      return Promise.resolve();
+        if (done) done();
+      }, (o.audioLag || 5) / K);
+      if (!o.audioLag) { go(null); return Promise.resolve(); }
+      return new Promise((resolve, reject) => { this._rej = reject; go(resolve); });
     }
     pause() {
+      if (this._rej) { const r = this._rej; this._rej = null; setTimeout(() => r(Object.assign(new Error("The play() request was interrupted by a call to pause()."), { name: "AbortError" })), 0); }
       if (this.paused) return;
       const at = this.currentTime;
       spoken.push({ ev: "az-pause", text: this.text, at, vt: video.currentTime, t: now() });
@@ -323,7 +347,7 @@ function makeEnv(opts) {
     win.dispatchEvent(new FakeCustomEvent("__vz_dub_req__", { detail: JSON.stringify({ id, op, args }) }));
   });
   return { api: contentCtx.__api, ask, fetched, calls, playerReqs, local, session, STICKY, PREFS, stickyBefore, spoken, engine, video, location, win, p,
-    document, gate, opts: o, maxOurs: () => maxOurs, xhrNative: () => FakeXHR.prototype.open === xhrOrig.open && FakeXHR.prototype.send === xhrOrig.send, release: () => { engine.hold = false; pump(); }, azReqs, trReqs, blobs: () => blobN, revoked, perf };
+    document, gate, opts: o, maxOurs: () => maxOurs, clearResources: () => { resources.length = 0; }, xhrNative: () => FakeXHR.prototype.open === xhrOrig.open && FakeXHR.prototype.send === xhrOrig.send, release: () => { engine.hold = false; pump(); }, azReqs, trReqs, blobs: () => blobN, revoked, perf };
 }
 
 const DEV = { source: "device" };
@@ -1216,19 +1240,34 @@ const isPrefixOf = (said, cues) => {
     e.api.dubStop("user");
   }
   {
-    // #2 — العربيّةُ معروضةٌ سلفاً وإعادةُ طلبها رُفضت (429) ⇐ ⛔ ~~رفضٌ «breaker» والمفاتيحُ بطوابعنا~~ ⇒ تقرأ ما يظهر، والمفاتيحُ بحروفها،
-    // والقاطعُ قائمٌ لما بعده
+    // #2 — العربيّةُ معروضةٌ سلفاً وإعادةُ طلبها رُفضت (429): ⛔ ~~المفاتيحُ بطوابعنا~~ ⇒ بحروفها، والقاطعُ قائمٌ لما بعده — ⛔ ~~«وتقرأ ما يظهر»~~
+    // (تحقّقُ الجولة V4، 📖 المشغّل: الشاشةُ فرغت قبل الطلب ولا يُعيدها إلا ردٌّ ناجح) ⇒ **رفضٌ يقول إنّ ترجمتَه اختفت** — لا «يُدبلج» بلا ما يُقرأ
     const e = makeEnv({ ccOn: AR_ON, arTrack: arTrack(20, 2, 2), playerReq: () => ({ url: URL_AR, status: 429, size: 0 }) });
     const keys = () => JSON.stringify([e.local.getItem(e.STICKY), e.local.getItem("yt-player-sticky-caption"), e.session.getItem(e.PREFS)]);
     const before = keys();
     const st = await startRun(e, { source: "yt" });
     await sleep(2600);
-    check("⭐ العربيّةُ معروضةٌ وإعادةُ طلبها رُفضت ⇐ تقرأ ما يظهر ويُقال لماذا — ⛔ ~~«رفض يوتيوب» والترجمةُ على الشاشة~~",
-      st.state === "running" && st.kind === "display" && /^refused:429/.test(st.ytWhy), { state: st.state, reason: st.reason, kind: st.kind, why: st.ytWhy });
+    check("⭐ العربيّةُ معروضةٌ وإعادةُ طلبها رُفضت ⇐ رفضٌ «gone» بسببه (اختفت ترجمتُه) — ⛔ ~~«يُدبلج» ولا سطرَ على الشاشة~~",
+      st.state === "refused" && st.reason === "gone" && /^refused:429/.test(st.detail), { state: st.state, reason: st.reason, detail: st.detail, kind: st.kind });
     check("⭐ والمفاتيحُ اللاصقةُ بحروفها — ⛔ ~~بطوابع إعادة الضبط~~", keys() === before, { before, after: keys() });
-    e.api.dubStop("user");
+    const st1 = await startRun(e, { source: "yt" });
+    check("وضغطةٌ ثانية ⇐ «gone» ثانيةً بلا إجبار — لا «يُدبلج» على شاشةٍ فارغة", st1.state === "refused" && st1.reason === "gone", { st: st1.state, reason: st1.reason });
     const st2 = await startRun(e, { source: "device" });
     check("والقاطعُ قائمٌ لما بعده: لا التقاطَ منّا في الصفحة", st2.state === "refused" && st2.reason === "breaker" && e.fetched.length === 0, { st: st2.state, reason: st2.reason, fetched: e.fetched.length });
+  }
+  {
+    // تحقّقُ الجولة V3 — قاطعٌ من التقاط «مترجم كروم» ثمّ عُرضت العربيّة ⇐ «ترجمة يوتيوب» تقرأ ما يظهر بصفر طلبٍ وصفر نداءٍ للمشغّل — ⛔ ~~«رفض
+    // يوتيوب» من سكربت الإضافة قبل أن يُسأل عالمُ الصفحة~~
+    const e = makeEnv({ ourStatus: 429, arTrack: arTrack(20, 2, 2) });
+    const s1 = await startRun(e, { source: "device" });
+    e.p.setOption("captions", "track", AR_ON);
+    await sleep(500);
+    const calls0 = e.calls.length, reqs0 = e.playerReqs.length;
+    const s2 = await startRun(e, { source: "yt" });
+    check("⭐ قاطعٌ من التقاطٍ سابق والعربيّةُ معروضة ⇐ تقرأ ما يظهر (`breaker` سببُها) بلا نداءٍ للمشغّل ولا طلب",
+      s1.reason === "breaker" && s2.state === "running" && s2.kind === "display" && s2.ytWhy === "breaker" && e.calls.length === calls0 && e.playerReqs.length === reqs0,
+      { first: s1.reason, state: s2.state, kind: s2.kind, why: s2.ytWhy, calls: e.calls.length - calls0, reqs: e.playerReqs.length - reqs0 });
+    e.api.dubStop("user");
   }
   {
     // #3 — غيّر المستخدمُ لغةَ ترجمته أثناء انتظارنا ردَّ إعادة الضبط ⇐ ⛔ ~~يُعاد مفتاحُه إلى «العربيّة» الآن وبعد ثانيتين~~
@@ -1321,6 +1360,436 @@ const isPrefixOf = (said, cues) => {
     await until(() => e.api.dubStatus().hold === "no-voice", 6000);
     check("⭐ لا صوتَ عربيّ في الجهاز والمحرّكُ «الجهاز» ⇐ «no-voice» يُقال", e.api.dubStatus().hold === "no-voice", e.api.dubStatus().hold);
     e.api.dubStop("user");
+  }
+
+  {
+    // تحقّقُ الجولة الثاني W1 — «gone» لفيديو الرفض وحدَه وحتى يُحمَّل مسارُه بنجاح: أعاد المستخدمُ اختيارَ العربيّة ⇐ تُقرأ كما تظهر بلا طلب —
+    // ⛔ ~~«اختفت» لكلّ ضغطةٍ بعدها في الصفحة~~ · وفيديو آخر ⇐ كذلك
+    let nReq = 0;
+    const e = makeEnv({ ccOn: AR_ON, arTrack: arTrack(20, 2, 2), playerReq: () => (nReq++ === 0 ? { url: URL_AR, status: 429, size: 0 } : { url: URL_AR, status: 200, size: 900 }) });
+    const s1 = await startRun(e, { source: "yt" });
+    e.p.setOption("captions", "track", AR_ON);                          // المستخدمُ يعيد اختيارَ العربيّة من ⚙ — يُحمَّل المسارُ بنجاح
+    await sleep(500);
+    const reqs0 = e.playerReqs.length;
+    const s2 = await startRun(e, { source: "yt" });
+    check("⭐ «gone» ثمّ أعاد المستخدمُ اختيارَ العربيّة ⇐ تقرأ ما يظهر بلا طلب — ⛔ ~~«اختفت» ثانيةً~~", s1.reason === "gone" && s2.state === "running" &&
+      s2.kind === "display" && e.playerReqs.length === reqs0, { first: s1.reason, state: s2.state, reason: s2.reason, kind: s2.kind, reqs: e.playerReqs.length - reqs0 });
+    e.api.dubStop("user");
+  }
+  {
+    // W1 — رفضٌ لطلب ترجمةٍ غيرِ مسارنا أثناء إعادة الضبط ⇐ ⛔ ~~«اختفت ترجمتُك»~~ ⇒ مسارُنا يُقرأ مسبقاً، والقاطعُ يرتفع (لا إجبارَ بعده)
+    const URL_DE = URL_AR.replace("lang=en", "lang=de");
+    const e = makeEnv({ ccOn: AR_ON, arTrack: arTrack(20, 2, 2), playerReq: () => [{ url: URL_DE, status: 429, size: 0, delay: 30 }, { url: URL_AR, status: 200, size: 900, delay: 150 }] });
+    const st = await startRun(e, { source: "yt" });
+    check("⭐ رفضٌ لطلبٍ آخر ومسارُنا وصل ⇐ «ytar» لا «gone»", st.state === "running" && st.kind === "ytar", { state: st.state, reason: st.reason, kind: st.kind });
+    e.api.dubStop("user");
+  }
+  {
+    // تحقّقُ الجولة الثاني W3 — نطقٌ في الطابور (صوتٌ آخر يسبقنا) ثمّ قفزٌ إلى الوراء عشرين ثانيةً ثمّ إيقافٌ قصير ⇐ ⛔ ~~يُعدّ «مقطوعاً» فيقفز
+    // المحرّكُ إلى جملة ما قبل القفز ويصمت ما بينهما~~ ⇒ يُستأنف من الموضع الجديد
+    const e = makeEnv({ events: EV40 });
+    await startRun(e, DEV);
+    await until(() => e.video.currentTime > 40, 60000);
+    e.engine.hold = true;
+    await until(() => e.api.dub.cur && !e.api.dub.cur.started, 10000);
+    const k = e.api.dub.cur.i, to = e.video.currentTime - 20, tSeek = now();
+    e.video.currentTime = to;
+    await sleep(300);
+    e.video.pause();
+    await sleep(700);
+    e.video.play();
+    e.release();
+    await sleep(8000);
+    const kStart = e.api.dub.sents[k].start / 1000, kText = e.api.dub.sents[k].ar;
+    // ⚠️ نطقُ ما قبل القفز المعلَّقُ في الطابور «يبدأ» لحظةَ يُفرَج عنه ثمّ يُقطع فوراً (قديم) — فلا يُعدّ
+    const between = heard(e).filter((x) => x.t > tSeek && x.vt >= to - 0.5 && x.vt < kStart - 1 && x.text !== kText);   // ما سُمع بعد القفز وحدَه
+    check("⭐ بعد القفز إلى الوراء وإيقافٍ قصير ⇐ يُنطق من الموضع الجديد لا من جملة ما قبل القفز", between.length >= 1, { k, kStart, to, heardAfter: heard(e).slice(-4).map((x) => x.vt) });
+    e.api.dubStop("user");
+  }
+  {
+    // تحقّقُ الجولة الثاني W4 — مقطعُ Azure يُجلب فأُوقف الفيديو لحظةً ⇐ يُسمع بعد الاستئناف **بالردّ نفسِه** — ⛔ ~~يُرمى المدفوعُ ويُطلب ثانيةً~~
+    let slow = "";
+    const e = makeEnv({ events: EV40, azDelay: (n, text) => (text && text === slow ? 900 : 40) });
+    await startRun(e, { source: "device", engine: "azure", wait: false, az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.currentTime > 20, 60000);
+    const u = e.api.dub.sents.find((x) => x.start / 1000 > e.video.currentTime + 30 && x.ar);
+    slow = u.ar;
+    e.video.currentTime = u.start / 1000 + 0.3;
+    await sleep(250);
+    e.video.pause();
+    await sleep(1200);
+    e.video.play();
+    await until(() => saidAll(e, "az-start").some((x) => x.text === slow), 8000);
+    const asked = e.azReqs.filter((r) => r.text === slow).length;
+    check("⭐ أُسكت قبل أن يُسمع ⇐ سُمع بعد الاستئناف بطلبٍ واحد (الردُّ أُعيد إلى جملته)", saidAll(e, "az-start").some((x) => x.text === slow) && asked === 1, { asked });
+    e.api.dubStop("user");
+  }
+
+  {
+    // تحقّقُ الجولة الثالث X1 — «gone» ثمّ أعاد المستخدمُ اختيارَ العربيّة **ثمّ أفرغ يوتيوب سجلَّ الموارد** (📖 clearResourceTimings) ⇐ تُقرأ كما تظهر —
+    // ⛔ ~~«اختفت» والعربيّةُ على الشاشة~~
+    let nReq = 0;
+    const e = makeEnv({ ccOn: AR_ON, arTrack: arTrack(20, 2, 2), playerReq: () => (nReq++ === 0 ? { url: URL_AR, status: 429, size: 0 } : { url: URL_AR, status: 200, size: 900 }) });
+    const s1 = await startRun(e, { source: "yt" });
+    e.p.setOption("captions", "track", AR_ON);
+    await sleep(500);
+    e.clearResources();
+    const s2 = await startRun(e, { source: "yt" });
+    check("⭐ «gone» ثمّ إعادةُ الاختيار ثمّ أُفرغ السجلّ ⇐ تقرأ ما يظهر", s1.reason === "gone" && s2.state === "running" && s2.kind === "display", { first: s1.reason, state: s2.state, reason: s2.reason });
+    e.api.dubStop("user");
+  }
+  {
+    // تحقّقُ الجولة الثالث X2 — أُوقف الفيديو بين play() و«playing» (📖 عشراتُ المللي في كروم) ⇐ ⛔ ~~يُبطَل رابطُ المقطع المُعاد إلى جملته فتضيع~~ ⇒
+    // تُسمع بعد الاستئناف بالردّ نفسِه
+    let fast = "";
+    const e = makeEnv({ events: EV40, audioLag: 600 });
+    await startRun(e, { source: "device", engine: "azure", wait: false, az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.currentTime > 20, 60000);
+    const u = e.api.dub.sents.find((x) => x.start / 1000 > e.video.currentTime + 30 && x.ar);
+    fast = u.ar;
+    e.video.currentTime = u.start / 1000 + 0.3;
+    await until(() => e.api.dub.cur && e.api.dub.cur.audio && e.api.dub.cur.audio.text === fast && !e.api.dub.cur.started, 5000);
+    e.video.pause();
+    await sleep(1200);
+    e.video.play();
+    await until(() => saidAll(e, "az-start").some((x) => x.text === fast), 8000);
+    check("⭐ أُوقف بين play() و«playing» ⇐ سُمع بعد الاستئناف بلا رابطٍ ميّت، ولا ضائع", saidAll(e, "az-start").some((x) => x.text === fast) &&
+      !e.spoken.some((x) => x.ev === "az-error" && x.text === fast) && e.api.dubStatus().lost === 0, { lost: e.api.dubStatus().lost, errors: e.spoken.filter((x) => x.ev === "az-error").length });
+    e.api.dubStop("user");
+  }
+  {
+    // تحقّقُ الجولة الثالث X4 — سرعةٌ ثابتة 1× ثمّ 2× ومقطعُ جملةٍ يُجلب، ثمّ إيقافٌ وإرجاعٌ قليل ⇐ ⛔ ~~تُنطق بـ1× المقطعِ المُعاد بعد جملةٍ بـ2×~~
+    let slow = "";
+    const e = makeEnv({ events: EV40, azDelay: (n, text) => (text && text === slow ? 900 : 40) });
+    await startRun(e, { source: "device", engine: "azure", wait: false, rate: "1", az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.currentTime > 20, 60000);
+    const u = e.api.dub.sents.find((x) => x.start / 1000 > e.video.currentTime + 30 && x.ar);
+    slow = u.ar;
+    e.video.currentTime = u.start / 1000 + 0.3;
+    await sleep(200);
+    e.api.dubSetOptions({ engine: "azure", wait: false, rate: "2", az: { key: KEYZ, region: "uaenorth" } });
+    await sleep(100);
+    e.video.pause();
+    await sleep(500);
+    e.video.currentTime = u.start / 1000 - 5;                            // إرجاعٌ قليلٌ والفيديو موقوف
+    await sleep(300);
+    e.video.play();
+    await until(() => saidAll(e, "az-start").some((x) => x.text === slow), 15000);
+    const k = saidAll(e, "az-start").find((x) => x.text === slow);
+    check("⭐ بعد تبديل السرعة إلى 2× ⇐ جملةُ المقطع المُعاد تُنطق بـ2× لا بـ1×", !!k && k.speed > 1.9, { speed: k && k.speed });
+    e.api.dubStop("user");
+  }
+
+  {
+    // تحقّقُ الجولة الرابع X5 — «gone» على «الإنجليزية التلقائيّة >> العربيّة» ثمّ أعادها المستخدمُ من **مصدرٍ آخر** (اليدويّة الإنجليزيّة مترجمةً) وأُفرغ
+    // السجلّ ⇐ تُقرأ كما تظهر — ⛔ ~~«اختفت» لأنّ المراقبَ ينتظر المسارَ المرفوضَ بعينه~~
+    let nReq = 0;
+    const byTrack = (t) => ({ url: "https://www.youtube.com/api/timedtext?v=VID&lang=" + t.languageCode + (t.kind ? "&kind=" + t.kind : "") +
+      (t.translationLanguage ? "&tlang=" + t.translationLanguage.languageCode : "") + "&pot=POT&c=WEB&xorb=2&fmt=json3", status: 200, size: 900 });
+    const e = makeEnv({ ccOn: AR_ON, arTrack: arTrack(20, 2, 2), playerReq: (t) => (nReq++ === 0 ? { url: URL_AR, status: 429, size: 0 } : byTrack(t)) });
+    const s1 = await startRun(e, { source: "yt" });
+    e.p.setOption("captions", "track", { languageCode: "en", kind: "", translationLanguage: { languageCode: "ar" } });
+    await sleep(500);
+    e.clearResources();
+    const s2 = await startRun(e, { source: "yt" });
+    check("⭐ «gone» ثمّ عربيّةٌ من مصدرٍ آخر وأُفرغ السجلّ ⇐ تقرأ ما يظهر", s1.reason === "gone" && s2.state === "running" && s2.kind === "display", { first: s1.reason, state: s2.state, reason: s2.reason });
+    e.api.dubStop("user");
+  }
+
+  {
+    // تحقّقُ الجولة الخامس — «gone» ثمّ عربيّةٌ يدويّةٌ نجحت ثمّ أعاد المستخدمُ الترجمةَ الآليّة فرُفضت (فرغت الشاشة) ⇐ «gone» — ⛔ ~~أوّلُ نجاحٍ يُثبَّت
+    // فيُقال «يُدبلج» على شاشةٍ فارغة~~ ⇒ آخرُ نتيجةٍ للمسار المعروض تحكم
+    const plan = [429, 200, 429];
+    let nReq = 0;
+    const urlOf = (t) => "https://www.youtube.com/api/timedtext?v=VID&lang=" + t.languageCode + (t.kind ? "&kind=" + t.kind : "") +
+      (t.translationLanguage ? "&tlang=" + t.translationLanguage.languageCode : "") + "&pot=POT&c=WEB&xorb=2&fmt=json3";
+    const e = makeEnv({ ccOn: AR_ON, arTrack: arTrack(20, 2, 2), playerReq: (t) => { const st = plan[Math.min(nReq++, plan.length - 1)]; return { url: urlOf(t), status: st, size: st === 200 ? 900 : 0 }; } });
+    const s1 = await startRun(e, { source: "yt" });
+    e.p.setOption("captions", "track", { languageCode: "ar", kind: "" });   // العربيّةُ اليدويّة — نجحت
+    await sleep(400);
+    e.p.setOption("captions", "track", AR_ON);                              // ثمّ الترجمةُ الآليّة ثانيةً — رُفضت
+    await sleep(400);
+    const s2 = await startRun(e, { source: "yt" });
+    check("⭐ نجحت عربيّةٌ أخرى ثمّ رُفض المسارُ المعروض ⇐ «gone» لا «يُدبلج» على شاشةٍ فارغة", s1.reason === "gone" && s2.state === "refused" && s2.reason === "gone",
+      { first: s1.reason, state: s2.state, reason: s2.reason, kind: s2.kind });
+    e.api.dubStop("user");
+  }
+
+  {
+    // تحقّقُ الجولة السادس Y1 (ب) — «gone» على فيديو، ثمّ فيديو آخر رفض يوتيوب طلبَ المشغّل لعربيّته (فرغت الشاشة) ⇐ «gone» — ⛔ ~~«يُدبلج» على شاشةٍ
+    // فارغة لأنّ القاعدةَ لفيديو رفضِنا وحدَه~~
+    let curV = "VID", nReq = 0;
+    const urlV = () => "https://www.youtube.com/api/timedtext?v=" + curV + "&lang=en&kind=asr&tlang=ar&pot=POT&c=WEB&xorb=2&fmt=json3";
+    const e = makeEnv({ ccOn: AR_ON, arTrack: arTrack(20, 2, 2), playerReq: () => { nReq++; return { url: urlV(), status: 429, size: 0 }; } });
+    const s1 = await startRun(e, { source: "yt" });
+    curV = "VID2"; e.location.search = "?v=VID2";                        // تنقّلٌ إلى فيديو آخر
+    e.p.setOption("captions", "track", AR_ON);                              // المشغّلُ يحمّل عربيّتَه من اللاصقة — يرفضها يوتيوب
+    await sleep(400);
+    const s2 = await startRun(e, { source: "yt" });
+    check("⭐ فيديو آخر رُفضت عربيّتُه والقاطعُ مرفوع ⇐ «gone» لا «يُدبلج» على شاشةٍ فارغة", s1.reason === "gone" && s2.state === "refused" && s2.reason === "gone",
+      { first: s1.reason, state: s2.state, reason: s2.reason, kind: s2.kind });
+    e.api.dubStop("user");
+  }
+  {
+    // Y1 (أ) — القاطعُ من مسار «غير معروضة» (CC مطفأ ورُفض إجبارُنا) ثمّ اختار المستخدمُ العربيّةَ فرُفضت ⇐ «gone» — ⛔ ~~«يُدبلج» على شاشةٍ فارغة~~
+    const e = makeEnv({ arTrack: arTrack(20, 2, 2), playerReq: () => ({ url: URL_AR, status: 429, size: 0 }) });
+    const s1 = await startRun(e, { source: "yt" });
+    e.p.setOption("captions", "track", AR_ON);
+    await sleep(400);
+    const s2 = await startRun(e, { source: "yt" });
+    check("⭐ قاطعٌ من مسارٍ آخر ثمّ رُفض اختيارُ المستخدم ⇐ «gone»", s1.reason === "breaker" && s2.state === "refused" && s2.reason === "gone",
+      { first: s1.reason, state: s2.state, reason: s2.reason, kind: s2.kind });
+    e.api.dubStop("user");
+  }
+  {
+    // تحقّقُ الجولة السادس Y2 — «gone» ثمّ أعاد المستخدمُ اختيارَ العربيّة والردُّ بطيء، فضغط «دبلِج» قبل وصوله ⇐ يُنتظر الردّ ⇐ تُقرأ كما تظهر —
+    // ⛔ ~~«اختفت» قبل أن تظهر بلحظة~~
+    let nReq = 0;
+    const e = makeEnv({ ccOn: AR_ON, arTrack: arTrack(20, 2, 2), playerReq: () => (nReq++ === 0 ? { url: URL_AR, status: 429, size: 0 } : { url: URL_AR, status: 200, size: 900, delay: 1500 }) });
+    const s1 = await startRun(e, { source: "yt" });
+    e.p.setOption("captions", "track", AR_ON);                              // الردُّ بعد 1.5 ث
+    await sleep(200);
+    const s2 = await startRun(e, { source: "yt" });
+    check("⭐ إعادةُ اختيارٍ في الطريق ⇐ يُنتظر ردُّها فتُقرأ كما تظهر — لا «gone»", s1.reason === "gone" && s2.state === "running" && s2.kind === "display",
+      { first: s1.reason, state: s2.state, reason: s2.reason });
+    e.api.dubStop("user");
+  }
+  {
+    // تحقّقُ الجولة السادس — شبكةُ الصدق: القراءةُ كما تظهر بلا سطرٍ عربيٍّ عشرين ثانية ⇐ «no-lines» يُقال — ⛔ ~~«يُدبلج» صامتاً~~
+    const e = makeEnv({ cues: CUES(3, (k) => "سطرٌ عربيٌّ رقم " + k) });
+    await startRun(e, { source: "yt" });
+    await sleep(35000);
+    check("⭐ لا سطرَ على الفيديو عشرين ثانية ⇐ «no-lines»", e.api.dubStatus().hold === "no-lines", e.api.dubStatus().hold);
+    e.api.dubStop("user");
+  }
+
+  {
+    // تحقّقُ الجولة السابع Z1 — «gone» ثمّ إعادةُ اختيارٍ رُفضت ثمّ ثانيةٌ بطيئة وضُغط «دبلِج» قبل ردّها ⇐ يُنتظر ⇐ تُقرأ كما تظهر — ⛔ ~~«اختفت» فوراً
+    // لأنّ رفضاً أقدمَ مسجَّل~~
+    const plan = [429, 429, 200];
+    let nReq = 0;
+    const e = makeEnv({ ccOn: AR_ON, arTrack: arTrack(20, 2, 2), playerReq: () => { const st = plan[Math.min(nReq++, plan.length - 1)];
+      return { url: URL_AR, status: st, size: st === 200 ? 900 : 0, delay: st === 200 ? 1500 : 50 }; } });
+    const s1 = await startRun(e, { source: "yt" });
+    e.p.setOption("captions", "track", AR_ON);                              // إعادةُ اختيار — رُفضت
+    await sleep(400);
+    e.p.setOption("captions", "track", AR_ON);                              // ثانيةٌ — ردُّها بعد 1.5 ث
+    await sleep(200);
+    const s2 = await startRun(e, { source: "yt" });
+    check("⭐ رفضٌ أقدمُ مسجَّلٌ وإعادةُ اختيارٍ في الطريق ⇐ يُنتظر ردُّها فتُقرأ كما تظهر", s1.reason === "gone" && s2.state === "running" && s2.kind === "display",
+      { first: s1.reason, state: s2.state, reason: s2.reason });
+    e.api.dubStop("user");
+  }
+  {
+    // تحقّقُ الجولة السابع Z2 — القراءةُ كما تظهر، وأوقف المستخدمُ الفيديو ثلاثين ثانيةً في فجوةٍ بين سطرين ثمّ شغّله ⇐ ⛔ ~~«لا سطرَ منذ عشرين ثانية»
+    // لحظةَ الاستئناف~~
+    // سطرٌ (2–4 ث) ثمّ فجوةٌ طويلةٌ حتى 20 ث — يُوقَف الفيديو فيها
+    const e = makeEnv({ cues: [{ t: 2, d: 2, line: "سطرٌ عربيٌّ أوّل" }, { t: 20, d: 3, line: "سطرٌ عربيٌّ ثانٍ" }] });
+    await startRun(e, { source: "yt" });
+    await until(() => e.video.currentTime > 5, 10000);
+    e.video.pause();
+    await sleep(30000);
+    e.video.play();
+    await sleep(400);
+    check("⭐ استئنافٌ بعد إيقافٍ طويلٍ في فجوة ⇐ لا «no-lines» لحظتَها", e.api.dubStatus().hold !== "no-lines", e.api.dubStatus().hold);
+    e.api.dubStop("user");
+  }
+
+  {
+    // تحقّقُ الجولة الثامن AA1 — شاشةٌ فارغةٌ فعلاً وتوقّفاتٌ قصيرةٌ متكرّرة (ثانيةٌ ونصفٌ كلَّ عشر) ⇐ «no-lines» يظهر — ⛔ ~~يُصفَّر العدُّ عند كلّ توقّفٍ
+    // فلا يظهر أبداً~~ ⇒ تتوقّف الساعةُ أثناءه ولا تُصفَّر
+    const e = makeEnv({ cues: [{ t: 300, d: 3, line: "سطرٌ بعيد" }] });
+    await startRun(e, { source: "yt" });
+    let seen = false;
+    for (let k = 0; k < 7 && !seen; k++) {
+      await sleep(8500);
+      seen = seen || e.api.dubStatus().hold === "no-lines";
+      e.video.pause(); await sleep(1500); e.video.play();
+    }
+    await sleep(500);
+    seen = seen || e.api.dubStatus().hold === "no-lines";
+    check("⭐ شاشةٌ فارغةٌ وتوقّفاتٌ قصيرةٌ متكرّرة ⇐ «no-lines» يظهر بعد عشرين ثانيةً من القراءة", seen, e.api.dubStatus().hold);
+    e.api.dubStop("user");
+  }
+  {
+    // تحقّقُ الجولة الثامن AA2 — رفضٌ للمسار المعروض في سجلّ الموارد وحدَه (قبل المراقب)، وأفرغ يوتيوب السجلَّ أثناء انتظارنا ⇐ «gone» — ⛔ ~~ينقلب
+    // «يُدبلج» على شاشةٍ فارغة~~
+    // الالتقاطُ يُجبر مسارَ المصدر (ينجح) ثمّ يُعيد العربيّةَ فيطلبها المشغّلُ ويُرفض — في السجلّ قبل أيّ قاطع — ثمّ يُرفض طلبُنا فيرتفع القاطع
+    const URL_EN = "https://www.youtube.com/api/timedtext?v=VID&lang=en&kind=asr&pot=POT&c=WEB&xorb=2&fmt=json3";
+    const e = makeEnv({ ccOn: AR_ON, arTrack: arTrack(20, 2, 2), ourStatus: 429,
+      playerReq: (t) => (t.translationLanguage ? { url: URL_AR, status: 429, size: 0 } : { url: URL_EN, status: 200, size: 900 }) });
+    const s0 = await startRun(e, { source: "device" });
+    e.api.dubStart({ source: "yt" });
+    await sleep(600);
+    e.clearResources();                                                       // يوتيوب يُفرغ السجلَّ أثناء الانتظار
+    await until(() => ["running", "refused", "stopped"].includes(e.api.dubStatus().state), 30000);
+    const s1 = e.api.dubStatus();
+    check("⭐ رفضٌ في السجلّ وحدَه وأُفرغ أثناء الانتظار ⇐ «gone» لا «يُدبلج» على شاشةٍ فارغة", s0.state === "refused" && s1.state === "refused" && s1.reason === "gone",
+      { first: s0.reason, state: s1.state, reason: s1.reason, kind: s1.kind });
+    e.api.dubStop("user");
+  }
+
+  {
+    // تحقّقُ الجولة التاسع BB1 — القراءةُ كما تظهر: خمسَ عشرةَ ثانيةً بلا سطر ثمّ سرعةُ 2× (لا نقرأ فيها) عُرض أثناءها سطران ثمّ 1× ⇐ ⛔ ~~«لا سطرَ
+    // منذ عشرين ثانية» بعد ثوانٍ من آخر سطر: الساعةُ الموقوفة حملت العدَّ فوق ما عُرض ولم نقرأه~~ — تقدّم المحتوى في الفجوة فالعدُّ من جديد
+    const e = makeEnv({ cues: [{ t: 2, d: 2, line: "سطرٌ عربيٌّ أوّل" }, { t: 31, d: 2, line: "سطرٌ في السرعة" }, { t: 35, d: 2, line: "سطرٌ آخرُ في السرعة" },
+      { t: 300, d: 3, line: "سطرٌ بعيد" }] });
+    await startRun(e, { source: "yt" });
+    await until(() => e.video.currentTime > 19, 30000);
+    e.video.playbackRate = 2;
+    await until(() => e.video.currentTime > 41, 30000);
+    e.video.playbackRate = 1;
+    await sleep(8000);
+    const h1 = e.api.dubStatus().hold;
+    await sleep(14000);
+    const h2 = e.api.dubStatus().hold;
+    check("⭐ سطورٌ عُرضت في سرعةٍ لا نقرأ فيها ثمّ عودة ⇐ لا «no-lines» بعد ثوانٍ منها — وبعد عشرين ثانيةً بلا سطرٍ يُقال",
+      h1 !== "no-lines" && h2 === "no-lines", { after8: h1, after22: h2 });
+    e.api.dubStop("user");
+  }
+  {
+    // تحقّقُ الجولة التاسع BB2 — رفضٌ للمسار المعروض في السجلّ قبل رفع القاطع، وأفرغ يوتيوب السجلَّ **قبل** الضغطة التالية ⇐ «gone» — ⛔ ~~«يُدبلج»
+    // على شاشةٍ فارغة: الرفضُ الذي سبق المراقبَ لم يُحفظ~~ ⇒ المراقبُ يأخذ ما في السجلّ لحظةَ رفع القاطع (`buffered`)
+    const URL_EN = "https://www.youtube.com/api/timedtext?v=VID&lang=en&kind=asr&pot=POT&c=WEB&xorb=2&fmt=json3";
+    const e = makeEnv({ ccOn: AR_ON, arTrack: arTrack(20, 2, 2), ourStatus: 429,
+      playerReq: (t) => (t.translationLanguage ? { url: URL_AR, status: 429, size: 0 } : { url: URL_EN, status: 200, size: 900 }) });
+    const s0 = await startRun(e, { source: "device" });
+    await sleep(300);
+    e.clearResources();                                                       // يوتيوب يُفرغ السجلَّ قبل الضغطة
+    const s1 = await startRun(e, { source: "yt" });
+    check("⭐ رفضٌ سبق القاطعَ وأُفرغ السجلُّ قبل الضغطة ⇐ «gone» لا «يُدبلج» على شاشةٍ فارغة", s0.state === "refused" && s1.state === "refused" && s1.reason === "gone",
+      { first: s0.reason, state: s1.state, reason: s1.reason, kind: s1.kind });
+    e.api.dubStop("user");
+  }
+  {
+    // تحقّقُ الجولة العاشر CC2 — القراءةُ كما تظهر و«لا سطر» ظاهرٌ ثمّ إعلانٌ مُدمَجٌ في الخادم خمسَ عشرةَ ثانية ⇐ يعود «لا سطر» فورَ انتهائه —
+    // ⛔ ~~«يُدبلج» على شاشةٍ فارغة عشرين ثانية: الفارقُ القديم بين الساعتين جعل المحتوى يبدو تقدّم بطول الإعلان~~
+    const e = makeEnv({ cues: [{ t: 2, d: 2, line: "سطرٌ عربيٌّ أوّل" }, { t: 300, d: 3, line: "سطرٌ بعيد" }] });
+    await startRun(e, { source: "yt" });
+    await until(() => e.video.currentTime > 29, 40000);
+    const h0 = e.api.dubStatus().hold;
+    e.opts.ssapFreeze = e.video.currentTime - (e.opts.ssapOff || 0); e.opts.adOn = true;
+    const ta = now();
+    await sleep(15000);
+    e.opts.ssapOff = (e.opts.ssapOff || 0) + (now() - ta) / 1000; e.opts.adOn = false; e.opts.ssapFreeze = null;
+    const tb = now();
+    let back = -1;
+    while (now() - tb < 3000) { if (e.api.dubStatus().hold === "no-lines") { back = Math.round(now() - tb) / 1000; break; } await sleep(50); }
+    check("⭐ إعلانٌ مُدمَجٌ في الخادم ⇐ يعود «لا سطر» خلال ثانية — لا «يُدبلج» على شاشةٍ فارغة", h0 === "no-lines" && back >= 0 && back <= 1, { before: h0, back });
+    e.api.dubStop("user");
+  }
+  {
+    // تحقّقُ الجولة الحادي عشر DD1 — «ترجمة يوتيوب» مسبقاً بصوت Azure و«الانتظار» (الافتراض)، وإعلانٌ مُدمَجٌ في الخادم ينتهي والموضعُ بالفارق القديم
+    // يقع في جملةٍ بعيدةٍ لا مقطعَ لها ⇐ لا إيقافَ للفيديو ولا طلبَ لصوتها — ⛔ ~~أوّلُ نبضةٍ بعد الإعلان تعمل بالفارق القديم: يُوقَف الفيديو لجملةٍ أبعدَ
+    // بطول الإعلان ويُطلب صوتُها~~
+    const cct = (e) => e.video.currentTime - (e.opts.ssapOff || 0);
+    const res = [];
+    for (const ahead of [20, 30]) {
+      const e = makeEnv({ arTrack: arTrack(80, 2, 2) });
+      const st = await startRun(e, { source: "yt", engine: "azure", az: { key: KEYZ, region: "uaenorth" } });
+      await until(() => e.video.currentTime > 12.5, 40000);
+      const ct0 = cct(e), u = e.api.dub.sents.find((x) => x.start / 1000 > ct0 + ahead);
+      const ms = Math.round((u.start / 1000 + 0.5 - ct0) * 1000);
+      const p0 = e.video.pauses | 0, az0 = e.azReqs.length;
+      e.opts.ssapFreeze = ct0; e.opts.adOn = true;
+      const ta = now();
+      await sleep(ms);
+      e.opts.ssapOff = (e.opts.ssapOff || 0) + (now() - ta) / 1000; e.opts.adOn = false; e.opts.ssapFreeze = null;
+      const tb = now();
+      await sleep(700);
+      res.push({ ahead, state: st.state, kind: st.kind, pauses: (e.video.pauses | 0) - p0, far: e.azReqs.slice(az0).some((r) => r.t >= tb - 20 && r.text === u.ar) });
+      e.api.dubStop("user");
+    }
+    check("⭐ بعد إعلانٍ مُدمَج: لا إيقافَ للفيديو ولا طلبَ لصوت جملةٍ أبعدَ بطوله", res.every((r) => r.state === "running" && r.pauses === 0 && !r.far), res);
+  }
+  {
+    // تحقّقُ الجولة الحادي عشر DD2 — جملةٌ طويلةٌ (نافذتُها نحو ثماني ثوانٍ) يُقطع نطقُها بعد ثانيتين وخُمسَين من أوّلها: بإيقاف · بإعلانٍ مُدمَجٍ في الخادم ·
+    // بإعلانٍ من المشغّل يُعيد زمنَ المحتوى مع رفع وسمه ⇐ تُعاد بعده في الثلاثة — ⛔ ~~لا تُعاد بعد الإعلان (الحدُّ المعلَن): بدأت جملةٌ من بعدها، أو رأى
+    // الكاشفُ عودةَ المحتوى قفزةً فبدأ من الموضع~~ · ⛔ ~~جملةٌ نافذتُها 4.2 ث وقطعٌ بعد 1.8~~ (الثاني عشر): هامشُ عُشرِ ثانيةٍ دون نصف النافذة كان يحمرّ تحت
+    // الحِمل على كودٍ سليم ⇒ القطعُ بعد ما تلتقطه قاعدةُ البدء (1.5 ث: فيشهد على القديم) وقبل نصف النافذة بأكثر من ثانية
+    const cct = (e) => e.video.currentTime - (e.opts.ssapOff || 0);
+    const longTrack = (n) => {
+      const words = [];
+      for (let k = 1; k <= n; k++) words.push(...("هذه الجملة رقم " + k + " وهي جملةٌ طويلةٌ جدّاً تمتدّ على أسطرٍ عدّةٍ حتى تطول نافذتُها وهي كاملة.").split(" "));
+      const lines = [];
+      let cur = "";
+      for (const w of words) { if (cur && (cur + " " + w).length > 30) { lines.push(cur); cur = w; } else cur = cur ? cur + " " + w : w; }
+      if (cur) lines.push(cur);
+      return lines.map((line, j) => ({ t: 2 + j * 2, d: 4, line }));
+    };
+    const res = [];
+    for (const how of ["pause", "ssap", "client"]) {
+      const e = makeEnv({ arTrack: longTrack(16) });
+      await startRun(e, { source: "yt" });
+      const u = e.api.dub.sents.find((x) => x.start / 1000 > 12);
+      await until(() => cct(e) >= u.start / 1000 + 2.2, 60000);
+      const s0 = e.spoken.length, was = e.spoken.some((x) => x.ev === "start" && x.text === u.ar);
+      let tb;
+      if (how === "pause") { e.video.pause(); await sleep(8000); e.video.play(); tb = now(); }
+      else if (how === "ssap") {
+        e.opts.ssapFreeze = cct(e); e.opts.adOn = true;
+        const ta = now();
+        await sleep(8000);
+        e.opts.ssapOff = (e.opts.ssapOff || 0) + (now() - ta) / 1000; e.opts.adOn = false; e.opts.ssapFreeze = null; tb = now();
+      } else {
+        const X = e.video.currentTime;
+        e.opts.adOn = true; e.video.currentTime = 0;
+        await sleep(8000);
+        e.video.currentTime = X; e.opts.adOn = false; tb = now();
+      }
+      await sleep(2500);
+      res.push({ how, win: u.win / 1000, was, reSaid: e.spoken.slice(s0).some((x) => x.ev === "start" && x.text === u.ar && x.t >= tb - 20) });
+      e.api.dubStop("user");
+    }
+    check("⭐ جملةٌ قطعها إعلانٌ تُعاد بعده كما بعد إيقاف — مُدمَجاً في الخادم ومن المشغّل", res.every((r) => r.was && r.reSaid), res);
+  }
+  {
+    // تحقّقُ الجولة الثاني عشر EE1 — «ترجمة يوتيوب» مسبقاً بصوت الجهاز، وقفزٌ يعبر إعلاناً مُدمَجاً سبق تشغيلُه فيتغيّر معه فارقُ الساعتين: إلى الأمام
+    // (المحتوى 12 ⇐ 40، الفارق 0 ⇐ 20) وإلى الوراء (50 ⇐ 34، الفارق 20 ⇐ 0) ⇐ تُنطق جملةُ الموضع الجديد في موعدها — ⛔ ~~يُنقل آخرُ موضعٍ في كلّ
+    // قياس فتختفي قفزةُ التصحيح: صمتٌ بطول الإعلان، أو جملةٌ من قبل عشرين ثانية~~
+    const cct = (e) => e.video.currentTime - (e.opts.ssapOff || 0);
+    const res = [];
+    for (const leg of [{ from: 12, off0: 0, to: 40, off1: 20 }, { from: 50, off0: 20, to: 34, off1: 0 }]) {
+      const e = makeEnv({ arTrack: arTrack(80, 2, 2) });
+      if (leg.off0) { e.opts.ssapOff = leg.off0; e.video.currentTime = leg.off0; }
+      await startRun(e, { source: "yt" });
+      await until(() => cct(e) > leg.from, 80000);
+      const s0 = e.spoken.length;
+      e.opts.ssapOff = leg.off1; e.video.currentTime = leg.to + leg.off1;
+      await sleep(4000);
+      const first = e.api.dub.sents.find((x) => x.start / 1000 >= leg.to - 0.05);
+      const st = e.spoken.slice(s0).find((x) => x.ev === "start" && x.text === first.ar);
+      res.push({ to: leg.to, unit: first.start / 1000, at: st ? Math.round((st.vt - leg.off1) * 10) / 10 : null });
+      e.api.dubStop("user");
+    }
+    check("⭐ قفزٌ يعبر إعلاناً مُدمَجاً ⇐ جملةُ الموضع الجديد تُنطق في موعدها (لا صمتٌ بطوله ولا جملةٌ قديمة)",
+      res.every((r) => r.at != null && Math.abs(r.at - r.unit) <= 1), res);
+  }
+  {
+    // تحقّقُ الجولة الثالث عشر FF1 — قفزٌ إلى الوراء يعبر إعلاناً مُدمَجاً (الفارق 20) إلى موضعٍ أقدمَ من طوله (المحتوى 50 ⇐ 10، و17)، والفيديو يجري أو
+    // موقوفٌ يُسحب شريطُه ⇐ جملةُ الموضع الجديد تُنطق في موعدها ولا يُوقَف الفيديو — ⛔ ~~قراءةُ نبضة القفز بالفارق القديم سالبةٌ (10 − 20) فأطفأت
+    // الكاشفَ في التالية: جملةٌ قديمةٌ ثمّ إيقافٌ للحاق وتأخّرٌ ثانيتين ونصفاً~~ · ⛔ ~~و15~~ (الرابع عشر): داخلَ نافذة البدء لجملة 14 فتُقال هي مسرعةً
+    // وتُقاس التي بعدها بهامش 22–33 ms حقيقيّة ⇒ 17: خارجَ النافذة، فالهامشُ نحو 110 ms
+    const cct = (e) => e.video.currentTime - (e.opts.ssapOff || 0);
+    const res = [];
+    for (const leg of [{ to: 10, paused: false }, { to: 17, paused: false }, { to: 10, paused: true }]) {
+      const e = makeEnv({ arTrack: arTrack(80, 2, 2) });
+      e.opts.ssapOff = 20; e.video.currentTime = 20;
+      await startRun(e, { source: "yt" });
+      await until(() => cct(e) > 50, 80000);
+      const s0 = e.spoken.length;
+      if (leg.paused) { e.video.pause(); await sleep(1500); }
+      const p0 = e.video.pauses | 0;
+      e.opts.ssapOff = 0; e.video.currentTime = leg.to;
+      if (leg.paused) { await sleep(600); e.video.play(); }
+      await sleep(4000);
+      const first = e.api.dub.sents.find((x) => x.start / 1000 >= leg.to - 0.05);
+      const st = e.spoken.slice(s0).find((x) => x.ev === "start" && x.text === first.ar);
+      res.push({ to: leg.to, paused: leg.paused, unit: first.start / 1000, at: st ? Math.round(st.vt * 10) / 10 : null, pauses: (e.video.pauses | 0) - p0 });
+      e.api.dubStop("user");
+    }
+    check("⭐ قفزٌ إلى الوراء يعبر إعلاناً مُدمَجاً أطولَ من الموضع ⇐ جملتُه في موعدها ولا إيقافَ للحاق — والفيديو يجري أو يُسحب موقوفاً",
+      res.every((r) => r.at != null && Math.abs(r.at - r.unit) <= 1 && r.pauses === 0), res);
   }
 
   console.log("\n[٢١] مراجعةُ الجولة الثالثة — توقيتُ المحرّك: تشغيلُ المستخدم يُحترم · إيقافٌ واحدٌ للجملة · لا انتظارَ بلا مترجم · قفزٌ أثناء الانتظار · استئنافٌ صادق");
@@ -1429,6 +1898,23 @@ const isPrefixOf = (said, cues) => {
     const stop = e.spoken.find((x) => (x.ev === "az-pause" || x.ev === "az-end") && x.text === cur.text && x.t >= tS);
     check("⭐ قفزٌ أثناء انتظار اللحاق ⇐ يسكت المقطعُ القديم خلال 300ms ويُستأنف من الموضع الجديد", got && !!stop && stop.ev === "az-pause" && stop.t - tS < 300 && !e.video.paused,
       { got, stop: stop && { ev: stop.ev, ms: stop.t - tS }, paused: e.video.paused });
+    e.api.dubStop("user");
+  }
+  {
+    // تحقّقُ الجولة V2 — مقطعُ Azure يُجلب (لم يُسمع بعد) فأوقف المستخدمُ الفيديو لحظةً ⇐ ⛔ ~~يضيع صامتاً لا يُعدّ~~ ⇒ يُسمع بعد الاستئناف
+    let slow = "";
+    const e = makeEnv({ events: EV40, azDelay: (n, text) => (text && text === slow ? 900 : 40) });
+    await startRun(e, { source: "device", engine: "azure", wait: false, az: { key: KEYZ, region: "uaenorth" } });
+    await until(() => e.video.currentTime > 20, 60000);
+    const u = e.api.dub.sents.find((x) => x.start / 1000 > e.video.currentTime + 30 && x.ar);
+    slow = u.ar;
+    e.video.currentTime = u.start / 1000 + 0.3;
+    await sleep(250);
+    e.video.pause();
+    await sleep(1200);
+    e.video.play();
+    await until(() => saidAll(e, "az-start").some((x) => x.text === slow), 8000);
+    check("⭐ أُسكت مقطعٌ قبل أن يُسمع بإيقافٍ قصير ⇐ يُسمع بعد الاستئناف", saidAll(e, "az-start").some((x) => x.text === slow), { slow, idx: e.api.dub && e.api.dub.idx });
     e.api.dubStop("user");
   }
   {

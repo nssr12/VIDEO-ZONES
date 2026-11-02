@@ -297,7 +297,7 @@
     var lateCheck = function () {
       if (MEM.stop) return;
       var late = first(seen, refused);
-      if (late) MEM.stop = { at: Date.now(), why: (qs(late.name).get("lang") || "?") + " status=" + late.status + " late" };
+      if (late) raise((qs(late.name).get("lang") || "?") + " status=" + late.status + " late");
     };
     try {
       // ⭐ يُقبل ما طلبه المشغّلُ فعلاً بلغة المصدر ونوعه، وvariant ما لم يكن نصَّ دبلجةٍ آليّة (الفجوة هـ):
@@ -338,7 +338,7 @@
         await delay(100);
       }
       var ref = first(seen, refused) || (cap && !(cap.status > 0) ? cap : null);
-      if (ref) MEM.stop = { at: Date.now(), why: (qs(ref.name).get("lang") || "?") + " status=" + ref.status };
+      if (ref) raise((qs(ref.name).get("lang") || "?") + " status=" + ref.status);
       var act = restoreAct(p, B0, ccOn, prevTrack);                   // ⭐ فورَ الالتقاط: أقصرُ ظهورٍ مؤقّت
       restored = true;
       var fixed = fixAll(B1, state(p), ccOn);
@@ -358,7 +358,7 @@
       var own2 = first(seen, function (x) { return x.name === url; }); if (own2) own2.ours = true;
       // ⛔ رفضُنا أوّلاً: يرفع القاطعَ قبل أيّ إرجاعٍ ثانٍ قد يطلب (مراجعة #2)
       var bad = !!res.err || res.status !== 200 || !res.body.trim();
-      if (bad) MEM.stop = { at: Date.now(), why: res.err ? "ours " + res.err : "ours status=" + res.status + (res.body.trim() ? "" : " empty") };
+      if (bad) raise(res.err ? "ours " + res.err : "ours status=" + res.status + (res.body.trim() ? "" : " empty"));
       var s2 = state(p);
       if (s2.aria !== B0.aria || s2.opt !== B0.opt) act += "+" + restoreAct(p, B0, ccOn, prevTrack);
       fixed = fixed.concat(fixAll(B1, state(p), ccOn));
@@ -411,9 +411,25 @@
     var ql = already ? str(cur && cur.languageCode) : str(a.ql || a.code), qk = already ? (cur && cur.kind === "asr" ? "asr" : "") : (a.qk != null ? str(a.qk) : a.asr ? "asr" : "");
     var mkey = a.v + "|" + ql + "|" + qk, match = arMatch(a.v, ql, qk), hit = MEM.ar[mkey] || null;
     if (already && hit) { MEM.show = { v: a.v, set: false }; return { ok: true, how: "already", events: hit.events, via: "cached" }; }
-    // ⛔ القاطعُ لا يُجبر بعده أحداً — ⭐ **إلا أنّ العربيّة المعروضة سلفاً تُقرأ كما تظهر بلا طلب** (⛔ ~~«رفض يوتيوب» وهي على الشاشة~~)
+    // ⛔ القاطعُ لا يُجبر بعده أحداً — ⭐ **إلا أنّ العربيّة المعروضة سلفاً تُقرأ كما تظهر بلا طلب** (⛔ ~~«رفض يوتيوب» وهي على الشاشة~~) —
+    // **ما لم يكن القاطعُ إعادةَ ضبطٍ منّا رُفضت** (`gone`): المشغّلُ أفرغ الشاشةَ قبل أن يطلب، فلا ما يُقرأ (تحقّقُ الجولة الثالثة)
     if (MEM.stop) {
       if (!already) return { ok: false, reason: "breaker", why: MEM.stop.why };
+      // ⭐ أعلى الشاشة عربيّةٌ؟ — **آخرُ نتيجةٍ لطلب المسار المعروض** (من المراقب الحيّ ومن السجلّ معاً، والأحدثُ يحكم): مرفوضةٌ ⇐ فارغة
+      // («gone») · ناجحةٌ ⇐ تُقرأ كما تظهر بلا طلب · ⛔ ~~لفيديو رفضِنا وحدَه~~ (تحقّقُ الجولة السادس): رفضُ يوتيوب طلبَ المشغّل نفسِه لفيديو آخر
+      // أو بعد قاطعٍ من مسارٍ آخر كان يُقرأ «يُدبلج» على شاشةٍ فارغة. **ولا نتيجةَ لفيديو رفضِنا منذ رفضه** ⇐ لعلّ إعادةَ اختيارٍ في الطريق: تُنتظر
+      // قليلاً (⛔ ~~«اختفت» قبل أن تظهر بلحظة~~) ثمّ «gone»؛ ولغيره ⇐ كما كان (حُمّل قبل القاطع)
+      var mineGone = MEM.stop.gone === a.v, since = mineGone ? MEM.stop.goneAt : -1;
+      var last = lastOutcome(match, since);
+      // ⭐ والحكمُ بـ«gone» يُنتظر قبله قليلاً **دائماً** — ⛔ ~~حين لا نتيجةَ وحدَه~~ (تحقّقُ الجولة السابع): رفضٌ أقدمُ مسجَّلٌ للمسار نفسِه كان يُعطي
+      // «اختفت» فوراً وإعادةُ اختيارٍ في الطريق على وشك أن تُظهرها؛ والرفضُ الحقيقيّ يُقال بعد ثانيتين ونصف
+      // ⛔ ~~ويُعاد الحكمُ بكلّ ما يُقرأ أثناءه~~ (تحقّقُ الجولة الثامن): يوتيوب قد يُفرغ سجلَّ الموارد أثناء الانتظار فيختفي الرفضُ المسجَّلُ فيه وحدَه
+      // فينقلب «gone» صحيحٌ «يُدبلج» على شاشةٍ فارغة ⇒ **لا يغيّر الحكمَ أثناءه إلا نجاحٌ يصل**
+      if (last === false || (last == null && mineGone)) {
+        var tw = performance.now();
+        while (performance.now() - tw < 2500) { await delay(150); if (lastOutcome(match, since) === true) { last = true; break; } }
+      }
+      if (last === false || (last == null && mineGone)) return { ok: false, reason: "gone", why: MEM.stop.why };
       MEM.show = { v: a.v, set: false };
       return { ok: true, how: "already", events: null, via: "", why: "breaker" };
     }
@@ -458,13 +474,22 @@
       var t0 = performance.now();
       for (;;) {
         await delay(100);
-        var bad = first(seen, function (x) { return x.status >= 400 || (x.status === 200 && x.size === 0 && x.xfer > 0); });
+        var isBad = function (x) { return x.status >= 400 || (x.status === 200 && x.size === 0 && x.xfer > 0); };
+        var bad = first(seen, isBad);
         if (bad) {
-          MEM.stop = { at: Date.now(), why: "show status=" + bad.status };
-          // ⭐ العربيّةُ معروضةٌ سلفاً ⇐ القاطعُ يرتفع (لا طلبَ بعده) والدبلجةُ تقرأ ما يظهر، والمفاتيحُ تُعاد — ⛔ ~~رفضٌ وما أعدنا ضبطَه
-          // يبقى بطوابعنا~~ (مراجعةُ الجولة الثالثة #2)
-          if (already) { refused = bad.status || -1; break; }
-          hide(); return { ok: false, reason: "breaker", why: MEM.stop.why };
+          // ⭐ العربيّةُ معروضةٌ سلفاً ⇐ القاطعُ يرتفع (لا طلبَ بعده) والمفاتيحُ تُعاد — ⛔ ~~وما أعدنا ضبطَه يبقى بطوابعنا~~ (مراجعةُ الجولة
+          // الثالثة #2) · ⛔ ~~«وتقرأ ما يظهر»~~ (تحقّقُ الجولة، 📖 مشغّل 11a45ffb: `H5` يُفرغ الترجمةَ قبل أن يطلب، ولا يُعيدها إلا ردٌّ ناجح)
+          // ⇒ **لا شيءَ على الشاشة بعد الرفض** ⇒ رفضٌ يقول ذلك بعينه
+          raise("show status=" + bad.status);
+          if (!already) { hide(); return { ok: false, reason: "breaker", why: MEM.stop.why }; }
+          // ⛔ ~~وأيُّ طلب ترجمةٍ رُفض «أخفى» ترجمتَنا~~ (تحقّقُ الجولة الثاني): الشاشةُ فرغت لمسارنا وحدَه ⇒ «gone» برفض طلبه هو — يُبحث عنه
+          // بعينه (أوّلُ رفضٍ قد يكون لغيره)، ورفضُ غيره يرفع القاطعَ فلا إجبارَ بعده ويمضي الانتظارُ بفحوصه ومهلته
+          var badMine = first(seen, function (x) { return isBad(x) && match(x.name); });
+          if (badMine) {
+            MEM.stop.gone = a.v; MEM.stop.goneAt = performance.now(); MEM.stop.why = "show status=" + badMine.status;
+            refused = badMine.status || -1;
+            break;
+          }
         }
         var done = first(seen, function (x) { return x.status > 0 && match(x.name); });
         var live = tap && !tap.locked;
@@ -482,6 +507,7 @@
     // العربيّةُ اختيارُ المستخدم وإعادةُ ضبطنا المسارَ نفسَه كتبت مفاتيحَه بطوابعَ جديدة ⇒ تُعاد **حرفاً** لا بالبيانات: لا يبقى منّا
     // أثرٌ ولا طابع (بحثُ الجولة الثالثة #6) — الآن وبعد ثانيتين (المشغّلُ يكتب ثانيةً أحياناً، 📐)
     if (already) { exactBack(B1, A1); setTimeout(function () { exactBack(B1, A1); }, 2000); }
+    if (refused) return { ok: false, reason: "gone", why: "refused:" + refused };
     if (a.dl && performance.now() - tIn > a.dl) { if (!already) hide(); return { ok: false, reason: "late" }; }
     var ev = tap ? tap.got.events : hit ? hit.events : null;
     if (tap && ev) arKeep(mkey, ev);
@@ -489,9 +515,57 @@
     // طلبٌ لم يمرّ بنا (بنوعه من المراقب) · أو لا طلبَ أصلاً
     var sawIt = first(seen, function (x) { return match(x.name); });
     var g = tap ? tap.got : null;
-    var why = ev ? "" : refused ? "refused:" + refused : !tap ? "" : tap.locked ? "locked" : g.rt ? "unreadable:" + g.rt : g.st != null ? "status:" + g.st :
+    var why = ev ? "" : !tap ? "" : tap.locked ? "locked" : g.rt ? "unreadable:" + g.rt : g.st != null ? "status:" + g.st :
       g.empty ? "empty" : g.flight > 0 ? "slow" : g.seen ? "parse" : sawIt ? "unhooked:" + (sawIt.it || "?") : "no-request";
     return { ok: true, how: how, events: ev || null, via: tap ? tap.got.via : hit ? "cached" : "", why: why };
+  }
+
+  // طلبُ عربيّة (ترجمةً `tlang=ar` أو مساراً عربيّاً) — يحفظه المراقب لكلّ فيديو، ويُحكم بالمسار المعروض (`match`) لا بالمرفوض بعينه (تحقّقُ الجولة
+  // الرابع: من أعاد العربيّةَ من مصدرٍ آخر فهي على الشاشة)
+  function arUrl(u) {
+    var q = qs(u), tl = q.get("tlang") || "";
+    return /^ar\b/.test(tl) || (!tl && /^ar\b/.test(q.get("lang") || ""));
+  }
+  // نتيجةُ طلبٍ من سجلّ الموارد (📖 Resource Timing: `responseStatus` · حجمُ الجسم): true نجح · false رُفض · null لم تُعرف بعد
+  function outcome(e) {
+    if (e.responseStatus === 200 && e.encodedBodySize > 0) return true;
+    if (e.responseStatus >= 400 || (e.responseStatus === 200 && !(e.encodedBodySize > 0) && e.transferSize > 0)) return false;
+    return null;
+  }
+  // ⭐ القاطعُ يُرفع من موضعٍ واحد — **ومعه مراقبٌ حيٌّ يحفظ كلَّ طلبٍ عربيٍّ بعده لكلّ فيديو بنتيجته** (`MEM.stop.seen`): ⛔ ~~سجلُّ الموارد وحدَه~~
+  // (تحقّقُ الجولة الثالث، 📖 base.js: يوتيوب يُفرغه بـclearResourceTimings، وكرومُ يقف عند 250) · ⛔ ~~أوّلُ نجاحٍ ثمّ ينفصل~~ (الخامس) · ⛔ ~~لفيديو
+  // رفضِنا وحدَه ومنذ رفضه~~ (السادس). بلا طلب، ومرّةً في الصفحة
+  function raise(why) {
+    if (MEM.stop) return MEM.stop;
+    MEM.stop = { at: Date.now(), why: why, gone: "", goneAt: 0, seen: [] };
+    if (typeof PerformanceObserver === "function") {
+      try {
+        new PerformanceObserver(function (l) {
+          l.getEntries().forEach(function (e) {
+            var n = String(e.name), r = outcome(e);
+            if (r == null || n.indexOf(TT) < 0 || !arUrl(n)) return;
+            MEM.stop.seen.push({ name: n, t: e.startTime, ok: r });
+            if (MEM.stop.seen.length > 100) MEM.stop.seen.shift();
+          });
+        // `buffered`: ما في السجلّ لحظةَ رفع القاطع يُحفظ أيضاً — ⛔ ~~الرفضُ الذي رفعه لا يراه المراقب~~ (تحقّقُ الجولة التاسع) فإفراغُ يوتيوب السجلَّ قبل
+        // الضغطة التالية كان يُضيّعه فيُقرأ «يُدبلج» على شاشةٍ فارغة
+        }).observe({ type: "resource", buffered: true });
+      } catch (e) { /* بلا مراقب: يبقى سجلُّ الموارد */ }
+    }
+    return MEM.stop;
+  }
+  // آخرُ نتيجةٍ لطلب المسار المعروض (`match`) منذ `t`: true نجح · false رُفض · null لا طلب — من المراقب الحيّ ومن السجلّ معاً والأحدثُ يحكم.
+  // `>=`: طلبُ رفضِنا نفسُه بدأ قبل أن يُكتشف رفضُه (`t`) فلا يُعدّ
+  function lastOutcome(match, t) {
+    var best = null;
+    (MEM.stop.seen || []).forEach(function (x) { if (x.t >= t && match(x.name) && (!best || x.t >= best.t)) best = x; });
+    var es = [];
+    try { es = performance.getEntriesByType("resource"); } catch (e) { es = []; }
+    es.forEach(function (x) {
+      var r = outcome(x);
+      if (r != null && x.startTime >= t && match(String(x.name)) && (!best || x.startTime >= best.t)) best = { t: x.startTime, ok: r };
+    });
+    return best ? best.ok : null;
   }
 
   // مفاتيحُ المُعيِّن ومفتاحُ التشغيل إلى قيمها في اللقطة **حرفاً** — لِما لم يتغيّر فيه شيءٌ إلا بنا (العربيّةُ معروضةٌ سلفاً).

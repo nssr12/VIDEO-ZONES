@@ -722,6 +722,7 @@ const DUB_REASON_TEXT = {
   "az-trnokey": "اخترتَ «مترجم Azure» بلا مفتاح مترجم، ومترجمُ كروم غيرُ متاح هنا — ضع مفتاح المترجم في «إعدادات Azure» ثمّ «احفظ واختبر»",
   "main-old": "في هذه الصفحة نسخةٌ أقدم من الإضافة (حُدّثت بعد فتحها) — أعد تحميل صفحة يوتيوب ثمّ اضغط «دبلِج»",
   late: "تأخّر المشغّل في عرض الترجمة (أهو تبويبٌ مخفيّ؟) — اضغط «دبلِج» ثانيةً والتبويبُ ظاهر",
+  gone: "رفض يوتيوب إعادةَ تحميل ترجمته العربيّة فاختفت من الفيديو — لن أطلب ثانيةً في هذه الصفحة. أعد تحميلها لاحقاً، ولا تُعِد اليوم إن تكرّر",
   threw: "عطبٌ داخليّ في الدبلجة"
 };
 const DUB_STEP_TEXT = {
@@ -739,6 +740,7 @@ const DUB_HOLD_TEXT = {
   "wait-voice": "أوقفتُ الفيديو لحظةً حتى يجهز صوتُ الجملة", "wait-translate": "أوقفتُ الفيديو لحظةً حتى تصل ترجمةُ الجملة",
   "wait-behind": "أوقفتُ الفيديو لحظةً حتى يُتمّ الصوتُ جملتَه فيبقى معه",
   "no-voice": "لا صوتَ عربيّ في هذا الجهاز — اختر «Azure (أصوات مايكروسوفت)» في «محرّك الصوت»",
+  "no-lines": "لا سطرَ عربيّاً على الفيديو منذ عشرين ثانية — حين يظهر أقرؤه (وإن اختفت الترجمةُ فأعد اختيار العربيّة من ⚙)",
   "tr-off": "مترجم Azure متوقّف ولا مترجمَ بديل على هذا الجهاز — تحقّق من مفتاح المترجم ثمّ أعد «دبلِج»"
 };
 const DUB_STOP_TEXT = {
@@ -835,7 +837,9 @@ function renderDub(st) {
       (DUB_KIND_TEXT[st.kind] ? ` · ${DUB_KIND_TEXT[st.kind]}` : "") +
       (st.kind === "display" && st.ytWhy ? ` (تعذّرت القراءةُ المسبقة: ${dubYtWhyText(st.ytWhy)})` : "") +
       // ⛔ ~~«الانتظار» و«أسرع حين يتأخّر» يعدان في القراءة كما تظهر~~ ولا يعملان فيها (مراجعةُ الجولة #9) — يُقال
-      (st.kind === "display" ? " · بلا إيقافٍ للفيديو ولا تسريعٍ فوق 1.4× في هذه القراءة" : "") +
+      // ⛔ ~~«ولا تسريعٍ فوق 1.4×» والسرعةُ ثابتةٌ اختارها المستخدم~~ (تحقّقُ الجولة) — يُقال ما يصحّ لكلٍّ
+      (st.kind !== "display" ? "" : typeof st.rate === "number" ? ` · بلا إيقافٍ للفيديو في هذه القراءة، وبالسرعة التي اخترتها (${st.rate}×)`
+        : " · بلا إيقافٍ للفيديو ولا تسريعٍ فوق 1.4× في هذه القراءة") +
       (st.bgSkipped ? ` · ⚠️ تُخطّيت ${st.bgSkipped} والتبويبُ مخفيّ — أبقِه ظاهراً أو صوتَ يوتيوب مسموعاً` : "") +
       (st.warm ? "" : " · ⚠️ لم أسمع جملةَ البدء — أهو تبويبٌ مكتوم؟") + az +
       // ⛔ ~~«بمترجم كروم» ولا مترجمَ كروم~~ (مراجعةُ الجولة #4): ما تُرجم سلفاً يُقرأ ثمّ تقف عند أوّل جملةٍ لم تُترجم — يُقال قبلها
@@ -945,11 +949,15 @@ function fillDubAzOptions(list, voice) {
   }
   sel.value = voice;
 }
-async function fillDubAzVoiceSelect(az) {
+// `keepShown`: «احفظ واختبر» وحدَه — ⛔ ~~إبقاءُ المعروض في كلّ ملء~~ (تحقّقُ الجولة الثاني): مسارُ الفتح وإرجاعُ #69 بعد حفظٍ فشل
+// يُعيدان المحفوظ، فلا يقول الضابطُ صوتاً لم يُحفظ
+async function fillDubAzVoiceSelect(az, keepShown) {
   const sel = $("dubVoice");
   if (!sel) return;
   const tag = az.region + "|" + (az.key ? az.key.slice(-4) : "");
-  fillDubAzOptions(dubAzVoices && dubAzVoicesFor === tag ? dubAzVoices : DUB_AZ_FALLBACK, az.voice);
+  // ⛔ ~~بالصوت المحفوظ دائماً~~ (تحقّقُ الجولة): «احفظ واختبر» يستدعيها بما حفظه قبل طلبَيه — فكان يُعيد صوتاً غيّره المستخدمُ أثناءهما، ثمّ يُحفظ
+  // القديمُ مع أوّل تغيير ⇒ قائمةُ Azure المعروضةُ يبقى مختارُها
+  fillDubAzOptions(dubAzVoices && dubAzVoicesFor === tag ? dubAzVoices : DUB_AZ_FALLBACK, keepShown && sel.dataset.engine === "azure" && sel.value ? sel.value : az.voice);
   const list = await dubAzVoiceList(az);
   if ($("dubEngine")?.value !== "azure" || sel.dataset.engine !== "azure") return;
   fillDubAzOptions(list, sel.value || az.voice);
@@ -1028,6 +1036,8 @@ async function saveDubPrefs(keepVoice, azFields) {
 // الأوّل وتبقى الدبلجةُ عليه والمختارُ غيرُه — والثاني ينتظر الأوّلَ حتى يصله ردُّه
 let dubPrefChain = Promise.resolve();
 function onDubPrefChange(e) {
+  // نيّةُ الإعادة تُعرف لحظةَ التغيير — ⛔ ~~حين يحين دورُه في السلسلة~~ فكان ينتظر فيُقال «تعمل بمصدرٍ غير المختار» (تحقّقُ الجولة)
+  if (e && e.target && e.target.id === "dubSource") dubRestartTo = $("dubSource")?.value || "";
   const run = dubPrefChain.then(() => onDubPrefChangeRun(e));
   dubPrefChain = run.catch(() => {});
   return run;
@@ -1035,11 +1045,11 @@ function onDubPrefChange(e) {
 async function onDubPrefChangeRun(e) {
   const id = e && e.target ? e.target.id : "";
   const engineChanged = id === "dubEngine";
-  if (id === "dubSource") dubRestartTo = $("dubSource")?.value || "";
   const saved = await saveDubPrefs(engineChanged, /^dubAz/.test(id));
   if (!saved) { dubRestartTo = ""; return; }
+  // ⛔ ~~وينتظر قائمةَ أصوات Azure~~ (تحقّقُ الجولة): كلُّ تغييرٍ بعده في السلسلة كان ينتظرها حتى ست ثوانٍ ويضيع إن أُغلقت النافذة
   if (engineChanged) {
-    if (saved.engine === "azure") await fillDubAzVoiceSelect(saved.azure); else fillDubVoices(saved.voice[dubPlatform()] || "");
+    if (saved.engine === "azure") fillDubAzVoiceSelect(saved.azure).catch(() => {}); else fillDubVoices(saved.voice[dubPlatform()] || "");
   }
   if (dubTabId == null) { dubRestartTo = ""; return; }
   if (dubLast && (dubLast.state === "preparing" || dubLast.state === "running")) {
@@ -1084,7 +1094,7 @@ async function testDubAzure() {
   }
   note.textContent = `${speech} · ${tr}`;
   if (bad) note.classList.add("bad");
-  if ($("dubEngine")?.value === "azure") await fillDubAzVoiceSelect(az);
+  if ($("dubEngine")?.value === "azure") await fillDubAzVoiceSelect(az, true);
 }
 
 async function loadDubUI() {
