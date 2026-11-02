@@ -51,6 +51,7 @@ There is no test suite. Verify UI changes manually in the browser.
 | `tools/icons.js` | **Icon registry — the one place.** Owner-designed SVGs (⛔ ~~19~~ — struck 2026-10-31, decisions 21 · 34: `VZ_ICONS` measured 26 keys; the count is read from the registry, never hand-written), uniform style (24-box, stroke currentColor, weight 1.7). `tools/preview-icons.html` is generated from it; `tools/icons.html` is the owner original, kept as the source of record. **Only `VZ_ICONS_SHIPPED` reaches `content.js`** — shipped weight with no user is dead code, and `tools/test-icons.js` reddens on it |
 | `tools/CHECKLIST.md` | The **current field-verification session's steps**, walkable — setup + numbered anchors, nothing else. **Fully right-to-left: it opens with `<div dir="rtl">` followed by a blank line (CommonMark ends that HTML block only at a blank line; without it the first heading renders as raw `# …`) and closes with `</div>` — ⚠️ measured 2026-11-02, that decides only the VS Code/Cursor preview: on GitHub every heading, paragraph and list carries its own `dir="auto"` that overrides the wrapper (so each must start with an Arabic letter; not guarded), and a chat link opens the text editor (`showTextDocument`), which stays left-to-right — tell the owner ⇧⌘V, and only the current session's steps stay — every earlier step is deleted, not kept, finished or still pending (the Windows `س1`–`س15` are written back here when that session starts) — the full previous file is `git show c3461e6:tools/CHECKLIST.md`** (owner, 2026-11-02: «احذف كل الخطوات السابقه وابقي الخطوات الحاليه فقط ورتب الملف من اليمين للسيار rtl كامل»; `tools/test-checklist-place.js` reddens without the wrapper, the current anchors or the history pointer). Steps live here and nowhere else; `docs/HISTORY.md` (§17 سابقاً) keeps only the reasoning and open questions, and `tools/test-checklist-place.js` reddens if a numbered step reappears there (decision 41) |
 | `AUDIT.md` | Audit report — every numbered item and its status |
+| `.claude/agents/` | **Sub-agent tiers (قرار 157)** — `scout` (Haiku 5.5, effort low) · `checker` (Sonnet 5.5, effort medium) · `skeptic` (Opus 5.5, effort high). Which one a task gets is decided by the «Sub-agents — classify before delegating» section below. Development only — never shipped |
 
 ## Packaging
 
@@ -64,6 +65,7 @@ tools/preview-77.html   # غلاف معاينة فوق settings-ui.js المشح
 AUDIT.html    # rendered audit view (already gitignored)
 HANDOFF.md    # work-state handoff
 docs/         # DECISIONS · PLATFORMS · HISTORY · REFERENCE — مراجع عمل لا منتج
+.claude/      # sub-agent tier definitions (قرار 157)
 .git/ .gitignore CLAUDE.md
 ```
 
@@ -718,6 +720,76 @@ dead (2026-08-05), and the sweep is far too slow and host-dependent to gate a
 commit — its red would become noise and teach people to skip it (#97's warning).
 ⇒ **Two conditions, two triggers, two blind spots. Neither is the other's
 economy.**
+
+## Sub-agents — classify before delegating (قرار 157)
+
+The owner, 2026-11-02, verbatim: «نحتاج قاعده جديده بتصنيف المهام للوكلاء الفرعيين لتوفير الاستهلاك وليس كل المهمام التي تتطلب
+وكلاد مساعدين تسند الى opus 5.5 يجب ان تصنف حجم ومدي صعوبه المهمه قبل الاستعانه بوكيل احتاج اقتراحك للقاعده الجديده بحث لا تضر
+او تعطل العمل او تقلل الفائده منهم بحيث تكون متوازنه» — and on the proposal below: «احسنت موافق واعتمدها اكتبها الان».
+
+**Why — measured 2026-11-02 from that session's own agent transcripts:** 160 sub-agents, 151 of them on Opus 5.5,
+**none with an explicit effort** (every one inherited the session's). Output by role: reviewers 34% · skeptics 25% ·
+build/probes 13% · research/design 11% · the rest (reading, web research, critics, list checks) 17%. **The largest cost
+was not output but each agent re-reading its context every turn (~2.8 billion cache-read tokens) — and a cache read
+costs the same on Sonnet 5.5 as on Opus 5.5** ($0.20/MTok). ⇒ **Downgrading the model alone would have saved under 10%
+of that session; explicit effort and narrow scope are the larger levers.** Relative API prices: Sonnet 5.5 = ½ Opus 5.5 ·
+Haiku 5.5 ≈ 1/40 of Opus 5.5 (prompts up to 100K tokens) · Fable 5.1 = 2.5× Opus 5.5.
+
+**1. Do I need an agent at all?** A task of two or three tool calls is done inline.
+
+**2. Three questions before every delegation** — the agent gets **the cheapest tier that clears all three**:
+- **Depth:** mechanical · bounded judgment · deep reasoning?
+- **Breadth:** named files and lines · many places · open exploration?
+- **Cost of error:** is the result checked downstream (a skeptic, a test)? Or will it change product code, or be told
+  to the owner as fact?
+
+**3. Tiers**
+
+| Tier | When | Examples in this repo | Effort |
+|---|---|---|---|
+| **Haiku 5.5** — `scout` | mechanical; a wrong answer is visible | inventories of references · counting · extracting numbers or fields from a log or JSON · running a given script and reporting its output | `low` |
+| **Sonnet 5.5** — `checker` | bounded judgment over known files | sweeping `AUDIT`/`HANDOFF`/`docs` for claims a change made false · matching `tools/CHECKLIST.md` against the popup's real text · web research and its summary · reviewing the options page, CSS or docs · writing a test from a precise spec · the skeptic on a finding about a doc or a test margin | `medium` (`high` for a review) |
+| **Opus 5.5** — `skeptic`, or the default agent with an explicit effort | deep reasoning, or an error that costs | reviewing the dub engine (timing · ads · seeks · page world) · the skeptic on any finding that will change product code · tracing YouTube's real player · judging between designs · root-causing a bug the owner reported | `high` (`max` only for the hardest skeptics) |
+| **Fable 5.1** | only when the owner asks | — | — |
+
+**4. Never downgraded — always Opus 5.5:**
+- verifying a finding that will change product code;
+- anything touching our requests to YouTube, the circuit breaker, or the five-runs-a-day budget;
+- Azure keys or any other sensitive data;
+- anything told to the owner as a final verdict with no check after it.
+
+**5. Escalation — the task is re-run one tier up when:**
+- the result fails its schema, or comes back empty where content was expected;
+- the agent contradicts itself or says it is not confident;
+- the task turns out harder than it was classified;
+- two agents of the cheaper tier disagree.
+
+**6. Finder and skeptic:** in a wide sweep the finder is the cheaper tier and the skeptic is Opus. **In a review of
+engine logic the finder is Opus too** — a skeptic cannot see what the finder missed.
+
+**7. Consumption without changing the model — the larger lever:**
+- **an explicit effort on every agent**, never the inherited one;
+- **narrow scope:** paths and line ranges; an agent never reads `AUDIT.md` (~600K characters) or `HANDOFF.md` whole —
+  it searches them;
+- the top three findings per lens;
+- **verification rounds stop at the first round that confirms no defect in product code within the reviewed change;**
+  a test-margin finding, or a defect older than the change, is fixed without another round (on 2026-11-02 the loop
+  would have stopped at round 13 instead of 14).
+
+**8. Measured, not promised:** every workflow declares each agent's tier and effort (its label and the
+`agentType`/`model`/`effort` options). **The closing message of every session that used agents reports the count per
+tier and their consumption** (from the workflow and agent notifications). When an Opus agent later finds a defect a
+cheaper tier missed, that class moves up — and the move is written here.
+
+**How to apply:** the Agent tool takes `subagent_type: "scout" | "checker" | "skeptic"` (definitions in
+[`.claude/agents/`](.claude/agents/)) or `model` + `effort` on the call; a Workflow `agent()` takes `{agentType: "scout"}`
+and the like, or `{model, effort}`. An Opus finder is the default agent with `effort: "high"`. **This section is the
+written instruction that authorizes setting `effort` on agents.** The definitions name the aliases `haiku` · `sonnet` ·
+`opus`, which resolve today to Haiku 5.5 · Sonnet 5.5 · Opus 5.5 and follow the current generation; a call's own
+`model`/`effort` overrides the definition's, and the environment variable `CLAUDE_CODE_EFFORT_LEVEL` overrides both
+(Claude Code docs, sub-agents and model configuration, read 2026-11-02). ⚠️ **A session started before
+`.claude/agents/` existed does not see the definitions until it restarts** (only folders present at start are watched)
+— until then pass `model` + `effort` on the call.
 
 ## Useful one-liners
 
