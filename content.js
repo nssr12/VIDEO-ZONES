@@ -2330,8 +2330,9 @@ document.addEventListener("fullscreenchange", markIdleActivity);
 //
 // ⚠️ **حدٌّ معروف — ونصفُه صار سؤالاً مفتوحاً بتغيّر الهدف:** قِيس أن `.ytp-popup`
 // **خارج `.ytp-progress-bar-container`** فتبقى قائمة الإعدادات ظاهرة. **ولم
-// يُقَس أنها خارج `.ytp-chrome-bottom`** — والخطوة 7 في `tools/CHECKLIST.md` هي
-// التي تقطع فيه. **فلا يُكتب هنا ما لم يُقس** (قرار 26).
+// يُقَس أنها خارج `.ytp-chrome-bottom`** — ⛔ ~~والخطوة 7 في `tools/CHECKLIST.md` هي
+// التي تقطع فيه~~ (صارت `م11`، وحُذفت من القائمة بطلب المالك 2026-11-02 — نصُّها في
+// `git show c3461e6:tools/CHECKLIST.md`). **فلا يُكتب هنا ما لم يُقس** (قرار 26).
 const YT_PROGRESS_SELECTOR = ".ytp-chrome-bottom";
 const YT_PROGRESS_HIDE_CLASS = "vz-idle-hide-progress";
 let ytProgressStyleEl = null;
