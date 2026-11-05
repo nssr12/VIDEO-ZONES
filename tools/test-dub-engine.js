@@ -204,7 +204,8 @@ function makeEnv(opts) {
   const q = [];
   let speaking = null, maxOurs = 0;
   const engine = { drops: o.drops || 0, hold: false };
-  const real = (r) => (r <= 1 ? 1 : 1 + (r - 1) * 0.905);
+  // `sapi`: محرّكُ الويندوز المقروء من `tts_win.cc` — سرعةٌ بدرجات (📖 لا قياس): 1.25 كـ1 · و2 ⇐ 1.39
+  const real = o.sapi ? (r) => Math.pow(3, Math.trunc(10 * Math.log10(r)) / 10) : (r) => (r <= 1 ? 1 : 1 + (r - 1) * 0.905);
   const pump = () => {
     if (speaking || engine.hold || !q.length) return;
     const u = q.shift(); speaking = u;
@@ -334,7 +335,7 @@ function makeEnv(opts) {
     window: win, document, location, URL: TURL, URLSearchParams, JSON, Date, Math, Number, String, Array, Object, Promise, Map, Set, atob,
     CustomEvent: FakeCustomEvent, performance: { now: () => (perf.n++, now()) }, speechSynthesis, SpeechSynthesisUtterance, fetch: azFetch, Audio: FakeAudio, AbortController,
     Translator: o.noTranslator ? undefined : { availability: async () => "available", create: async () => ({ translate: async (t) => { if (o.trDelay) await sleep(o.trDelay); return "ترجمة " + t.replace(/[^0-9]/g, ""); } }) },
-    chrome: { runtime: { id: "x" } }, OfflineAudioContext: o.azTail ? FakeOAC : undefined,
+    chrome: { runtime: { id: "x" } }, OfflineAudioContext: o.azTail ? FakeOAC : undefined, navigator: o.nav,
     extensionActive: () => gate.on, isYouTubeHost: () => true, isInMiniPlayer: () => false
   }, timers);
   contentCtx.globalThis = contentCtx;
@@ -719,7 +720,19 @@ const isPrefixOf = (said, cues) => {
   {
     const e = makeEnv();
     const st = await startRun(e, { source: "device", engine: "azure", az: {} });
-    check("صوتُ Azure بلا مفتاح ⇐ يُرفض بسببه قبل أيّ طلب", st.state === "refused" && st.reason === "az-nokey" && e.azReqs.length === 0, st);
+    // ⛔ ~~يكفي أن Azure لم يُطلب~~ — كان «قبل أيّ طلب» أخضرَ وقد طُلب نصُّ الفيديو من يوتيوب (مراجعةُ الويندوز 2026-11-05)
+    check("صوتُ Azure بلا مفتاح ⇐ يُرفض بسببه قبل أيّ طلب", st.state === "refused" && st.reason === "az-nokey" && e.azReqs.length === 0 && e.fetched.length === 0 && e.playerReqs.length === 0, { st, f: e.fetched, p: e.playerReqs });
+  }
+  for (const [name, o2, src] of [
+    ["«ترجمة يوتيوب» بصوت Azure بلا مفتاح", {}, { source: "yt", engine: "azure", az: {} }],
+    ["«ترجمة يوتيوب» ولا صوتَ عربيّ", { voices: [{ lang: "en-US", name: "David", localService: true, voiceURI: "David" }] }, { source: "yt" }],
+    ["«ترجمة يوتيوب» وقائمةُ الأصوات فارغة", { voices: [] }, { source: "yt" }],
+    ["«مترجم كروم» ولا صوتَ عربيّ", { voices: [{ lang: "en-US", name: "David", localService: true, voiceURI: "David" }] }, { source: "device" }]
+  ]) {
+    const e = makeEnv(o2);
+    const st = await startRun(e, src);
+    check("⭐ " + name + " ⇐ يُرفض بسببه بصفر طلبٍ إلى يوتيوب — ⛔ ~~بعد طلب الترجمة كلَّ ضغطة~~", st.state === "refused" && (st.reason === "no-voice" || st.reason === "az-nokey") &&
+      e.fetched.length === 0 && e.playerReqs.length === 0 && !e.calls.some((x) => /^setOption/.test(x)), { st, f: e.fetched, p: e.playerReqs, c: e.calls });
   }
 
   // ── الجولة الثالثة (ملاحظتا المالك 2026-11-01 ومراجعة 168ح) — كلُّ سيناريو هنا رُئي أحمرَ على الكود قبلها (قرار 47) ──────────
@@ -2079,6 +2092,59 @@ const isPrefixOf = (said, cues) => {
     await until(() => !e.api.dub.wait && e.api.dubStatus().stallS > s0, 8000);
     const held = e.api.dubStatus().stallS - s0;
     check("⭐ الترجمةُ المنتظرة تُطلب أثناء الانتظار ⇐ يكمل الفيديو قبل المهلة", held > 0 && held < 2.8 && u.ar != null, { held, translated: u.ar != null });
+    e.api.dubStop("user");
+  }
+
+  console.log("\n[٢٢] الويندوز — سرعةُ صوت الجهاز درجات (📖 tts_win.cc، ولم تُقس على جهازٍ بعد): تُرسل درجةٌ وتُحسب سرعتُها هي، والماك وAzure بحالهما");
+  const KEYW = "k".repeat(32), WIN = { userAgentData: { platform: "Windows" } }, STEPS = [1, 1.26, 1.59, 2, 2.52, 3.17, 3.99], REALS = [1, 1.116, 1.246, 1.39, 1.552, 1.732, 1.933];
+  const rates = (e) => saidAll(e, "start").map((x) => x.rate);
+  {
+    const e = makeEnv({ arTrack: arTrack(40, 2, 1.8, true), sapi: true, nav: WIN });
+    await startRun(e, { source: "yt" });
+    await until(() => saidAll(e, "start").length >= 8, 60000);
+    const got = rates(e), st = e.api.dubStatus();
+    check("⭐ كلامٌ كثيف ⇐ كلُّ ما يصل الصوتَ درجةٌ من الجدول — ⛔ ~~1.4 فتهبط 1.116~~", got.length >= 8 && got.every((r) => STEPS.includes(r)), got);
+    check("⭐ ويتجاوز كروم 2 ليلحق — ⛔ ~~يقف عند 1.39 أبداً~~", got.some((r) => r > 2), got);
+    check("⭐ والقياسُ يقول ما نُطق حقّاً — ⛔ ~~1.91 والصوتُ على 1.39~~", REALS.some((x) => Math.abs(x - st.spd[1]) < 0.006), st.spd);
+    check("⭐ والسرعةُ المتعلَّمة سرعةُ الصوت (8.15 حرفاً/ث في المزيّف) — ⛔ ~~بمنحنى الماك: 0.73 منها~~", Math.abs(st.cps - 8.15) < 0.8, st.cps);
+    e.api.dubStop("user");
+  }
+  for (const [nav, what, voices, fixed, want] of [
+    [WIN, "1.25× على الويندوز ⇐ درجةُ 1.246 لا درجةُ الصفر", null, 1.25, 1.59],
+    [WIN, "2× على الويندوز ⇐ درجةُ 1.933 لا 1.39", null, 2, 3.99],
+    [{ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }, "ووكيلٌ بلا userAgentData ⇐ يُعرف الويندوز منه", null, 1.5, 2.52],
+    [{ userAgentData: { platform: "macOS" }, userAgent: "Mozilla/5.0 (Macintosh)" }, "⛔ والماك بحاله: 1.25 تصل 1.25", null, 1.25, 1.25],
+    [WIN, "⛔ وصوتٌ غيرُ محلّيّ على الويندوز لا يبلغ درجات SAPI ⇐ بحاله", [{ lang: "ar-SA", name: "Remote", localService: false, voiceURI: "Remote" }], 1.25, 1.25]
+  ]) {
+    const e = makeEnv({ arTrack: arTrack(12, 2, 2), sapi: true, nav, voices: voices || undefined });
+    await startRun(e, { source: "yt", rate: fixed });
+    await until(() => saidAll(e, "start").length >= 2, 30000);
+    check("⭐ " + what, rates(e).length >= 2 && rates(e).every((r) => r === want), rates(e));
+    e.api.dubStop("user");
+  }
+  {
+    // وضعُ العرض يمرّ من الموضع نفسِه — بلا ملفّ العربيّة تُقرأ السطور كما تظهر
+    const e = makeEnv({ arTrack: arTrack(12, 2, 2), noXhr: true, cues: CUES(20, (k) => "سطرٌ عربيٌّ رقم " + k), sapi: true, nav: WIN });
+    const st = await startRun(e, { source: "yt", rate: 1.75 });
+    await until(() => saidAll(e, "start").length >= 2, 30000);
+    check("⭐ والقراءةُ كما تظهر: 1.75× ⇐ درجةُ 1.732", st.kind === "display" && rates(e).length >= 2 && rates(e).every((r) => r === 3.17), { k: st.kind, r: rates(e) });
+    e.api.dubStop("user");
+  }
+  {
+    // Azure لا يعرف الدرجات: سرعتُه نسبةٌ في SSML — 1.5× تبقى +50% لا +55%
+    const e = makeEnv({ arTrack: arTrack(12, 2, 2), sapi: true, nav: WIN });
+    await startRun(e, { source: "yt", engine: "azure", rate: 1.5, az: { key: KEYW, region: "uaenorth", voice: "ar-SA-HamedNeural" } });
+    await until(() => e.azReqs.length >= 3, 30000);
+    const ssml = e.azReqs.slice(1).map((r) => String((r && r.body) || r));
+    check("⭐ وAzure على الويندوز بنسبته: +50% لا درجة", ssml.length >= 2 && ssml.every((b) => /rate="\+50%"/.test(b)), ssml.map((b) => (b.match(/rate="[^"]*"/) || [])[0]));
+    e.api.dubStop("user");
+  }
+  {
+    // مفتاحٌ مرفوضٌ وسطَ التشغيل ⇐ يُكمل صوتُ الجهاز — وعلى الويندوز بدرجاته: هو ما خطّطه منحنى الماك
+    const e = makeEnv({ arTrack: arTrack(40, 2, 1.8, true), sapi: true, nav: WIN, azMode: (n) => (n <= 1 ? "ok" : "401") });
+    await startRun(e, { source: "yt", engine: "azure", az: { key: KEYW, region: "uaenorth", voice: "ar-SA-HamedNeural" } });
+    await until(() => saidAll(e, "start").length >= 4, 60000);
+    check("⭐ وما يقوله صوتُ الجهاز بدل Azure درجاتٌ أيضاً", rates(e).length >= 4 && rates(e).every((r) => STEPS.includes(r)), rates(e));
     e.api.dubStop("user");
   }
 

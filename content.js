@@ -4954,6 +4954,10 @@ const DUB_RATE_CAP = 2;             // 📐 وسرعةُ كروم التي أع�
 const DUB_AUTO_MAX = 1.4;
 // 📐 سرعةُ كروم ⇐ السرعةُ الفعليّة على الماك («ليلى (محسّن)»، س4 · س21 · س24): **منحنى يُقلب لا قسمة**
 const DUB_CURVE_MAC = [[1, 1], [1.5, 1.505], [2, 1.905], [2.5, 2.48], [3, 2.955], [4, 3.915]];
+// ⭐ **والويندوز درجاتٌ لا منحنى** — 📖 `tts_win.cc`: `SetRate(trunc(10·log10 r))` وكلُّ درجةٍ ×3^(1/10) (AUDIT §٩): 1.25 لا أثرَ لها، و2 ⇐ 1.39.
+// [سرعةُ كروم، الفعليّة] بسرعةٍ فوق حدّ كلّ درجةٍ بقليل، حتى ما يبلغ R_max. ⚠️ **الفعليّةُ من المصدر لا من القياس** — يُستبدل بها ما يطبعه
+// `tools/report-voice-rate.js` على الويندوز (قرار 96). وتتجاوز `DUB_RATE_CAP` عمداً: ذاك حدُّ منحنى الماك وخيارات البوب-أب، وهذي إلى `u.rate` مباشرةً
+const DUB_TTS_STEPS = [[1, 1], [1.26, 1.116], [1.59, 1.246], [2, 1.39], [2.52, 1.552], [3.17, 1.732], [3.99, 1.933]];
 const DUB_SEG_GAP_A = 600;          // 🎯 مِجَسّ 5: فجوةُ بدءٍ تقطع جملةَ التلقائيّة (ms)
 const DUB_SEG_CAP_A = 20;           // 🎯 وسقفُها بالكلمات
 const DUB_SEG_GAP_M = 1200;         // 🎯 فجوةُ نهايةٍ إلى بدء تقطع جملةَ اليدويّة (ms)
@@ -5166,6 +5170,19 @@ function dubChromeRate(real, curve) {
     if (real <= c[i][1]) { const a = c[i - 1], b = c[i]; return a[0] + (real - a[1]) * (b[0] - a[0]) / (b[1] - a[1]); }
   }
   return c[c.length - 1][0];
+}
+
+// الدرجةُ الأقربُ إلى السرعة الفعليّة المطلوبة — ⛔ لا `dubChromeRate`: ما يقع بين درجتين يهبط إلى الأدنى بصمت
+function dubTtsStep(real) {
+  let best = DUB_TTS_STEPS[0];
+  for (const s of DUB_TTS_STEPS) if (Math.abs(s[1] - real) < Math.abs(best[1] - real)) best = s;
+  return best;
+}
+
+// الويندوز؟ — بالاختبار نفسِه في البوب-أب (`dubPlatform`)
+function dubOnWindows() {
+  const n = globalThis.navigator;
+  return /Windows/.test((n && ((n.userAgentData && n.userAgentData.platform) || n.userAgent)) || "");
 }
 
 // §٣ بعد إعلانٍ أو قفزةٍ أو توقّف: نستأنف من أوّل جملةٍ تبدأ عند الزمن الحاليّ أو بعده
@@ -5571,11 +5588,21 @@ async function dubPrepare(run) {
   const yt = run.opts.source === "yt", az = run.opts.engine === "azure";
   // منطقةٌ كُتبت ولا تصلح ⇐ يُقال قبل أيّ طلب، لا يُلام المفتاح (مراجعة 168ح #15)
   if ((az && run.opts.az.bad === "region") || (run.opts.source === "azure" && run.opts.az.trKey && run.opts.az.bad)) return dubRefuse(run, "az-region");
+  // ⭐ وما سيُرفض على أيّ حال يُرفض قبل أيّ طلب: ⛔ ~~بعد الالتقاط أو إظهار الترجمة~~ — ضغطةٌ بلا مفتاحٍ أو بلا صوتٍ عربيّ (أوّلُ حالِ الويندوز)
+  // كانت تُكلّف طلبَ ترجمةٍ كلَّ مرّة، والاتصالُ واحدٌ للجهازين (§٦). ويبقى الفحصان بعد التجهيز: الخياراتُ قد تتبدّل أثناءه
+  if (az && !run.opts.az.key) return dubRefuse(run, "az-nokey");
   // ⛔ ~~مقاطعُ مضمومةٌ مع Azure وحدَه (`|u`)~~ ⇒ ⭐ **الجولة الثالثة: مقاطعُ جملٍ كاملةٍ لكلّ مصدرٍ ومحرّك** — فتبديلُ المحرّك وسطَ
   // التشغيل لا يجعل كلَّ جملةٍ قصيرةٍ طلباً (مراجعة 168ح #10)، ولا يقف صوتُ الجهاز وسطَ جملةٍ أيضاً
   const key = run.vid + "|" + run.opts.source + "|u3";
   const trP = yt ? null : dubTranslatorGet(run);                 // ومع «مترجم Azure» احتياطٌ لا شرط
   const voiceP = dubVoiceGet(run.opts.voice);
+  if (!az) {
+    run.step = "voice";
+    const v00 = await voiceP;
+    if (!live()) return;
+    if (!v00) return dubRefuse(run, "no-voice");
+    run.step = "facts";
+  }
   let tx = yt ? null : dubTranscripts.get(key);
   if (tx) dubTxKeep(dubTranscripts, key, tx, DUB_TX_KEEP);        // استُعمل ⇐ الأحدث
   if (!tx && !yt && dubCapP.has(key)) { tx = await dubCapP.get(key); if (!live()) return; }
@@ -5711,6 +5738,10 @@ function dubSpeak(run, plan) {
 function dubUtter(run, unit, rate, real, s) {
   if (dubAzOn(run) || (dubAzEngine(run) && s && s.clip)) return dubUtterAz(run, unit, rate, real, s);
   if (!run.voice) { run.lost++; return; }                         // Azure متوقّفٌ ولا صوتَ جهازٍ يخلفه
+  // ⭐ الويندوز: تُرسل درجةٌ وتُحسب سرعتُها هي — **هنا وحدَه**: المُخطِّطُ وAzure لا يعرفان الدرجات، وما يقوله صوتُ الجهاز بدل Azure يمرّ من هنا.
+  // **وللصوت المحلّيّ وحدَه** — 📖 غيرُه لا يبلغ `tts_win.cc` (tts_controller_impl.cc) ⇒ ⚠️ وصوتٌ محلّيٌّ من إضافةٍ أخرى لا يُميَّز منه: حدٌّ معلَن
+  const st = run.ttsSteps && run.voice.localService ? dubTtsStep(real || rate) : null;
+  if (st) { rate = st[0]; real = st[1]; }
   const u = new SpeechSynthesisUtterance(unit.text);
   u.voice = run.voice; u.lang = run.voice.lang; u.rate = rate; u.volume = run.opts.volume;
   const c = { u, i: unit.i == null ? -1 : unit.i, started: false, ended: false, stale: false, at: performance.now(), t0: 0 };
@@ -5728,7 +5759,7 @@ function dubUtter(run, unit, rate, real, s) {
     c.ended = true;
     if (run.cur === c) run.cur = null;
     if (c.stale) return;
-    if (ended && c.started) { run.spoken++; dubLearn(run, unit.text.length, (performance.now() - c.t0) / 1000, rate); }
+    if (ended && c.started) { run.spoken++; dubLearn(run, unit.text.length, (performance.now() - c.t0) / 1000, st ? real : rate, !!st); }
     // 📐 المحرّكُ النائم يُسقط أوّلَ نطقين بلا `start` ⇒ تُعاد الجملةُ نفسُها مرّتين، وقاعدتا التخطّي تحكمان (مراجعة #5)
     else if (ended && !c.started && (run.drops = (run.drops | 0) + 1) <= 2) {
       if (c.i >= 0) run.idx = c.i; else if (!run.pending) run.pending = unit;
@@ -6392,7 +6423,7 @@ function dubStart(o) {
     lastLine: "", lineAt: 0, grow: false, base: "", said: "", offerAt: 0, capWin: 3000, recent: [], pending: null, seen: 0, trackLang: "",
     azOff: "", azWarn: "", azTts: 0, azTr: 0, cpsAz: DUB_CPS_AZ, azN: 0,
     trOff: "", trBusy: false, trFails: 0, trUntil: 0, blobs: new Set(), warmA: null, wait: null, waits: 0, waitGaveUp: -1, pauseCt: null, ytWhy: "",
-    behindAt: -Infinity, tails: [], leads: [], speeds: [], stallS: 0, seeked: false, cutIdx: null, heirOf };
+    behindAt: -Infinity, tails: [], leads: [], speeds: [], stallS: 0, seeked: false, cutIdx: null, heirOf, ttsSteps: dubOnWindows() };
   dubPrepare(run).catch((e) => dubRefuse(run, "threw", e?.message || e));
   return dubStatus();
 }

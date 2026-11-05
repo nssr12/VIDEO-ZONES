@@ -44,11 +44,11 @@ function constOf(name) {
 
 // ⛔ ~~`DUB_REMAIN_MIN` · `DUB_AZ_BURST` · `dubBucketTake`~~ — سُحبت في الجولة الثالثة (قاعدةُ الـ30٪ · ودلوُ كلّ تشغيلة — مراجعة 168ح #2)
 const CONSTS = ["DUB_LEAD_S", "DUB_LATE_MAX_S", "DUB_BEHIND_MAX_S", "DUB_SEG_GAP_A", "DUB_SEG_CAP_A", "DUB_SEG_GAP_M",
-  "DUB_SEG_CAP_M", "DUB_SEG_END_PAD", "DUB_CURVE_MAC", "DUB_R_MAX", "DUB_RATE_CAP", "DUB_AUTO_MAX", "DUB_CPS", "DUB_BRIDGE_MAX",
+  "DUB_SEG_CAP_M", "DUB_SEG_END_PAD", "DUB_CURVE_MAC", "DUB_TTS_STEPS", "DUB_R_MAX", "DUB_RATE_CAP", "DUB_AUTO_MAX", "DUB_CPS", "DUB_BRIDGE_MAX",
   "DUB_AZ_PER_MIN", "DUB_UNIT_MIN_MS", "DUB_UNIT_MAX_MS", "DUB_SENT_MAX_MS", "DUB_CATCH_LAG0_S", "DUB_CATCH_LAG1_S", "DUB_CATCH_MAX",
   "DUB_GLUE_S", "DUB_UNIT_GAP_MS", "DUB_TX_KEEP"];
 const FNS = ["dubPrim", "dubXtDecode", "dubAudioNorm", "dubCapNorm", "dubDecide", "dubSegment", "dubRealSpeed",
-  "dubChromeRate", "dubFirstAt", "dubResyncAt", "dubCapFor", "dubNext", "dubPickVoice", "dubMainCall", "dubYtSource", "dubYtUnits", "dubDisplayNext", "dubCaptionLines",
+  "dubChromeRate", "dubTtsStep", "dubFirstAt", "dubResyncAt", "dubCapFor", "dubNext", "dubPickVoice", "dubMainCall", "dubYtSource", "dubYtUnits", "dubDisplayNext", "dubCaptionLines",
   "dubXmlEsc", "dubSsml", "dubAzLimit", "dubAzBill", "dubAzFit", "dubMergeUnits", "dubAzOpts", "dubTxKeep", "dubResumeAt"];
 
 function makeWindow() {
@@ -151,6 +151,16 @@ vm.runInContext(CONSTS.map((n) => `var ${n} = ${constOf(n)};`).join("\n") + "\n"
     const rt = [1, 1.2, 1.5, 1.7, 1.9, 2.3, 3, 3.9].every((r) => Math.abs(ctx.dubRealSpeed(ctx.dubChromeRate(r)) - r) < 1e-9);
     check("[٣] ذهاباً وإياباً على المنحنى بلا فرق", rt);
     check("[٣] تحت 1 ⇐ 1 (لا إبطاء)", ctx.dubChromeRate(0.7) === 1);
+    // ⭐ الويندوز: الجدولُ يطابق صيغةَ `tts_win.cc` درجةً درجة (📖 — القياسُ على الجهاز يأتي من `report-voice-rate.js`)، والفعليّةُ الأقربُ لا الاستيفاء
+    const T = ctx.DUB_TTS_STEPS;
+    check("[٣] ⭐ درجاتُ الويندوز: كلُّ سرعةٍ في الجدول تقع في درجتها (trunc(10·log10 r) بدقّة float كروم) وسرعتُها 3^(n/10)",
+      T.every((s, n) => Math.trunc(10 * Math.log10(Math.fround(s[0]))) === n && Math.abs(s[1] - Math.pow(3, n / 10)) < 0.001), T);
+    check("[٣] ⭐ وتبلغ R_max — ⛔ ~~وإلا بقي سقفُ اللحاق وعداً~~", T[T.length - 1][1] >= ctx.DUB_R_MAX, T[T.length - 1]);
+    const stepOf = (x) => ctx.dubTtsStep(x)[0];
+    check("[٣] ⭐ الأقربُ: 1.05 ⇐ 1 · 1.1 ⇐ 1.26 · 1.4 ⇐ 2 · 1.6 ⇐ 2.52 · 1.91 ⇐ 3.99 · وفوق الجدول ⇐ آخرُه",
+      stepOf(1.05) === 1 && stepOf(1.1) === 1.26 && stepOf(1.4) === 2 && stepOf(1.6) === 2.52 && stepOf(1.91) === 3.99 && stepOf(5) === 3.99 && stepOf(0.5) === 1,
+      [1.05, 1.1, 1.4, 1.6, 1.91, 5, 0.5].map(stepOf));
+    check("[٣] ⭐ وخياراتُ البوب-أب تصدق: 1.25 ⇐ 1.246 · 1.5 ⇐ 1.552 · 1.75 ⇐ 1.732 · 2 ⇐ 1.933", [1.25, 1.5, 1.75, 2].map((x) => ctx.dubTtsStep(x)[1]).join() === "1.246,1.552,1.732,1.933");
   }
 
   // ---------------------------------------------------------------- [٤] المُجدوِل
@@ -507,12 +517,22 @@ vm.runInContext(CONSTS.map((n) => `var ${n} = ${constOf(n)};`).join("\n") + "\n"
       for (let j = SRCP.indexOf("{", i); j < SRCP.length; j++) { if (SRCP[j] === "{") d++; else if (SRCP[j] === "}") { d--; if (!d) return SRCP.slice(i, j + 1); } } };
     const els = {};
     const el = (id) => (els[id] = els[id] || { id, textContent: "", value: "", disabled: false, classList: { _s: new Set(), add(c) { this._s.add(c); }, remove(...c) { c.forEach((x) => this._s.delete(x)); }, has(c) { return this._s.has(c); } } });
-    const pctx = { $: el, dubPin: null };
+    const pctx = { $: el, dubPin: null, navigator: { userAgentData: { platform: "macOS" } } };
     vm.createContext(pctx);
     vm.runInContext(["DUB_REASON_TEXT", "DUB_STEP_TEXT", "DUB_HOLD_TEXT", "DUB_STOP_TEXT", "DUB_KIND_TEXT", "DUB_AZ_WARN", "DUB_YT_WHY"].map(grab).join("\n").replace(/^const /gm, "var ") + "\nvar dubRestartTo = \"\";\n" + fnP("renderDub") + "\n" +
-      fnP("dubDiagText") + "\n" + fnP("dubYtWhyText"), pctx);
+      fnP("dubDiagText") + "\n" + fnP("dubYtWhyText") + "\n" + fnP("dubPlatform"), pctx);
     const R = (st, source) => { el("dubSource").value = source || "yt"; pctx.renderDub(st); return { note: el("dubNote").textContent, bad: el("dubNote").classList.has("bad"), btn: el("dubBtn").textContent, off: el("dubBtn").disabled }; };
     const run = (x) => Object.assign({ ok: true, state: "running", hold: "", kind: "display", idx: 3, total: 0, spoken: 2, skipped: 1, lost: 0, warm: true, source: "yt" }, x || {});
+    // ⭐ مراجعةُ الويندوز: رفضُ «لا صوت» يدلّ على طريقه هناك، والماك بنصّه حرفاً · واسمُ خطأ المترجم يُقال — ⛔ ~~«تعذّر» بلا سبب~~
+    const NOV = "لا صوتَ عربيّ في النظام — أضف صوتاً عربياً من إعدادات النظام ثمّ أعد تشغيل كروم";
+    check("[٩] ⭐ لا صوتَ عربيّ على الماك ⇐ النصُّ نفسُه حرفاً", R({ ok: true, state: "refused", reason: "no-voice" }).note === "⛔ " + NOV, R({ ok: true, state: "refused", reason: "no-voice" }).note);
+    pctx.navigator = { userAgentData: { platform: "Windows" } };
+    const nvw = R({ ok: true, state: "refused", reason: "no-voice" }).note;
+    check("[٩] ⭐ وعلى الويندوز ⇐ طريقُه و«chrome://restart» وAzure", /إدارة الأصوات/.test(nvw) && /chrome:\/\/restart/.test(nvw) && /Azure/.test(nvw) && !nvw.includes(NOV), nvw);
+    pctx.navigator = { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" };
+    check("[٩] ⭐ وبلا userAgentData يُعرف من الوكيل", /إدارة الأصوات/.test(R({ ok: true, state: "refused", reason: "no-voice" }).note));
+    pctx.navigator = { userAgentData: { platform: "macOS" } };
+    check("[٩] ⭐ وتعذّرُ المترجم يقول اسمَ الخطأ", /تعذّر تجهيز مترجم كروم \(NotAllowedError\)/.test(R({ ok: true, state: "refused", reason: "tr-create", detail: "NotAllowedError" }).note));
     let r = R(run());
     check("[٩] يعمل بوضع العرض ⇐ «يُدبلج» والزرُّ «أوقف» — لا «⛔»", /^يُدبلج/.test(r.note) && !r.bad && r.btn === "أوقف الدبلجة" && !/⛔/.test(r.note), r);
     check("[٩] ووضعُ العرض بلا «الجملة X من Y»", !/الجملة/.test(r.note), r.note);
